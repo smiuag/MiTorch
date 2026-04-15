@@ -16,6 +16,8 @@ import { AnsiText } from '../components/AnsiText';
 import { FKeyBar } from '../components/FKeyBar';
 import { MacroEditor } from '../components/MacroEditor';
 import { DirectionPad } from '../components/DirectionPad';
+import { MiniMap } from '../components/MiniMap';
+import { MapService, MapRoom } from '../services/mapService';
 import { loadFKeys, saveFKeys } from '../storage/fkeyStorage';
 import { loadExtraButtons, saveExtraButtons } from '../storage/extraButtonStorage';
 
@@ -35,12 +37,20 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [macroEditorVisible, setMacroEditorVisible] = useState(false);
   const [editingMacro, setEditingMacro] = useState<Macro | null>(null);
   const [editingTarget, setEditingTarget] = useState<{ type: 'fkey' | 'extra'; index: number }>({ type: 'fkey', index: 0 });
+  const [mapVisible, setMapVisible] = useState(true);
+  const [currentRoom, setCurrentRoom] = useState<MapRoom | null>(null);
+  const [nearbyRooms, setNearbyRooms] = useState<MapRoom[]>([]);
   const flatListRef = useRef<FlatList>(null);
   const telnetRef = useRef<TelnetService | null>(null);
   const inputRef = useRef<TextInput>(null);
   const pendingText = useRef('');
+  const mapServiceRef = useRef(new MapService());
+  const locatingRef = useRef(false);
+  const recentLinesRef = useRef<string[]>([]);
 
   const addLine = useCallback((text: string) => {
+    if (text.trim().length === 0) return;
+
     const spans = parseAnsi(text);
     const newLine: MudLine = { id: lineIdCounter++, spans };
     setLines(prev => {
@@ -63,7 +73,15 @@ export function TerminalScreen({ route, navigation }: Props) {
   useEffect(() => {
     loadFKeys(server.id).then(setFkeys);
     loadExtraButtons(server.id).then(setExtraButtons);
+    mapServiceRef.current.load();
   }, [server.id]);
+
+  const updateMapPosition = useCallback((room: MapRoom) => {
+    setCurrentRoom(room);
+    mapServiceRef.current.setCurrentRoom(room.id);
+    const nearby = mapServiceRef.current.getNearbyRooms(room.x, room.y, room.z, 15);
+    setNearbyRooms(nearby);
+  }, []);
 
   const sendCommand = useCallback((command: string) => {
     if (!telnetRef.current) return;
@@ -122,6 +140,12 @@ export function TerminalScreen({ route, navigation }: Props) {
         for (const part of parts) {
           if (part.length > 0) {
             addLine(part);
+            // Keep recent raw lines for LOC
+            const clean = part.replace(/\x1b\[[0-9;]*m/g, '').trim();
+            recentLinesRef.current.push(clean);
+            if (recentLinesRef.current.length > 30) {
+              recentLinesRef.current = recentLinesRef.current.slice(-30);
+            }
           }
         }
       },
@@ -139,6 +163,25 @@ export function TerminalScreen({ route, navigation }: Props) {
       },
       onError: (error: string) => {
         addSystemLine(`--- Error: ${error} ---`);
+      },
+      onGMCP: (module: string, data: any) => {
+        const mapSvc = mapServiceRef.current;
+        if (!mapSvc.isLoaded) return;
+
+
+        if (module === 'Room.Actual') {
+          const roomName = typeof data === 'string' ? data : String(data);
+          const room = mapSvc.findRoom(roomName);
+          if (room) {
+            updateMapPosition(room);
+          }
+        } else if (module === 'Room.Movimiento') {
+          const dir = typeof data === 'string' ? data : String(data);
+          const room = mapSvc.moveByDirection(dir);
+          if (room) {
+            updateMapPosition(room);
+          }
+        }
       },
     });
 
@@ -205,6 +248,17 @@ export function TerminalScreen({ route, navigation }: Props) {
                   addSystemLine('--- Connection closed ---');
                 },
                 onError: (error: string) => addSystemLine(`--- Error: ${error} ---`),
+                onGMCP: (module: string, data: any) => {
+                  const mapSvc = mapServiceRef.current;
+                  if (!mapSvc.isLoaded) return;
+                  if (module === 'Room.Actual') {
+                    const room = mapSvc.findRoom(typeof data === 'string' ? data : String(data));
+                    if (room) updateMapPosition(room);
+                  } else if (module === 'Room.Movimiento') {
+                    const room = mapSvc.moveByDirection(typeof data === 'string' ? data : String(data));
+                    if (room) updateMapPosition(room);
+                  }
+                },
               });
               telnetRef.current = telnet;
               telnet.connect();
@@ -215,7 +269,14 @@ export function TerminalScreen({ route, navigation }: Props) {
         )}
       </View>
 
-      {/* Output area */}
+      {/* Output area with map overlay */}
+      <View style={styles.outputWrapper}>
+      <MiniMap
+        currentRoom={currentRoom}
+        nearbyRooms={nearbyRooms}
+        visible={mapVisible}
+        onToggle={() => setMapVisible(v => !v)}
+      />
       <FlatList
         ref={flatListRef}
         data={lines}
@@ -224,13 +285,18 @@ export function TerminalScreen({ route, navigation }: Props) {
         style={styles.output}
         contentContainerStyle={styles.outputContent}
         onContentSizeChange={() => {
-          flatListRef.current?.scrollToEnd({ animated: false });
+          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
         }}
-        removeClippedSubviews={true}
-        maxToRenderPerBatch={20}
-        windowSize={15}
+        onLayout={() => {
+          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
+        }}
+        removeClippedSubviews={false}
+        maxToRenderPerBatch={30}
+        windowSize={21}
         keyboardShouldPersistTaps="always"
+        maintainVisibleContentPosition={undefined}
       />
+      </View>
 
       {/* Command input */}
       <View style={styles.inputContainer}>
@@ -275,6 +341,29 @@ export function TerminalScreen({ route, navigation }: Props) {
         }}
         fkeys={fkeys}
         onFKeyPress={(macro) => sendCommand(macro.command)}
+        onLocate={() => {
+          recentLinesRef.current = [];
+          sendCommand('ojear');
+          setTimeout(() => {
+            let foundRoom: MapRoom | null = null;
+            for (const line of recentLinesRef.current) {
+              if (line.match(/\[.*\]\s*$/)) {
+                const bracketIdx = line.lastIndexOf('[');
+                let roomName = line.substring(0, bracketIdx).trim();
+                roomName = roomName.replace(/^[>\]]\s*/, '');
+                const mapSvc = mapServiceRef.current;
+                if (mapSvc.isLoaded && roomName) {
+                  mapSvc.setCurrentRoom(0);
+                  const room = mapSvc.findRoom(roomName);
+                  if (room) foundRoom = room;
+                }
+              }
+            }
+            if (foundRoom) {
+              updateMapPosition(foundRoom);
+            }
+          }, 1500);
+        }}
         onFKeyLongPress={(index) => {
           setEditingTarget({ type: 'fkey', index });
           setEditingMacro(fkeys[index]);
@@ -337,6 +426,10 @@ const styles = StyleSheet.create({
   reconnectText: {
     color: '#cccccc',
     fontSize: 12,
+  },
+  outputWrapper: {
+    flex: 1,
+    position: 'relative',
   },
   output: {
     flex: 1,

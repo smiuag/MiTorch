@@ -9,9 +9,10 @@ interface DirectionPadProps {
   fkeys: (Macro | null)[];
   onFKeyPress: (macro: Macro) => void;
   onFKeyLongPress: (index: number) => void;
+  onLocate: () => void;
 }
 
-export function DirectionPad({ onDirection, extraButtons, onExtraLongPress, fkeys, onFKeyPress, onFKeyLongPress }: DirectionPadProps) {
+export function DirectionPad({ onDirection, extraButtons, onExtraLongPress, fkeys, onFKeyPress, onFKeyLongPress, onLocate }: DirectionPadProps) {
   const dir = (label: string, command: string) => (
     <TouchableOpacity
       style={[styles.btn, styles.dirBtn]}
@@ -88,7 +89,13 @@ export function DirectionPad({ onDirection, extraButtons, onExtraLongPress, fkey
       </View>
       <View style={styles.row}>
         {dir('W', 'oeste')}
-        {action('mirar', 'mirar')}
+        <TouchableOpacity
+          style={[styles.btn, styles.locateBtn]}
+          onPress={onLocate}
+          activeOpacity={0.5}
+        >
+          <Text style={styles.btnText}>LOC</Text>
+        </TouchableOpacity>
         {dir('E', 'este')}
         {alt('AR', 'arriba')}
         {alt('AB', 'abajo')}
@@ -96,12 +103,12 @@ export function DirectionPad({ onDirection, extraButtons, onExtraLongPress, fkey
         {fkey(8)}
       </View>
       <View style={styles.row}>
-        {dir('SW', 'suroeste')}
+        {dir('SW', 'sudoeste')}
         {dir('S', 'sur')}
-        {dir('SE', 'sureste')}
+        {dir('SE', 'sudeste')}
         {action('score', 'score')}
         {action('who', 'who')}
-        {extra(0)}
+        {action('mirar', 'mirar')}
         {fkey(9)}
       </View>
     </View>
@@ -139,6 +146,10 @@ const styles = StyleSheet.create({
   actionBtn: {
     backgroundColor: '#2a2a2a',
     borderColor: '#4a4a4a',
+  },
+  locateBtn: {
+    backgroundColor: '#2a3a2a',
+    borderColor: '#4a6a4a',
   },
   emptyBtn: {
     backgroundColor: '#1a1a1a',
