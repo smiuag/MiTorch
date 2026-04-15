@@ -17,6 +17,7 @@ import { FKeyBar } from '../components/FKeyBar';
 import { MacroEditor } from '../components/MacroEditor';
 import { DirectionPad } from '../components/DirectionPad';
 import { MiniMap } from '../components/MiniMap';
+import { VitalBars } from '../components/VitalBars';
 import { MapService, MapRoom } from '../services/mapService';
 import { loadFKeys, saveFKeys } from '../storage/fkeyStorage';
 import { loadExtraButtons, saveExtraButtons } from '../storage/extraButtonStorage';
@@ -40,6 +41,10 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [mapVisible, setMapVisible] = useState(true);
   const [currentRoom, setCurrentRoom] = useState<MapRoom | null>(null);
   const [nearbyRooms, setNearbyRooms] = useState<MapRoom[]>([]);
+  const [hp, setHp] = useState(0);
+  const [hpMax, setHpMax] = useState(0);
+  const [energy, setEnergy] = useState(0);
+  const [energyMax, setEnergyMax] = useState(0);
   const flatListRef = useRef<FlatList>(null);
   const telnetRef = useRef<TelnetService | null>(null);
   const inputRef = useRef<TextInput>(null);
@@ -165,9 +170,20 @@ export function TerminalScreen({ route, navigation }: Props) {
         addSystemLine(`--- Error: ${error} ---`);
       },
       onGMCP: (module: string, data: any) => {
+        // Char.Status: vitals (pvs, pe, xp)
+        if (module === 'Char.Status' && data && typeof data === 'object') {
+          if (data.pvs) {
+            if (data.pvs.min !== undefined) setHp(data.pvs.min);
+            if (data.pvs.max !== undefined) setHpMax(data.pvs.max);
+          }
+          if (data.pe) {
+            if (data.pe.min !== undefined) setEnergy(data.pe.min);
+            if (data.pe.max !== undefined) setEnergyMax(data.pe.max);
+          }
+        }
+
         const mapSvc = mapServiceRef.current;
         if (!mapSvc.isLoaded) return;
-
 
         if (module === 'Room.Actual') {
           const roomName = typeof data === 'string' ? data : String(data);
@@ -249,6 +265,16 @@ export function TerminalScreen({ route, navigation }: Props) {
                 },
                 onError: (error: string) => addSystemLine(`--- Error: ${error} ---`),
                 onGMCP: (module: string, data: any) => {
+                  if (module === 'Char.Status' && data && typeof data === 'object') {
+                    if (data.pvs) {
+                      if (data.pvs.min !== undefined) setHp(data.pvs.min);
+                      if (data.pvs.max !== undefined) setHpMax(data.pvs.max);
+                    }
+                    if (data.pe) {
+                      if (data.pe.min !== undefined) setEnergy(data.pe.min);
+                      if (data.pe.max !== undefined) setEnergyMax(data.pe.max);
+                    }
+                  }
                   const mapSvc = mapServiceRef.current;
                   if (!mapSvc.isLoaded) return;
                   if (module === 'Room.Actual') {
@@ -297,6 +323,9 @@ export function TerminalScreen({ route, navigation }: Props) {
         maintainVisibleContentPosition={undefined}
       />
       </View>
+
+      {/* Vital bars */}
+      <VitalBars hp={hp} hpMax={hpMax} energy={energy} energyMax={energyMax} />
 
       {/* Command input */}
       <View style={styles.inputContainer}>
