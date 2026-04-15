@@ -94,12 +94,13 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle }: MiniMap
 
           {mapContent.roomDots.map(({ sx, sy, room, isCurrent }) => {
             const size = isCurrent ? CURRENT_ROOM_SIZE : ROOM_SIZE;
+            const roomColor = room.c ?? 'rgba(0, 180, 0, 0.4)';
             return (
               <View
                 key={room.id}
                 style={[
                   styles.roomDot,
-                  isCurrent ? styles.currentRoomDot : styles.normalRoomDot,
+                  isCurrent ? styles.currentRoomDot : { backgroundColor: roomColor + '99' },
                   {
                     left: sx - size / 2,
                     top: sy - size / 2,
@@ -194,9 +195,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 0, 0.8)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.6)',
-  },
-  normalRoomDot: {
-    backgroundColor: 'rgba(0, 180, 0, 0.4)',
   },
   coords: {
     color: 'rgba(102, 102, 102, 0.6)',

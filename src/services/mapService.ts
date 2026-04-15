@@ -6,10 +6,11 @@ export interface MapRoom {
   z: number;
   e: Record<string, number>;  // exits: {direction: roomId}
   fn?: string; // full name with exits
+  c?: string;  // color hex
 }
 
 interface MapData {
-  rooms: Record<string, { n: string; x: number; y: number; z: number; e: Record<string, number>; fn?: string }>;
+  rooms: Record<string, { n: string; x: number; y: number; z: number; e: Record<string, number>; fn?: string; c?: string }>;
   nameIndex: Record<string, number[]>;
 }
 
@@ -177,6 +178,80 @@ export class MapService {
       }
     }
     return nearby;
+  }
+
+  /**
+   * Search rooms by partial name match (for irsala)
+   */
+  searchRooms(query: string, maxResults: number = 20): MapRoom[] {
+    if (!this.loaded) return [];
+    const queryLower = query.toLowerCase();
+    const results: MapRoom[] = [];
+    const seen = new Set<number>();
+
+    for (const [name, ids] of this.nameIndexLower.entries()) {
+      if (name.includes(queryLower)) {
+        for (const id of ids) {
+          if (!seen.has(id) && results.length < maxResults) {
+            const room = this.rooms.get(id);
+            if (room) {
+              results.push(room);
+              seen.add(id);
+            }
+          }
+        }
+      }
+      if (results.length >= maxResults) break;
+    }
+    return results;
+  }
+
+  /**
+   * Map exit key back to MUD command
+   */
+  private static readonly KEY_TO_CMD: Record<string, string> = {
+    'n': 'norte', 's': 'sur', 'e': 'este', 'w': 'oeste',
+    'ne': 'noreste', 'nw': 'noroeste', 'se': 'sudeste', 'sw': 'sudoeste',
+    'ar': 'arriba', 'ab': 'abajo', 'de': 'dentro', 'fu': 'fuera',
+  };
+
+  /**
+   * Find shortest path between two rooms using BFS
+   * Returns array of MUD commands to execute
+   */
+  findPath(fromId: number, toId: number): string[] | null {
+    if (!this.loaded || fromId === toId) return fromId === toId ? [] : null;
+
+    const visited = new Set<number>();
+    const queue: { id: number; path: { exitKey: string; roomId: number }[] }[] = [
+      { id: fromId, path: [] }
+    ];
+    visited.add(fromId);
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const room = this.rooms.get(current.id);
+      if (!room) continue;
+
+      for (const [exitKey, destId] of Object.entries(room.e)) {
+        if (visited.has(destId)) continue;
+
+        const newPath = [...current.path, { exitKey, roomId: destId }];
+
+        if (destId === toId) {
+          // Convert exit keys to MUD commands
+          return newPath.map(step => MapService.KEY_TO_CMD[step.exitKey] ?? step.exitKey);
+        }
+
+        visited.add(destId);
+        queue.push({ id: destId, path: newPath });
+
+        // Safety limit
+        if (visited.size > 50000) return null;
+      }
+    }
+
+    return null;
   }
 
   get isLoaded(): boolean {

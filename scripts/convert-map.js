@@ -25,6 +25,14 @@ if (!mainArea) {
 
 console.log(`Processing area "${mainArea.name}" with ${mainArea.roomCount} rooms...`);
 
+// Build environment color map
+const envColors = {};
+for (const ec of data.customEnvColors || []) {
+  const [r, g, b] = ec.color24RGB;
+  envColors[ec.id] = '#' + r.toString(16).padStart(2, '0') + g.toString(16).padStart(2, '0') + b.toString(16).padStart(2, '0');
+}
+console.log(`  Environment colors: ${Object.keys(envColors).length}`);
+
 const rooms = {};
 for (const room of mainArea.rooms) {
   // Parse name: strip exit info in brackets for cleaner storage
@@ -39,13 +47,19 @@ for (const room of mainArea.rooms) {
     exits[dir] = exit.exitId;
   }
 
-  rooms[room.id] = {
+  const entry = {
     n: shortName,                    // name
     x: room.coordinates[0],         // x
     y: room.coordinates[1],         // y
     z: room.coordinates[2],         // z
     e: exits,                        // exits {dir: roomId}
   };
+
+  // Add color if available
+  const color = envColors[room.environment];
+  if (color) entry.c = color;
+
+  rooms[room.id] = entry;
 
   // Store full name with exits for matching
   if (name !== shortName) {

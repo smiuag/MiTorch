@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -18,6 +19,7 @@ import { MacroEditor } from '../components/MacroEditor';
 import { DirectionPad } from '../components/DirectionPad';
 import { MiniMap } from '../components/MiniMap';
 import { VitalBars } from '../components/VitalBars';
+import { RoomSearchResults } from '../components/RoomSearchResults';
 import { MapService, MapRoom } from '../services/mapService';
 import { loadFKeys, saveFKeys } from '../storage/fkeyStorage';
 import { loadExtraButtons, saveExtraButtons } from '../storage/extraButtonStorage';
@@ -45,6 +47,11 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [hpMax, setHpMax] = useState(0);
   const [energy, setEnergy] = useState(0);
   const [energyMax, setEnergyMax] = useState(0);
+  const [searchResults, setSearchResults] = useState<MapRoom[]>([]);
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [walking, setWalking] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const walkTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const flatListRef = useRef<FlatList>(null);
   const telnetRef = useRef<TelnetService | null>(null);
   const inputRef = useRef<TextInput>(null);
@@ -52,6 +59,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const mapServiceRef = useRef(new MapService());
   const locatingRef = useRef(false);
   const recentLinesRef = useRef<string[]>([]);
+  const isAtBottomRef = useRef(true);
 
   const addLine = useCallback((text: string) => {
     if (text.trim().length === 0) return;
@@ -76,6 +84,12 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, []);
 
   useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+
+  useEffect(() => {
     loadFKeys(server.id).then(setFkeys);
     loadExtraButtons(server.id).then(setExtraButtons);
     mapServiceRef.current.load();
@@ -87,6 +101,43 @@ export function TerminalScreen({ route, navigation }: Props) {
     const nearby = mapServiceRef.current.getNearbyRooms(room.x, room.y, room.z, 15);
     setNearbyRooms(nearby);
   }, []);
+
+  const stopWalk = useCallback(() => {
+    for (const t of walkTimers.current) clearTimeout(t);
+    walkTimers.current = [];
+    setWalking(false);
+  }, []);
+
+  const walkTo = useCallback((targetRoom: MapRoom) => {
+    const mapSvc = mapServiceRef.current;
+    const current = mapSvc.getCurrentRoom();
+    if (!current) {
+      addSystemLine('--- No se conoce tu posición actual. Usa LOC primero ---');
+      return;
+    }
+    const path = mapSvc.findPath(current.id, targetRoom.id);
+    if (!path || path.length === 0) {
+      addSystemLine('--- No se encuentra camino ---');
+      return;
+    }
+    addSystemLine(`--- Caminando a "${targetRoom.n}" (${path.length} pasos) ---`);
+    setWalking(true);
+    setSearchVisible(false);
+    const STEP_DELAY = 300;
+    walkTimers.current = [];
+    for (let i = 0; i < path.length; i++) {
+      const t = setTimeout(() => {
+        if (telnetRef.current) {
+          telnetRef.current.send(path[i]);
+        }
+        if (i === path.length - 1) {
+          setWalking(false);
+          addSystemLine('--- Llegaste a tu destino ---');
+        }
+      }, i * STEP_DELAY);
+      walkTimers.current.push(t);
+    }
+  }, [addSystemLine]);
 
   const sendCommand = useCallback((command: string) => {
     if (!telnetRef.current) return;
@@ -215,13 +266,52 @@ export function TerminalScreen({ route, navigation }: Props) {
       setInputText('');
       return;
     }
+
+    // Cancel walk if any command is sent
+    if (walking) {
+      stopWalk();
+      addSystemLine('--- Movimiento cancelado ---');
+    }
+
+    // Intercept irsala command
+    const irsalaMatch = text.match(/^irsala\s+(.+)$/i);
+    if (irsalaMatch) {
+      const query = irsalaMatch[1];
+      const mapSvc = mapServiceRef.current;
+      if (mapSvc.isLoaded) {
+        const results = mapSvc.searchRooms(query);
+        if (results.length === 0) {
+          addSystemLine(`--- No se encontró ninguna sala con "${query}" ---`);
+        } else if (results.length === 1) {
+          walkTo(results[0]);
+        } else {
+          setSearchResults(results);
+          setSearchVisible(true);
+        }
+      }
+      addLine(`> ${text}`);
+      setInputText('');
+      return;
+    }
+
+    // Intercept "parar" to stop walking
+    if (text.toLowerCase() === 'parar' && walking) {
+      stopWalk();
+      addSystemLine('--- Movimiento cancelado ---');
+      setInputText('');
+      return;
+    }
+
     if (telnetRef.current) {
       telnetRef.current.send(text);
     }
     addLine(`> ${text}`);
     setCommandHistory(prev => [...prev.slice(-100), text]);
     setInputText('');
-  }, [inputText]);
+    // Always scroll to bottom when sending
+    isAtBottomRef.current = true;
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
+  }, [inputText, walking, stopWalk, walkTo]);
 
   const renderLine = useCallback(({ item }: { item: MudLine }) => (
     <AnsiText line={item} />
@@ -311,16 +401,20 @@ export function TerminalScreen({ route, navigation }: Props) {
         style={styles.output}
         contentContainerStyle={styles.outputContent}
         onContentSizeChange={() => {
-          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
+          if (isAtBottomRef.current) {
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
+          }
         }}
-        onLayout={() => {
-          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
+        onScroll={(e) => {
+          const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+          const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
+          isAtBottomRef.current = distanceFromBottom < 50;
         }}
+        scrollEventThrottle={100}
         removeClippedSubviews={false}
         maxToRenderPerBatch={30}
         windowSize={21}
         keyboardShouldPersistTaps="always"
-        maintainVisibleContentPosition={undefined}
       />
       </View>
 
@@ -342,14 +436,17 @@ export function TerminalScreen({ route, navigation }: Props) {
           autoComplete="off"
           returnKeyType="send"
           blurOnSubmit={false}
+          keyboardAppearance="dark"
+          onFocus={() => setKeyboardVisible(true)}
+          onBlur={() => setKeyboardVisible(false)}
         />
         <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
           <Text style={styles.sendText}>Send</Text>
         </TouchableOpacity>
       </View>
 
-      {/* F1-F7 macros */}
-      <FKeyBar
+      {/* F-keys and direction pad - hidden when keyboard is open */}
+      {!keyboardVisible && <FKeyBar
         macros={fkeys}
         onPress={(macro) => macro && sendCommand(macro.command)}
         onLongPress={(_macro, index) => {
@@ -357,10 +454,10 @@ export function TerminalScreen({ route, navigation }: Props) {
           setEditingMacro(fkeys[index]);
           setMacroEditorVisible(true);
         }}
-      />
+      />}
 
       {/* Direction pad with F8-F10 */}
-      <DirectionPad
+      {!keyboardVisible && <DirectionPad
         onDirection={sendCommand}
         extraButtons={extraButtons}
         onExtraLongPress={(index) => {
@@ -398,9 +495,17 @@ export function TerminalScreen({ route, navigation }: Props) {
           setEditingMacro(fkeys[index]);
           setMacroEditorVisible(true);
         }}
-      />
+      />}
 
-      <SafeAreaView edges={['bottom']} style={styles.safeBottom} />
+      {!keyboardVisible && <SafeAreaView edges={['bottom']} style={styles.safeBottom} />}
+
+      {/* Room search results */}
+      <RoomSearchResults
+        rooms={searchResults}
+        visible={searchVisible}
+        onSelect={(room) => walkTo(room)}
+        onClose={() => setSearchVisible(false)}
+      />
 
       {/* Macro editor modal */}
       <MacroEditor
