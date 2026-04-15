@@ -15,8 +15,6 @@ export async function saveServers(servers: ServerProfile[]): Promise<void> {
 
 function getDefaultServers(): ServerProfile[] {
   return [
-    { id: '1', name: 'Aardwolf', host: 'aardmud.org', port: 4000 },
-    { id: '2', name: 'BatMUD', host: 'batmud.bat.org', port: 23 },
-    { id: '3', name: 'Discworld MUD', host: 'discworld.starturtle.net', port: 4242 },
+    { id: '1', name: 'Reinos de Leyenda', host: 'rlmud.org', port: 5001 },
   ];
 }

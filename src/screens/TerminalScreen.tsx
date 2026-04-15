@@ -4,19 +4,20 @@ import {
   TextInput,
   FlatList,
   StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
   Text,
   TouchableOpacity,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, MudLine, Macro } from '../types';
 import { TelnetService } from '../services/telnetService';
 import { parseAnsi } from '../utils/ansiParser';
 import { AnsiText } from '../components/AnsiText';
-import { MacroBar } from '../components/MacroBar';
+import { FKeyBar } from '../components/FKeyBar';
 import { MacroEditor } from '../components/MacroEditor';
-import { loadMacros, saveMacros } from '../storage/macroStorage';
+import { DirectionPad } from '../components/DirectionPad';
+import { loadFKeys, saveFKeys } from '../storage/fkeyStorage';
+import { loadExtraButtons, saveExtraButtons } from '../storage/extraButtonStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Terminal'>;
 
@@ -29,9 +30,11 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [inputText, setInputText] = useState('');
   const [connected, setConnected] = useState(false);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
-  const [macros, setMacros] = useState<Macro[]>([]);
+  const [fkeys, setFkeys] = useState<(Macro | null)[]>([null, null, null, null, null, null, null, null, null, null]);
+  const [extraButtons, setExtraButtons] = useState<(Macro | null)[]>([null]);
   const [macroEditorVisible, setMacroEditorVisible] = useState(false);
   const [editingMacro, setEditingMacro] = useState<Macro | null>(null);
+  const [editingTarget, setEditingTarget] = useState<{ type: 'fkey' | 'extra'; index: number }>({ type: 'fkey', index: 0 });
   const flatListRef = useRef<FlatList>(null);
   const telnetRef = useRef<TelnetService | null>(null);
   const inputRef = useRef<TextInput>(null);
@@ -58,50 +61,64 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, []);
 
   useEffect(() => {
-    loadMacros(server.id).then(setMacros);
+    loadFKeys(server.id).then(setFkeys);
+    loadExtraButtons(server.id).then(setExtraButtons);
   }, [server.id]);
 
-  const handleMacroPress = useCallback((macro: Macro) => {
+  const sendCommand = useCallback((command: string) => {
     if (!telnetRef.current) return;
-    // Support ; as command separator
-    const commands = macro.command.split(';');
+    const commands = command.split(';');
     for (const cmd of commands) {
       telnetRef.current.send(cmd.trim());
     }
   }, []);
 
   const handleMacroSave = useCallback(async (macro: Macro) => {
-    setMacros(prev => {
-      const idx = prev.findIndex(m => m.id === macro.id);
-      const updated = idx >= 0
-        ? prev.map(m => m.id === macro.id ? macro : m)
-        : [...prev, macro];
-      saveMacros(server.id, updated);
-      return updated;
-    });
+    if (editingTarget.type === 'fkey') {
+      setFkeys(prev => {
+        const updated = [...prev];
+        updated[editingTarget.index] = macro;
+        saveFKeys(server.id, updated);
+        return updated;
+      });
+    } else {
+      setExtraButtons(prev => {
+        const updated = [...prev];
+        updated[editingTarget.index] = macro;
+        saveExtraButtons(server.id, updated);
+        return updated;
+      });
+    }
     setMacroEditorVisible(false);
-  }, [server.id]);
+  }, [server.id, editingTarget]);
 
-  const handleMacroDelete = useCallback(async (macroId: string) => {
-    setMacros(prev => {
-      const updated = prev.filter(m => m.id !== macroId);
-      saveMacros(server.id, updated);
-      return updated;
-    });
+  const handleMacroDelete = useCallback(async (_macroId: string) => {
+    if (editingTarget.type === 'fkey') {
+      setFkeys(prev => {
+        const updated = [...prev];
+        updated[editingTarget.index] = null;
+        saveFKeys(server.id, updated);
+        return updated;
+      });
+    } else {
+      setExtraButtons(prev => {
+        const updated = [...prev];
+        updated[editingTarget.index] = null;
+        saveExtraButtons(server.id, updated);
+        return updated;
+      });
+    }
     setMacroEditorVisible(false);
-  }, [server.id]);
+  }, [server.id, editingTarget]);
 
   useEffect(() => {
     navigation.setOptions({ title: server.name });
 
     const telnet = new TelnetService(server, {
       onData: (text: string) => {
-        // Buffer text and split by newlines
         pendingText.current += text;
         const parts = pendingText.current.split('\n');
-        // Keep the last part as pending (might be incomplete)
         pendingText.current = parts.pop() ?? '';
-        // Add complete lines
         for (const part of parts) {
           if (part.length > 0) {
             addLine(part);
@@ -113,7 +130,6 @@ export function TerminalScreen({ route, navigation }: Props) {
         addSystemLine(`--- Connected to ${server.name} (${server.host}:${server.port}) ---`);
       },
       onClose: () => {
-        // Flush any pending text
         if (pendingText.current) {
           addLine(pendingText.current);
           pendingText.current = '';
@@ -136,14 +152,16 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   const handleSend = useCallback(() => {
     const text = inputText.trim();
+    if (!text) {
+      setInputText('');
+      return;
+    }
     if (telnetRef.current) {
-      telnetRef.current.send(inputText);
+      telnetRef.current.send(text);
     }
-    if (text) {
-      setCommandHistory(prev => [...prev.slice(-100), text]);
-    }
+    addLine(`> ${text}`);
+    setCommandHistory(prev => [...prev.slice(-100), text]);
     setInputText('');
-    inputRef.current?.focus();
   }, [inputText]);
 
   const renderLine = useCallback(({ item }: { item: MudLine }) => (
@@ -153,11 +171,8 @@ export function TerminalScreen({ route, navigation }: Props) {
   const keyExtractor = useCallback((item: MudLine) => String(item.id), []);
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={90}
-    >
+    <View style={styles.container}>
+      {/* Status bar */}
       <View style={styles.statusBar}>
         <View style={[styles.statusDot, connected ? styles.connected : styles.disconnected]} />
         <Text style={styles.statusText}>
@@ -200,6 +215,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         )}
       </View>
 
+      {/* Output area */}
       <FlatList
         ref={flatListRef}
         data={lines}
@@ -213,29 +229,10 @@ export function TerminalScreen({ route, navigation }: Props) {
         removeClippedSubviews={true}
         maxToRenderPerBatch={20}
         windowSize={15}
+        keyboardShouldPersistTaps="always"
       />
 
-      <MacroBar
-        macros={macros}
-        onPress={handleMacroPress}
-        onLongPress={(macro) => {
-          setEditingMacro(macro);
-          setMacroEditorVisible(true);
-        }}
-        onAddPress={() => {
-          setEditingMacro(null);
-          setMacroEditorVisible(true);
-        }}
-      />
-
-      <MacroEditor
-        visible={macroEditorVisible}
-        macro={editingMacro}
-        onSave={handleMacroSave}
-        onDelete={handleMacroDelete}
-        onClose={() => setMacroEditorVisible(false)}
-      />
-
+      {/* Command input */}
       <View style={styles.inputContainer}>
         <TextInput
           ref={inputRef}
@@ -255,7 +252,47 @@ export function TerminalScreen({ route, navigation }: Props) {
           <Text style={styles.sendText}>Send</Text>
         </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
+
+      {/* F1-F7 macros */}
+      <FKeyBar
+        macros={fkeys}
+        onPress={(macro) => macro && sendCommand(macro.command)}
+        onLongPress={(_macro, index) => {
+          setEditingTarget({ type: 'fkey', index });
+          setEditingMacro(fkeys[index]);
+          setMacroEditorVisible(true);
+        }}
+      />
+
+      {/* Direction pad with F8-F10 */}
+      <DirectionPad
+        onDirection={sendCommand}
+        extraButtons={extraButtons}
+        onExtraLongPress={(index) => {
+          setEditingTarget({ type: 'extra', index });
+          setEditingMacro(extraButtons[index]);
+          setMacroEditorVisible(true);
+        }}
+        fkeys={fkeys}
+        onFKeyPress={(macro) => sendCommand(macro.command)}
+        onFKeyLongPress={(index) => {
+          setEditingTarget({ type: 'fkey', index });
+          setEditingMacro(fkeys[index]);
+          setMacroEditorVisible(true);
+        }}
+      />
+
+      <SafeAreaView edges={['bottom']} style={styles.safeBottom} />
+
+      {/* Macro editor modal */}
+      <MacroEditor
+        visible={macroEditorVisible}
+        macro={editingMacro}
+        onSave={handleMacroSave}
+        onDelete={handleMacroDelete}
+        onClose={() => setMacroEditorVisible(false)}
+      />
+    </View>
   );
 }
 
@@ -309,19 +346,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
+  safeBottom: {
+    backgroundColor: '#111',
+  },
   inputContainer: {
     flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: '#333',
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#111',
+    paddingHorizontal: 4,
+    paddingTop: 2,
+    paddingBottom: 2,
   },
   input: {
     flex: 1,
     color: '#ffffff',
     fontFamily: 'monospace',
-    fontSize: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    fontSize: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    minHeight: 40,
+    backgroundColor: '#0a0a0a',
+    borderWidth: 1,
+    borderColor: '#444',
+    borderRadius: 4,
   },
   sendBtn: {
     justifyContent: 'center',

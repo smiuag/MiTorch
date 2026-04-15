@@ -148,7 +148,8 @@ export class TelnetService {
 
   send(text: string): void {
     if (this.socket) {
-      this.socket.write(text + '\r\n');
+      const data = text + '\r\n';
+      this.socket.write(Buffer.from(data, 'utf8'));
     }
   }
 

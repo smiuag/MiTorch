@@ -7,7 +7,6 @@ import {
   StyleSheet,
   TextInput,
   Modal,
-  Alert,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -77,23 +76,10 @@ export function ServerListScreen({ navigation }: Props) {
     setModalVisible(false);
   };
 
-  const handleDelete = (server: ServerProfile) => {
-    Alert.alert(
-      'Delete Server',
-      `Remove "${server.name}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            const updated = servers.filter(s => s.id !== server.id);
-            setServers(updated);
-            await saveServers(updated);
-          },
-        },
-      ]
-    );
+  const handleDelete = async (server: ServerProfile) => {
+    const updated = servers.filter(s => s.id !== server.id);
+    setServers(updated);
+    await saveServers(updated);
   };
 
   const renderServer = ({ item }: { item: ServerProfile }) => (
