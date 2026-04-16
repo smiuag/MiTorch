@@ -4,11 +4,12 @@ import { AnsiSpan, MudLine } from '../types';
 
 interface AnsiTextProps {
   line: MudLine;
+  fontSize?: number;
 }
 
-export function AnsiText({ line }: AnsiTextProps) {
+export function AnsiText({ line, fontSize = 14 }: AnsiTextProps) {
   return (
-    <Text style={styles.line}>
+    <Text style={[styles.line, { fontSize }]}>
       {line.spans.map((span, i) => (
         <Text
           key={i}

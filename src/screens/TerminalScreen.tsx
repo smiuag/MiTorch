@@ -68,7 +68,11 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [miniPanelVisible, setMiniPanelVisible] = useState(true);
   const [useChannels, setUseChannels] = useState(true);
+  const [fontSize, setFontSize] = useState(14);
+  const [showChannelPanel, setShowChannelPanel] = useState(true);
   const useChannelsRef = useRef(true);
+  const fontSizeRef = useRef(14);
+  const showChannelPanelRef = useRef(true);
   const walkTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const activeChannelRef = useRef<string | null>(null);
   const miniPanelVisibleRef = useRef(true);
@@ -205,7 +209,14 @@ export function TerminalScreen({ route, navigation }: Props) {
     loadFKeys(server.id).then(setFkeys);
     loadExtraButtons(server.id).then(setExtraButtons);
     loadChannelAliases().then(setChannelAliases);
-    loadSettings().then(s => { setUseChannels(s.useChannels); useChannelsRef.current = s.useChannels; });
+    loadSettings().then(s => {
+      setUseChannels(s.useChannels);
+      useChannelsRef.current = s.useChannels;
+      setFontSize(s.fontSize);
+      fontSizeRef.current = s.fontSize;
+      setShowChannelPanel(s.showChannelPanel);
+      showChannelPanelRef.current = s.showChannelPanel;
+    });
     mapServiceRef.current.load();
   }, [server.id]);
 
@@ -520,8 +531,8 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, [keyboardVisible, activeChannel, isLandscape]);
 
   const renderLine = useCallback(({ item }: { item: MudLine }) => (
-    <AnsiText line={item} />
-  ), []);
+    <AnsiText line={item} fontSize={fontSize} />
+  ), [fontSize]);
 
   const keyExtractor = useCallback((item: MudLine) => String(item.id), []);
 
@@ -658,7 +669,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
       {/* In portrait: vital bars + input below output */}
       {!isLandscape && <VitalBars hp={hp} hpMax={hpMax} energy={energy} energyMax={energyMax} />}
-      {!isLandscape && useChannels && channels.length > 0 && <ChannelTabs
+      {!isLandscape && useChannels && showChannelPanel && channels.length > 0 && <ChannelTabs
         channels={channels}
         aliases={channelAliases}
         activeChannel={activeChannel}
@@ -673,6 +684,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         miniPanelVisible={miniPanelVisible}
         onToggleMiniPanel={() => { setMiniPanelVisible(v => { miniPanelVisibleRef.current = !v; return !v; }); }}
         allMessages={channelMessages}
+        fontSize={fontSize}
       />}
       {!isLandscape && !activeChannel && (
         <View style={styles.inputContainer}>
@@ -756,7 +768,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
       {/* In landscape: vital bars + input below buttons */}
       {isLandscape && <VitalBars hp={hp} hpMax={hpMax} energy={energy} energyMax={energyMax} />}
-      {isLandscape && useChannels && channels.length > 0 && <ChannelTabs
+      {isLandscape && useChannels && showChannelPanel && channels.length > 0 && <ChannelTabs
         channels={channels}
         aliases={channelAliases}
         activeChannel={activeChannel}
@@ -771,6 +783,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         miniPanelVisible={miniPanelVisible}
         onToggleMiniPanel={() => { setMiniPanelVisible(v => { miniPanelVisibleRef.current = !v; return !v; }); }}
         allMessages={channelMessages}
+        fontSize={fontSize}
       />}
       {isLandscape && !activeChannel && (
         <View style={styles.inputContainer}>
@@ -812,6 +825,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           lastSentChannelTime.current = Date.now();
         }}
         onClose={() => handleSelectChannel(null)}
+        fontSize={fontSize}
       />
 
       {!keyboardVisible && !isLandscape && !activeChannel && <SafeAreaView edges={['bottom']} style={styles.safeBottom} />}

@@ -46,12 +46,13 @@ interface ChannelTabsProps {
   miniPanelVisible: boolean;
   onToggleMiniPanel: () => void;
   allMessages: ChannelMessage[];
+  fontSize?: number;
 }
 
 export function ChannelTabs({
   channels, aliases, activeChannel,
   onSelectChannel, onAliasChange, onConfigPress,
-  unreadCounts, miniPanelVisible, onToggleMiniPanel, allMessages,
+  unreadCounts, miniPanelVisible, onToggleMiniPanel, allMessages, fontSize = 14,
 }: ChannelTabsProps) {
   const [editingChannel, setEditingChannel] = useState<string | null>(null);
   const [editAlias, setEditAlias] = useState('');
@@ -98,7 +99,7 @@ export function ChannelTabs({
       {miniPanelVisible && !activeChannel && allMessages.length > 0 && (
         <View style={styles.miniPanel}>
           {allMessages.slice(-3).map(msg => (
-            <Text key={msg.id} style={styles.miniPanelLine} numberOfLines={3}>
+            <Text key={msg.id} style={[styles.miniPanelLine, { fontSize }]} numberOfLines={3}>
               <Text style={styles.miniPanelChannel}>[{msg.channel}] </Text>
               {msg.spans.map((span, i) => (
                 <Text
@@ -162,10 +163,11 @@ interface ChannelActivePanelProps {
   visible: boolean;
   onSendMessage: (cmd: string) => void;
   onClose: () => void;
+  fontSize?: number;
 }
 
 export function ChannelActivePanel({
-  messages, channel, alias, visible, onSendMessage, onClose,
+  messages, channel, alias, visible, onSendMessage, onClose, fontSize = 14,
 }: ChannelActivePanelProps) {
   const [chatInput, setChatInput] = useState('');
   const flatListRef = useRef<FlatList>(null);
@@ -191,7 +193,7 @@ export function ChannelActivePanel({
 
   const renderMessage = useCallback(({ item }: { item: ChannelMessage }) => (
     <View style={styles.message}>
-      <Text style={styles.messageText}>
+      <Text style={[styles.messageText, { fontSize }]}>
         {item.spans.map((span, i) => (
           <Text
             key={i}
@@ -205,7 +207,7 @@ export function ChannelActivePanel({
         ))}
       </Text>
     </View>
-  ), []);
+  ), [fontSize]);
 
   if (!visible || !channel) return null;
 

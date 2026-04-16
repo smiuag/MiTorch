@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Switch } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Switch, Slider } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { loadSettings, saveSettings, AppSettings } from '../storage/settingsStorage';
@@ -7,7 +7,7 @@ import { loadSettings, saveSettings, AppSettings } from '../storage/settingsStor
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export function SettingsScreen({ navigation }: Props) {
-  const [settings, setSettings] = useState<AppSettings>({ useChannels: true });
+  const [settings, setSettings] = useState<AppSettings>({ useChannels: true, fontSize: 14, showChannelPanel: true });
 
   useEffect(() => {
     loadSettings().then(setSettings);
@@ -42,6 +42,41 @@ export function SettingsScreen({ navigation }: Props) {
             trackColor={{ false: '#333', true: '#0a5a0a' }}
             thumbColor={settings.useChannels ? '#0c0' : '#666'}
           />
+        </View>
+
+        <View style={[styles.row, styles.marginTop]}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Panel de canales visible</Text>
+            <Text style={styles.rowDesc}>
+              Mostrar u ocultar el panel con las pestañas de canales. Puedes ocultarlo para ver más la pantalla principal.
+            </Text>
+          </View>
+          <Switch
+            value={settings.showChannelPanel}
+            onValueChange={(v) => updateSetting('showChannelPanel', v)}
+            trackColor={{ false: '#333', true: '#0a5a0a' }}
+            thumbColor={settings.showChannelPanel ? '#0c0' : '#666'}
+          />
+        </View>
+
+        <View style={[styles.row, styles.marginTop]}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Tamaño de fuente</Text>
+            <Text style={styles.rowDesc}>
+              Ajusta el tamaño de letra en la terminal y canales. Actual: {settings.fontSize}
+            </Text>
+            <Slider
+              style={styles.slider}
+              minimumValue={10}
+              maximumValue={20}
+              step={1}
+              value={settings.fontSize}
+              onValueChange={(v) => updateSetting('fontSize', v)}
+              minimumTrackTintColor="#0c0"
+              maximumTrackTintColor="#333"
+              thumbTintColor="#0c0"
+            />
+          </View>
         </View>
       </View>
     </View>
@@ -103,5 +138,13 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 11,
     fontFamily: 'monospace',
+  },
+  marginTop: {
+    marginTop: 12,
+  },
+  slider: {
+    width: '100%',
+    height: 40,
+    marginTop: 12,
   },
 });
