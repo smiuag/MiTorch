@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Switch, Slider } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Switch } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { loadSettings, saveSettings, AppSettings } from '../storage/settingsStorage';
@@ -59,23 +59,27 @@ export function SettingsScreen({ navigation }: Props) {
           />
         </View>
 
-        <View style={[styles.row, styles.marginTop]}>
+        <View style={[styles.row, styles.marginTop, styles.fontSizeRow]}>
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Tamaño de fuente</Text>
             <Text style={styles.rowDesc}>
               Ajusta el tamaño de letra en la terminal y canales. Actual: {settings.fontSize}
             </Text>
-            <Slider
-              style={styles.slider}
-              minimumValue={10}
-              maximumValue={20}
-              step={1}
-              value={settings.fontSize}
-              onValueChange={(v) => updateSetting('fontSize', v)}
-              minimumTrackTintColor="#0c0"
-              maximumTrackTintColor="#333"
-              thumbTintColor="#0c0"
-            />
+          </View>
+          <View style={styles.fontSizeControls}>
+            <TouchableOpacity
+              style={[styles.fontBtn, settings.fontSize <= 10 && styles.fontBtnDisabled]}
+              onPress={() => settings.fontSize > 10 && updateSetting('fontSize', settings.fontSize - 1)}
+            >
+              <Text style={[styles.fontBtnText, settings.fontSize <= 10 && styles.fontBtnTextDisabled]}>−</Text>
+            </TouchableOpacity>
+            <Text style={styles.fontSizeValue}>{settings.fontSize}</Text>
+            <TouchableOpacity
+              style={[styles.fontBtn, settings.fontSize >= 20 && styles.fontBtnDisabled]}
+              onPress={() => settings.fontSize < 20 && updateSetting('fontSize', settings.fontSize + 1)}
+            >
+              <Text style={[styles.fontBtnText, settings.fontSize >= 20 && styles.fontBtnTextDisabled]}>+</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -142,9 +146,47 @@ const styles = StyleSheet.create({
   marginTop: {
     marginTop: 12,
   },
-  slider: {
-    width: '100%',
-    height: 40,
+  fontSizeRow: {
+    alignItems: 'flex-start',
+    flexDirection: 'column',
+  },
+  fontSizeControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 12,
+    alignSelf: 'flex-end',
+    gap: 8,
+  },
+  fontBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#0a3a0a',
+    borderWidth: 1,
+    borderColor: '#0c0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fontBtnDisabled: {
+    backgroundColor: '#1a1a1a',
+    borderColor: '#333',
+  },
+  fontBtnText: {
+    color: '#0c0',
+    fontSize: 18,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+  },
+  fontBtnTextDisabled: {
+    color: '#333',
+  },
+  fontSizeValue: {
+    color: '#0c0',
+    fontSize: 14,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+    minWidth: 30,
+    textAlign: 'center',
   },
 });
