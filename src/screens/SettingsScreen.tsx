@@ -59,11 +59,11 @@ export function SettingsScreen({ navigation }: Props) {
           />
         </View>
 
-        <View style={[styles.row, styles.marginTop, styles.fontSizeRow]}>
+        <View style={[styles.row, styles.marginTop]}>
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Tamaño de fuente</Text>
             <Text style={styles.rowDesc}>
-              Ajusta el tamaño de letra en la terminal y canales. Actual: {settings.fontSize}
+              Ajusta el tamaño de letra en la terminal y canales
             </Text>
           </View>
           <View style={styles.fontSizeControls}>
@@ -146,16 +146,10 @@ const styles = StyleSheet.create({
   marginTop: {
     marginTop: 12,
   },
-  fontSizeRow: {
-    alignItems: 'flex-start',
-    flexDirection: 'column',
-  },
   fontSizeControls: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 12,
-    alignSelf: 'flex-end',
     gap: 8,
   },
   fontBtn: {
