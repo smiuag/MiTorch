@@ -112,8 +112,18 @@ export function ServerListScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Al'jhtar Store</Text>
-        <Text style={styles.subtitle}>MUD Client</Text>
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.title}>Al'jhtar Store</Text>
+            <Text style={styles.subtitle}>MUD Client</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.settingsBtn}
+            onPress={() => navigation.navigate('Settings')}
+          >
+            <Text style={styles.settingsIcon}>⚙</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <FlatList
@@ -202,7 +212,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#111',
     borderBottomWidth: 1,
     borderBottomColor: '#333',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  settingsBtn: {
+    padding: 8,
+  },
+  settingsIcon: {
+    fontSize: 24,
+    color: '#666',
   },
   title: {
     fontSize: 28,

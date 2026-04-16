@@ -1,0 +1,107 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Switch } from 'react-native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../types';
+import { loadSettings, saveSettings, AppSettings } from '../storage/settingsStorage';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
+
+export function SettingsScreen({ navigation }: Props) {
+  const [settings, setSettings] = useState<AppSettings>({ useChannels: true });
+
+  useEffect(() => {
+    loadSettings().then(setSettings);
+  }, []);
+
+  const updateSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+    const updated = { ...settings, [key]: value };
+    setSettings(updated);
+    saveSettings(updated);
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Text style={styles.backText}>{'< Volver'}</Text>
+        </TouchableOpacity>
+        <Text style={styles.title}>Configuración</Text>
+      </View>
+
+      <View style={styles.section}>
+        <View style={styles.row}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Gestionar canales</Text>
+            <Text style={styles.rowDesc}>
+              Separar los canales (chat, bando...) en pestañas con panel propio. Si se desactiva, los mensajes aparecen en la pantalla principal.
+            </Text>
+          </View>
+          <Switch
+            value={settings.useChannels}
+            onValueChange={(v) => updateSetting('useChannels', v)}
+            trackColor={{ false: '#333', true: '#0a5a0a' }}
+            thumbColor={settings.useChannels ? '#0c0' : '#666'}
+          />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0a0a0a',
+  },
+  header: {
+    paddingTop: 50,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+    backgroundColor: '#111',
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  backBtn: {
+    marginBottom: 8,
+  },
+  backText: {
+    color: '#0c0',
+    fontSize: 14,
+    fontFamily: 'monospace',
+  },
+  title: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+  },
+  section: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  rowInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  rowTitle: {
+    color: '#ccc',
+    fontSize: 14,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+    marginBottom: 4,
+  },
+  rowDesc: {
+    color: '#666',
+    fontSize: 11,
+    fontFamily: 'monospace',
+  },
+});

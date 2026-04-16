@@ -30,4 +30,5 @@ export interface Macro {
 export type RootStackParamList = {
   ServerList: undefined;
   Terminal: { server: ServerProfile };
+  Settings: undefined;
 };

@@ -42,11 +42,16 @@ interface ChannelTabsProps {
   onSelectChannel: (channel: string | null) => void;
   onAliasChange: (channel: string, alias: string) => void;
   onConfigPress: () => void;
+  unreadCounts: Record<string, number>;
+  miniPanelVisible: boolean;
+  onToggleMiniPanel: () => void;
+  allMessages: ChannelMessage[];
 }
 
 export function ChannelTabs({
   channels, aliases, activeChannel,
   onSelectChannel, onAliasChange, onConfigPress,
+  unreadCounts, miniPanelVisible, onToggleMiniPanel, allMessages,
 }: ChannelTabsProps) {
   const [editingChannel, setEditingChannel] = useState<string | null>(null);
   const [editAlias, setEditAlias] = useState('');
@@ -73,13 +78,43 @@ export function ChannelTabs({
               <Text style={[styles.tabText, activeChannel === ch && styles.activeTabText]}>
                 {ch}
               </Text>
+              {(unreadCounts[ch] || 0) > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{unreadCounts[ch]}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           ))}
         </ScrollView>
+        <TouchableOpacity style={styles.miniPanelBtn} onPress={onToggleMiniPanel}>
+          <Text style={styles.miniPanelBtnText}>{miniPanelVisible ? '▼' : '▲'}</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.configBtn} onPress={onConfigPress}>
           <Text style={styles.configIcon}>⚙</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Mini panel - last 3 messages from all channels */}
+      {miniPanelVisible && !activeChannel && allMessages.length > 0 && (
+        <View style={styles.miniPanel}>
+          {allMessages.slice(-3).map(msg => (
+            <Text key={msg.id} style={styles.miniPanelLine} numberOfLines={1}>
+              <Text style={styles.miniPanelChannel}>[{msg.channel}] </Text>
+              {msg.spans.map((span, i) => (
+                <Text
+                  key={i}
+                  style={[
+                    span.fg ? { color: span.fg } : null,
+                    span.bold ? { fontWeight: 'bold' } : null,
+                  ]}
+                >
+                  {span.text}
+                </Text>
+              ))}
+            </Text>
+          ))}
+        </View>
+      )}
 
       <Modal
         visible={editingChannel !== null}
@@ -247,6 +282,34 @@ const styles = StyleSheet.create({
   activeTabText: {
     color: '#aaf',
   },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#cc0000',
+    borderRadius: 7,
+    minWidth: 14,
+    height: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 3,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 8,
+    fontWeight: 'bold',
+  },
+  miniPanelBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 3,
+    backgroundColor: '#1a1a1a',
+    marginRight: 2,
+  },
+  miniPanelBtnText: {
+    fontSize: 10,
+    color: '#666',
+  },
   configBtn: {
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -256,6 +319,24 @@ const styles = StyleSheet.create({
   configIcon: {
     fontSize: 14,
     color: '#666',
+  },
+  miniPanel: {
+    backgroundColor: 'rgba(5, 5, 20, 0.9)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(100, 100, 255, 0.15)',
+  },
+  miniPanelLine: {
+    color: '#999',
+    fontSize: 10,
+    fontFamily: 'monospace',
+    lineHeight: 14,
+  },
+  miniPanelChannel: {
+    color: '#668',
+    fontSize: 10,
+    fontFamily: 'monospace',
   },
   activePanelContainer: {
     height: 160,

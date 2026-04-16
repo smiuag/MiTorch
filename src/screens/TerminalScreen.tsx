@@ -24,6 +24,7 @@ import { VitalBars } from '../components/VitalBars';
 import { RoomSearchResults } from '../components/RoomSearchResults';
 import { ChannelTabs, ChannelActivePanel, ChannelMessage, nextMsgId } from '../components/ChannelPanel';
 import { loadChannelAliases, saveChannelAliases } from '../storage/channelStorage';
+import { loadSettings } from '../storage/settingsStorage';
 import { ConfigProfileModal } from '../components/ConfigProfileModal';
 import { MapService, MapRoom } from '../services/mapService';
 import { loadFKeys, saveFKeys } from '../storage/fkeyStorage';
@@ -64,7 +65,22 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [channelAliases, setChannelAliases] = useState<Record<string, string>>({});
   const [configModalVisible, setConfigModalVisible] = useState(false);
   const [currentProfile, setCurrentProfile] = useState('');
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [miniPanelVisible, setMiniPanelVisible] = useState(true);
+  const [useChannels, setUseChannels] = useState(true);
+  const useChannelsRef = useRef(true);
   const walkTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const activeChannelRef = useRef<string | null>(null);
+  const miniPanelVisibleRef = useRef(true);
+  const lastSentChannelTime = useRef(0);
+
+  const handleSelectChannel = useCallback((ch: string | null) => {
+    setActiveChannel(ch);
+    activeChannelRef.current = ch;
+    if (ch) {
+      setUnreadCounts(prev => ({ ...prev, [ch]: 0 }));
+    }
+  }, []);
   const flatListRef = useRef<FlatList>(null);
   const telnetRef = useRef<TelnetService | null>(null);
   const inputRef = useRef<TextInput>(null);
@@ -114,6 +130,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     loadFKeys(server.id).then(setFkeys);
     loadExtraButtons(server.id).then(setExtraButtons);
     loadChannelAliases().then(setChannelAliases);
+    loadSettings().then(s => { setUseChannels(s.useChannels); useChannelsRef.current = s.useChannels; });
     mapServiceRef.current.load();
   }, [server.id]);
 
@@ -270,12 +287,29 @@ export function TerminalScreen({ route, navigation }: Props) {
         // Comm: channels
         if (module === 'Comm.Canales' && data && typeof data === 'object') {
           setChannels(Object.keys(data));
+        } else if (module === 'Comm.EnciendeCanal' && data?.canal) {
+          setChannels(prev => prev.includes(data.canal) ? prev : [...prev, data.canal]);
+        } else if (module === 'Comm.ApagaCanal' && data?.canal) {
+          setChannels(prev => prev.filter(ch => ch !== data.canal));
+          if (activeChannelRef.current === data.canal) {
+            handleSelectChannel(null);
+          }
         } else if ((module === 'Comm.MensajeCanal' || module === 'Comm.MensajeCanalHistorico') && data?.canal && data?.mensaje) {
-          const spans = parseAnsi(data.mensaje);
-          setChannelMessages(prev => {
-            const updated = [...prev, { id: nextMsgId(), channel: data.canal, spans }];
-            return updated.length > 500 ? updated.slice(-500) : updated;
-          });
+          if (!useChannelsRef.current) {
+            // No channel management: show in main output
+            addLine(data.mensaje);
+          } else {
+            const spans = parseAnsi(data.mensaje);
+            setChannelMessages(prev => {
+              const updated = [...prev, { id: nextMsgId(), channel: data.canal, spans }];
+              return updated.length > 500 ? updated.slice(-500) : updated;
+            });
+            const isOwnEcho = Date.now() - lastSentChannelTime.current < 1000;
+            const isReading = activeChannelRef.current === data.canal || miniPanelVisibleRef.current;
+            if (!isOwnEcho && !isReading) {
+              setUnreadCounts(prev => ({ ...prev, [data.canal]: (prev[data.canal] || 0) + 1 }));
+            }
+          }
         }
 
         // Char.Status: vitals (pvs, pe, xp)
@@ -346,7 +380,6 @@ export function TerminalScreen({ route, navigation }: Props) {
           setSearchVisible(true);
         }
       }
-      addLine(`> ${text}`);
       setInputText('');
       return;
     }
@@ -362,13 +395,19 @@ export function TerminalScreen({ route, navigation }: Props) {
     if (telnetRef.current) {
       telnetRef.current.send(text);
     }
-    addLine(`> ${text}`);
     setCommandHistory(prev => [...prev.slice(-100), text]);
     setInputText('');
     // Always scroll to bottom when sending
     isAtBottomRef.current = true;
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
   }, [inputText, walking, stopWalk, walkTo]);
+
+  // Scroll to end when layout changes (keyboard, channel, buttons appear/disappear)
+  useEffect(() => {
+    isAtBottomRef.current = true;
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 300);
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 600);
+  }, [keyboardVisible, activeChannel]);
 
   const renderLine = useCallback(({ item }: { item: MudLine }) => (
     <AnsiText line={item} />
@@ -416,12 +455,21 @@ export function TerminalScreen({ route, navigation }: Props) {
                 onGMCP: (module: string, data: any) => {
                   if (module === 'Comm.Canales' && data && typeof data === 'object') {
                     setChannels(Object.keys(data));
+                  } else if (module === 'Comm.EnciendeCanal' && data?.canal) {
+                    setChannels(prev => prev.includes(data.canal) ? prev : [...prev, data.canal]);
+                  } else if (module === 'Comm.ApagaCanal' && data?.canal) {
+                    setChannels(prev => prev.filter(ch => ch !== data.canal));
+                    if (activeChannelRef.current === data.canal) handleSelectChannel(null);
                   } else if ((module === 'Comm.MensajeCanal' || module === 'Comm.MensajeCanalHistorico') && data?.canal && data?.mensaje) {
-                    const spans = parseAnsi(data.mensaje);
-                    setChannelMessages(prev => {
-                      const updated = [...prev, { id: nextMsgId(), channel: data.canal, spans }];
-                      return updated.length > 500 ? updated.slice(-500) : updated;
-                    });
+                    if (!useChannelsRef.current) {
+                      addLine(data.mensaje);
+                    } else {
+                      const spans = parseAnsi(data.mensaje);
+                      setChannelMessages(prev => {
+                        const updated = [...prev, { id: nextMsgId(), channel: data.canal, spans }];
+                        return updated.length > 500 ? updated.slice(-500) : updated;
+                      });
+                    }
                   }
                   if (module === 'Char.Status' && data && typeof data === 'object') {
                     if (data.pvs) {
@@ -460,9 +508,9 @@ export function TerminalScreen({ route, navigation }: Props) {
       <View style={isLandscape ? styles.landscapeLeft : styles.portraitLeft}>
       <View style={styles.outputWrapper} onTouchStart={() => {
         if (activeChannel) {
-          setActiveChannel(null);
-          Keyboard.dismiss();
+          handleSelectChannel(null);
         }
+        Keyboard.dismiss();
       }}>
       <MiniMap
         currentRoom={currentRoom}
@@ -497,17 +545,21 @@ export function TerminalScreen({ route, navigation }: Props) {
 
       {/* In portrait: vital bars + input below output */}
       {!isLandscape && <VitalBars hp={hp} hpMax={hpMax} energy={energy} energyMax={energyMax} />}
-      {!isLandscape && channels.length > 0 && <ChannelTabs
+      {!isLandscape && useChannels && channels.length > 0 && <ChannelTabs
         channels={channels}
         aliases={channelAliases}
         activeChannel={activeChannel}
-        onSelectChannel={setActiveChannel}
+        onSelectChannel={handleSelectChannel}
         onAliasChange={(ch, alias) => {
           const updated = { ...channelAliases, [ch]: alias };
           setChannelAliases(updated);
           saveChannelAliases(updated);
         }}
         onConfigPress={() => setConfigModalVisible(true)}
+        unreadCounts={unreadCounts}
+        miniPanelVisible={miniPanelVisible}
+        onToggleMiniPanel={() => { setMiniPanelVisible(v => { miniPanelVisibleRef.current = !v; return !v; }); }}
+        allMessages={channelMessages}
       />}
       {!isLandscape && !activeChannel && (
         <View style={styles.inputContainer}>
@@ -591,17 +643,21 @@ export function TerminalScreen({ route, navigation }: Props) {
 
       {/* In landscape: vital bars + input below buttons */}
       {isLandscape && <VitalBars hp={hp} hpMax={hpMax} energy={energy} energyMax={energyMax} />}
-      {isLandscape && channels.length > 0 && <ChannelTabs
+      {isLandscape && useChannels && channels.length > 0 && <ChannelTabs
         channels={channels}
         aliases={channelAliases}
         activeChannel={activeChannel}
-        onSelectChannel={setActiveChannel}
+        onSelectChannel={handleSelectChannel}
         onAliasChange={(ch: string, alias: string) => {
           const updated = { ...channelAliases, [ch]: alias };
           setChannelAliases(updated);
           saveChannelAliases(updated);
         }}
         onConfigPress={() => setConfigModalVisible(true)}
+        unreadCounts={unreadCounts}
+        miniPanelVisible={miniPanelVisible}
+        onToggleMiniPanel={() => { setMiniPanelVisible(v => { miniPanelVisibleRef.current = !v; return !v; }); }}
+        allMessages={channelMessages}
       />}
       {isLandscape && !activeChannel && (
         <View style={styles.inputContainer}>
@@ -637,12 +693,12 @@ export function TerminalScreen({ route, navigation }: Props) {
         messages={channelMessages}
         channel={activeChannel}
         alias={activeChannel ? (channelAliases[activeChannel] || activeChannel) : ''}
-        visible={activeChannel !== null}
+        visible={useChannels && activeChannel !== null}
         onSendMessage={(cmd) => {
           if (telnetRef.current) telnetRef.current.send(cmd);
-          addLine(`> ${cmd}`);
+          lastSentChannelTime.current = Date.now();
         }}
-        onClose={() => setActiveChannel(null)}
+        onClose={() => handleSelectChannel(null)}
       />
 
       {!keyboardVisible && !isLandscape && !activeChannel && <SafeAreaView edges={['bottom']} style={styles.safeBottom} />}
