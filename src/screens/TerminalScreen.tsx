@@ -7,6 +7,7 @@ import {
   Text,
   TouchableOpacity,
   Keyboard,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -17,9 +18,12 @@ import { AnsiText } from '../components/AnsiText';
 import { FKeyBar } from '../components/FKeyBar';
 import { MacroEditor } from '../components/MacroEditor';
 import { DirectionPad } from '../components/DirectionPad';
+import { LandscapeButtons } from '../components/LandscapeButtons';
 import { MiniMap } from '../components/MiniMap';
 import { VitalBars } from '../components/VitalBars';
 import { RoomSearchResults } from '../components/RoomSearchResults';
+import { ChannelTabs, ChannelActivePanel, ChannelMessage, nextMsgId } from '../components/ChannelPanel';
+import { loadChannelAliases, saveChannelAliases, exportConfig } from '../storage/channelStorage';
 import { MapService, MapRoom } from '../services/mapService';
 import { loadFKeys, saveFKeys } from '../storage/fkeyStorage';
 import { loadExtraButtons, saveExtraButtons } from '../storage/extraButtonStorage';
@@ -30,6 +34,8 @@ const MAX_LINES = 2000;
 let lineIdCounter = 0;
 
 export function TerminalScreen({ route, navigation }: Props) {
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
   const { server } = route.params;
   const [lines, setLines] = useState<MudLine[]>([]);
   const [inputText, setInputText] = useState('');
@@ -51,6 +57,10 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [searchVisible, setSearchVisible] = useState(false);
   const [walking, setWalking] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [channelMessages, setChannelMessages] = useState<ChannelMessage[]>([]);
+  const [channels, setChannels] = useState<string[]>([]);
+  const [activeChannel, setActiveChannel] = useState<string | null>(null);
+  const [channelAliases, setChannelAliases] = useState<Record<string, string>>({});
   const walkTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const flatListRef = useRef<FlatList>(null);
   const telnetRef = useRef<TelnetService | null>(null);
@@ -61,8 +71,16 @@ export function TerminalScreen({ route, navigation }: Props) {
   const recentLinesRef = useRef<string[]>([]);
   const isAtBottomRef = useRef(true);
 
+  const lastLineBlankRef = useRef(false);
+
   const addLine = useCallback((text: string) => {
-    if (text.trim().length === 0) return;
+    const isBlank = text.trim().length === 0;
+    if (isBlank) {
+      if (lastLineBlankRef.current) return; // skip consecutive blanks
+      lastLineBlankRef.current = true;
+    } else {
+      lastLineBlankRef.current = false;
+    }
 
     const spans = parseAnsi(text);
     const newLine: MudLine = { id: lineIdCounter++, spans };
@@ -92,6 +110,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   useEffect(() => {
     loadFKeys(server.id).then(setFkeys);
     loadExtraButtons(server.id).then(setExtraButtons);
+    loadChannelAliases().then(setChannelAliases);
     mapServiceRef.current.load();
   }, [server.id]);
 
@@ -138,6 +157,30 @@ export function TerminalScreen({ route, navigation }: Props) {
       walkTimers.current.push(t);
     }
   }, [addSystemLine]);
+
+  const handleLocate = useCallback(() => {
+    recentLinesRef.current = [];
+    sendCommand('ojear');
+    setTimeout(() => {
+      let foundRoom: MapRoom | null = null;
+      for (const line of recentLinesRef.current) {
+        if (line.match(/\[.*\]\s*$/)) {
+          const bracketIdx = line.lastIndexOf('[');
+          let roomName = line.substring(0, bracketIdx).trim();
+          roomName = roomName.replace(/^[>\]]\s*/, '');
+          const mapSvc = mapServiceRef.current;
+          if (mapSvc.isLoaded && roomName) {
+            mapSvc.setCurrentRoom(0);
+            const room = mapSvc.findRoom(roomName);
+            if (room) foundRoom = room;
+          }
+        }
+      }
+      if (foundRoom) {
+        updateMapPosition(foundRoom);
+      }
+    }, 1500);
+  }, []);
 
   const sendCommand = useCallback((command: string) => {
     if (!telnetRef.current) return;
@@ -221,6 +264,17 @@ export function TerminalScreen({ route, navigation }: Props) {
         addSystemLine(`--- Error: ${error} ---`);
       },
       onGMCP: (module: string, data: any) => {
+        // Comm: channels
+        if (module === 'Comm.Canales' && data && typeof data === 'object') {
+          setChannels(Object.keys(data));
+        } else if ((module === 'Comm.MensajeCanal' || module === 'Comm.MensajeCanalHistorico') && data?.canal && data?.mensaje) {
+          const spans = parseAnsi(data.mensaje);
+          setChannelMessages(prev => {
+            const updated = [...prev, { id: nextMsgId(), channel: data.canal, spans }];
+            return updated.length > 500 ? updated.slice(-500) : updated;
+          });
+        }
+
         // Char.Status: vitals (pvs, pe, xp)
         if (module === 'Char.Status' && data && typeof data === 'object') {
           if (data.pvs) {
@@ -320,13 +374,15 @@ export function TerminalScreen({ route, navigation }: Props) {
   const keyExtractor = useCallback((item: MudLine) => String(item.id), []);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       {/* Status bar */}
       <View style={styles.statusBar}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Text style={styles.backText}>{'<'}</Text>
+        </TouchableOpacity>
         <View style={[styles.statusDot, connected ? styles.connected : styles.disconnected]} />
-        <Text style={styles.statusText}>
-          {connected ? `${server.host}:${server.port}` : 'Disconnected'}
-        </Text>
+        <Text style={styles.statusName} numberOfLines={1}>{server.name}</Text>
+        <Text style={styles.statusHost}>{server.host}:{server.port}</Text>
         {!connected && (
           <TouchableOpacity
             style={styles.reconnectBtn}
@@ -355,6 +411,15 @@ export function TerminalScreen({ route, navigation }: Props) {
                 },
                 onError: (error: string) => addSystemLine(`--- Error: ${error} ---`),
                 onGMCP: (module: string, data: any) => {
+                  if (module === 'Comm.Canales' && data && typeof data === 'object') {
+                    setChannels(Object.keys(data));
+                  } else if ((module === 'Comm.MensajeCanal' || module === 'Comm.MensajeCanalHistorico') && data?.canal && data?.mensaje) {
+                    const spans = parseAnsi(data.mensaje);
+                    setChannelMessages(prev => {
+                      const updated = [...prev, { id: nextMsgId(), channel: data.canal, spans }];
+                      return updated.length > 500 ? updated.slice(-500) : updated;
+                    });
+                  }
                   if (module === 'Char.Status' && data && typeof data === 'object') {
                     if (data.pvs) {
                       if (data.pvs.min !== undefined) setHp(data.pvs.min);
@@ -385,8 +450,17 @@ export function TerminalScreen({ route, navigation }: Props) {
         )}
       </View>
 
-      {/* Output area with map overlay */}
-      <View style={styles.outputWrapper}>
+      {/* Main content area */}
+      <View style={isLandscape ? styles.landscapeBody : styles.portraitBody}>
+
+      {/* Left side: output only (landscape) or output+input (portrait) */}
+      <View style={isLandscape ? styles.landscapeLeft : styles.portraitLeft}>
+      <View style={styles.outputWrapper} onTouchStart={() => {
+        if (activeChannel) {
+          setActiveChannel(null);
+          Keyboard.dismiss();
+        }
+      }}>
       <MiniMap
         currentRoom={currentRoom}
         nearbyRooms={nearbyRooms}
@@ -418,86 +492,163 @@ export function TerminalScreen({ route, navigation }: Props) {
       />
       </View>
 
-      {/* Vital bars */}
-      <VitalBars hp={hp} hpMax={hpMax} energy={energy} energyMax={energyMax} />
-
-      {/* Command input */}
-      <View style={styles.inputContainer}>
-        <TextInput
-          ref={inputRef}
-          style={styles.input}
-          value={inputText}
-          onChangeText={setInputText}
-          onSubmitEditing={handleSend}
-          placeholder="Enter command..."
-          placeholderTextColor="#666"
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoComplete="off"
-          returnKeyType="send"
-          blurOnSubmit={false}
-          keyboardAppearance="dark"
-          onFocus={() => setKeyboardVisible(true)}
-          onBlur={() => setKeyboardVisible(false)}
-        />
-        <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
-          <Text style={styles.sendText}>Send</Text>
-        </TouchableOpacity>
+      {/* In portrait: vital bars + input below output */}
+      {!isLandscape && <VitalBars hp={hp} hpMax={hpMax} energy={energy} energyMax={energyMax} />}
+      {!isLandscape && channels.length > 0 && <ChannelTabs
+        channels={channels}
+        aliases={channelAliases}
+        activeChannel={activeChannel}
+        onSelectChannel={setActiveChannel}
+        onAliasChange={(ch, alias) => {
+          const updated = { ...channelAliases, [ch]: alias };
+          setChannelAliases(updated);
+          saveChannelAliases(updated);
+        }}
+        onConfigPress={async () => {
+          const config = await exportConfig();
+          addSystemLine('--- Config: ' + config.substring(0, 100) + '... ---');
+        }}
+      />}
+      {!isLandscape && !activeChannel && (
+        <View style={styles.inputContainer}>
+          <TextInput
+            ref={inputRef}
+            style={styles.input}
+            value={inputText}
+            onChangeText={setInputText}
+            onSubmitEditing={handleSend}
+            placeholder="Enter command..."
+            placeholderTextColor="#666"
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="off"
+            returnKeyType="send"
+            blurOnSubmit={false}
+            disableFullscreenUI={true}
+            keyboardAppearance="dark"
+            onFocus={() => setKeyboardVisible(true)}
+            onBlur={() => setKeyboardVisible(false)}
+          />
+          <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
+            <Text style={styles.sendText}>Send</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       </View>
 
-      {/* F-keys and direction pad - hidden when keyboard is open */}
-      {!keyboardVisible && <FKeyBar
-        macros={fkeys}
-        onPress={(macro) => macro && sendCommand(macro.command)}
-        onLongPress={(_macro, index) => {
-          setEditingTarget({ type: 'fkey', index });
-          setEditingMacro(fkeys[index]);
-          setMacroEditorVisible(true);
+      {/* Right side (landscape) or bottom (portrait): buttons - hidden when channel active */}
+      {(!keyboardVisible || isLandscape) && !activeChannel && <View style={isLandscape ? styles.landscapeRight : styles.portraitBottom}>
+
+      {isLandscape ? (
+        <LandscapeButtons
+          fkeys={fkeys}
+          extraButtons={extraButtons}
+          onFKeyPress={(macro) => sendCommand(macro.command)}
+          onFKeyLongPress={(index) => {
+            setEditingTarget({ type: 'fkey', index });
+            setEditingMacro(fkeys[index]);
+            setMacroEditorVisible(true);
+          }}
+          onExtraPress={(macro) => sendCommand(macro.command)}
+          onExtraLongPress={(index) => {
+            setEditingTarget({ type: 'extra', index });
+            setEditingMacro(extraButtons[index]);
+            setMacroEditorVisible(true);
+          }}
+          onDirection={sendCommand}
+          onLocate={handleLocate}
+        />
+      ) : (
+        <>
+          <FKeyBar
+            macros={fkeys}
+            onPress={(macro) => macro && sendCommand(macro.command)}
+            onLongPress={(_macro, index) => {
+              setEditingTarget({ type: 'fkey', index });
+              setEditingMacro(fkeys[index]);
+              setMacroEditorVisible(true);
+            }}
+          />
+          <DirectionPad
+            onDirection={sendCommand}
+            extraButtons={extraButtons}
+            onExtraLongPress={(index) => {
+              setEditingTarget({ type: 'extra', index });
+              setEditingMacro(extraButtons[index]);
+              setMacroEditorVisible(true);
+            }}
+            fkeys={fkeys}
+            onFKeyPress={(macro) => sendCommand(macro.command)}
+            onLocate={handleLocate}
+            onFKeyLongPress={(index) => {
+              setEditingTarget({ type: 'fkey', index });
+              setEditingMacro(fkeys[index]);
+              setMacroEditorVisible(true);
+            }}
+          />
+        </>
+      )}
+
+      {/* In landscape: vital bars + input below buttons */}
+      {isLandscape && <VitalBars hp={hp} hpMax={hpMax} energy={energy} energyMax={energyMax} />}
+      {isLandscape && channels.length > 0 && <ChannelTabs
+        channels={channels}
+        aliases={channelAliases}
+        activeChannel={activeChannel}
+        onSelectChannel={setActiveChannel}
+        onAliasChange={(ch: string, alias: string) => {
+          const updated = { ...channelAliases, [ch]: alias };
+          setChannelAliases(updated);
+          saveChannelAliases(updated);
+        }}
+        onConfigPress={async () => {
+          const config = await exportConfig();
+          addSystemLine('--- Config: ' + config.substring(0, 100) + '... ---');
         }}
       />}
+      {isLandscape && !activeChannel && (
+        <View style={styles.inputContainer}>
+          <TextInput
+            ref={inputRef}
+            style={styles.input}
+            value={inputText}
+            onChangeText={setInputText}
+            onSubmitEditing={handleSend}
+            placeholder="Enter command..."
+            placeholderTextColor="#666"
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="off"
+            returnKeyType="send"
+            blurOnSubmit={false}
+            disableFullscreenUI={true}
+            keyboardAppearance="dark"
+            onFocus={() => setKeyboardVisible(true)}
+            onBlur={() => setKeyboardVisible(false)}
+          />
+          <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
+            <Text style={styles.sendText}>Send</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      </View>}
 
-      {/* Direction pad with F8-F10 */}
-      {!keyboardVisible && <DirectionPad
-        onDirection={sendCommand}
-        extraButtons={extraButtons}
-        onExtraLongPress={(index) => {
-          setEditingTarget({ type: 'extra', index });
-          setEditingMacro(extraButtons[index]);
-          setMacroEditorVisible(true);
-        }}
-        fkeys={fkeys}
-        onFKeyPress={(macro) => sendCommand(macro.command)}
-        onLocate={() => {
-          recentLinesRef.current = [];
-          sendCommand('ojear');
-          setTimeout(() => {
-            let foundRoom: MapRoom | null = null;
-            for (const line of recentLinesRef.current) {
-              if (line.match(/\[.*\]\s*$/)) {
-                const bracketIdx = line.lastIndexOf('[');
-                let roomName = line.substring(0, bracketIdx).trim();
-                roomName = roomName.replace(/^[>\]]\s*/, '');
-                const mapSvc = mapServiceRef.current;
-                if (mapSvc.isLoaded && roomName) {
-                  mapSvc.setCurrentRoom(0);
-                  const room = mapSvc.findRoom(roomName);
-                  if (room) foundRoom = room;
-                }
-              }
-            }
-            if (foundRoom) {
-              updateMapPosition(foundRoom);
-            }
-          }, 1500);
-        }}
-        onFKeyLongPress={(index) => {
-          setEditingTarget({ type: 'fkey', index });
-          setEditingMacro(fkeys[index]);
-          setMacroEditorVisible(true);
-        }}
-      />}
+      </View>
 
-      {!keyboardVisible && <SafeAreaView edges={['bottom']} style={styles.safeBottom} />}
+      {/* Active channel panel - replaces buttons when a channel is selected */}
+      <ChannelActivePanel
+        messages={channelMessages}
+        channel={activeChannel}
+        alias={activeChannel ? (channelAliases[activeChannel] || activeChannel) : ''}
+        visible={activeChannel !== null}
+        onSendMessage={(cmd) => {
+          if (telnetRef.current) telnetRef.current.send(cmd);
+          addLine(`> ${cmd}`);
+        }}
+        onClose={() => setActiveChannel(null)}
+      />
+
+      {!keyboardVisible && !isLandscape && !activeChannel && <SafeAreaView edges={['bottom']} style={styles.safeBottom} />}
 
       {/* Room search results */}
       <RoomSearchResults
@@ -515,7 +666,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         onDelete={handleMacroDelete}
         onClose={() => setMacroEditorVisible(false)}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -524,20 +675,67 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000000',
   },
+  portraitBody: {
+    flex: 1,
+  },
+  landscapeBody: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  portraitLeft: {
+    flex: 1,
+  },
+  landscapeLeft: {
+    flex: 1,
+  },
+  portraitBottom: {
+  },
+  landscapeRight: {
+    width: 280,
+    backgroundColor: '#111',
+    borderLeftWidth: 1,
+    borderLeftColor: '#333',
+  },
+  safeTop: {
+    backgroundColor: '#111',
+  },
   statusBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#1a1a1a',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    backgroundColor: '#111',
     borderBottomWidth: 1,
     borderBottomColor: '#333',
   },
+  backBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  backText: {
+    color: '#00cc00',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 8,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
+  },
+  statusName: {
+    color: '#00cc00',
+    fontSize: 11,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
+    marginRight: 6,
+    flexShrink: 1,
+  },
+  statusHost: {
+    color: '#666',
+    fontSize: 10,
+    fontFamily: 'monospace',
+    flex: 1,
   },
   connected: {
     backgroundColor: '#00cc00',
@@ -545,21 +743,15 @@ const styles = StyleSheet.create({
   disconnected: {
     backgroundColor: '#cc0000',
   },
-  statusText: {
-    color: '#999',
-    fontSize: 12,
-    fontFamily: 'monospace',
-    flex: 1,
-  },
   reconnectBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
     backgroundColor: '#333',
-    borderRadius: 4,
+    borderRadius: 3,
   },
   reconnectText: {
     color: '#cccccc',
-    fontSize: 12,
+    fontSize: 10,
   },
   outputWrapper: {
     flex: 1,

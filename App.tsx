@@ -29,7 +29,7 @@ export default function App() {
         <Stack.Screen
           name="Terminal"
           component={TerminalScreen}
-          options={{ title: 'Terminal' }}
+          options={{ headerShown: false }}
         />
       </Stack.Navigator>
     </NavigationContainer>

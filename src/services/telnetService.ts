@@ -129,7 +129,7 @@ export class TelnetService {
         this.sendCommand(DO, opt);
         if (opt === OPT_GMCP) {
           this.sendGMCP('Core.Hello', { client: "Al'jhtar Store", version: "1.0" });
-          this.sendGMCPRaw('Core.Supports.Set [ "Room 1", "Char 1", "Comm 1" ]');
+          this.sendGMCPRaw('Core.Supports.Set [ "Room 1", "Char 1", "Comm 1", "Core 1" ]');
         }
       } else {
         this.sendCommand(DONT, opt);
