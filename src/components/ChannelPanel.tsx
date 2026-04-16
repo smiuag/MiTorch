@@ -98,7 +98,7 @@ export function ChannelTabs({
       {miniPanelVisible && !activeChannel && allMessages.length > 0 && (
         <View style={styles.miniPanel}>
           {allMessages.slice(-3).map(msg => (
-            <Text key={msg.id} style={styles.miniPanelLine} numberOfLines={1}>
+            <Text key={msg.id} style={styles.miniPanelLine} numberOfLines={3}>
               <Text style={styles.miniPanelChannel}>[{msg.channel}] </Text>
               {msg.spans.map((span, i) => (
                 <Text
