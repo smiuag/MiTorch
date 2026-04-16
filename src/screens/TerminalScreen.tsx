@@ -112,6 +112,81 @@ export function TerminalScreen({ route, navigation }: Props) {
     });
   }, []);
 
+  const addMultipleLines = useCallback((texts: string[]) => {
+    const newLines: MudLine[] = [];
+    const channelMessagesToAdd: ChannelMessage[] = [];
+
+    for (const text of texts) {
+      const isBlank = text.trim().length === 0;
+      if (isBlank) {
+        if (lastLineBlankRef.current) continue; // skip consecutive blanks
+        lastLineBlankRef.current = true;
+      } else {
+        lastLineBlankRef.current = false;
+      }
+
+      // Try to detect channel messages from text patterns if useChannels is enabled
+      let channelName: string | null = null;
+      let messageText = text;
+
+      if (useChannelsRef.current && channels.length > 0) {
+        // Try to match patterns like "[canal]:", "canal:", or similar
+        const patterns = [
+          new RegExp(`^\\[(${channels.join('|')})\\]\\s+(.+)$`, 'i'),
+          new RegExp(`^(${channels.join('|')}):\\s+(.+)$`, 'i'),
+        ];
+
+        for (const pattern of patterns) {
+          const match = text.match(pattern);
+          if (match) {
+            channelName = match[1].toLowerCase();
+            messageText = match[2];
+            break;
+          }
+        }
+      }
+
+      const spans = parseAnsi(messageText);
+
+      if (channelName && channels.includes(channelName)) {
+        // Add to channel messages instead of main display
+        channelMessagesToAdd.push({
+          id: nextMsgId(),
+          channel: channelName,
+          spans,
+        });
+        // Still track unread count
+        const isReading = activeChannelRef.current === channelName || miniPanelVisibleRef.current;
+        if (!isReading) {
+          setUnreadCounts(prev => ({ ...prev, [channelName]: (prev[channelName] || 0) + 1 }));
+        }
+      } else {
+        // Add to main display
+        const newLine: MudLine = { id: lineIdCounter++, spans };
+        newLines.push(newLine);
+      }
+    }
+
+    // Add main display lines
+    if (newLines.length > 0) {
+      setLines(prev => {
+        const updated = [...prev, ...newLines];
+        if (updated.length > MAX_LINES) {
+          return updated.slice(updated.length - MAX_LINES);
+        }
+        return updated;
+      });
+    }
+
+    // Add channel messages
+    if (channelMessagesToAdd.length > 0) {
+      setChannelMessages(prev => {
+        const updated = [...prev, ...channelMessagesToAdd];
+        return updated.length > 500 ? updated.slice(-500) : updated;
+      });
+    }
+  }, [channels]);
+
   const addSystemLine = useCallback((text: string) => {
     const newLine: MudLine = {
       id: lineIdCounter++,
@@ -253,13 +328,29 @@ export function TerminalScreen({ route, navigation }: Props) {
 
     const telnet = new TelnetService(server, {
       onData: (text: string) => {
+        // Skip empty text
+        if (!text || text.length === 0) return;
+
+        console.log('[onData] Raw text received:', JSON.stringify(text.slice(0, 200)));
+        console.log('[onData] Text length:', text.length, 'lines count:', (text.match(/\n/g) || []).length);
+
         pendingText.current += text;
-        const parts = pendingText.current.split('\n');
+        // Split by \n, but also handle \r\n and \r variants
+        // First normalize: replace \r\n with \n, and standalone \r with \n
+        const normalized = pendingText.current.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        const parts = normalized.split('\n');
+        // Keep last part (possibly incomplete) in pending
         pendingText.current = parts.pop() ?? '';
+
+        console.log('[onData] After split - parts count:', parts.length, 'pending buffer length:', pendingText.current.length);
+
+        // Collect lines to add and recent raw lines
+        const linesToAdd: string[] = [];
         for (const part of parts) {
+          // Keep the original line (with spaces), don't trim
           if (part.length > 0) {
-            addLine(part);
-            // Keep recent raw lines for LOC
+            linesToAdd.push(part);
+            // Keep recent raw lines for LOC (trimmed and without ANSI codes)
             const clean = part.replace(/\x1b\[[0-9;]*m/g, '').trim();
             recentLinesRef.current.push(clean);
             if (recentLinesRef.current.length > 30) {
@@ -267,16 +358,22 @@ export function TerminalScreen({ route, navigation }: Props) {
             }
           }
         }
+
+        // Add all lines at once to avoid multiple re-renders
+        if (linesToAdd.length > 0) {
+          console.log('[onData] Adding', linesToAdd.length, 'lines. useChannels:', useChannelsRef.current, 'First line:', JSON.stringify(linesToAdd[0].slice(0, 100)));
+          addMultipleLines(linesToAdd);
+        }
       },
       onConnect: () => {
         setConnected(true);
         addSystemLine(`--- Connected to ${server.name} (${server.host}:${server.port}) ---`);
       },
       onClose: () => {
-        if (pendingText.current) {
-          addLine(pendingText.current);
-          pendingText.current = '';
+        if (pendingText.current && pendingText.current.trim().length > 0) {
+          addLine(pendingText.current.trim());
         }
+        pendingText.current = '';
         setConnected(false);
         addSystemLine('--- Connection closed ---');
       },
@@ -295,13 +392,24 @@ export function TerminalScreen({ route, navigation }: Props) {
             handleSelectChannel(null);
           }
         } else if ((module === 'Comm.MensajeCanal' || module === 'Comm.MensajeCanalHistorico') && data?.canal && data?.mensaje) {
+          const rawMsg = data.mensaje;
+          console.log('[GMCP]', module, 'canal:', data.canal);
+          console.log('[GMCP] Raw message (first 150 chars):', JSON.stringify(rawMsg.slice(0, 150)));
+          console.log('[GMCP] Message length:', rawMsg.length, 'Contains \\n:', rawMsg.includes('\n'), 'Contains \\r:', rawMsg.includes('\r'));
+          console.log('[GMCP] Char codes at position 0-10:', Array.from(rawMsg.slice(0, 10)).map(c => c.charCodeAt(0)));
+
           if (!useChannelsRef.current) {
             // No channel management: show in main output
-            addLine(data.mensaje);
+            console.log('[GMCP] useChannels=false, calling addLine');
+            addLine(rawMsg);
           } else {
-            const spans = parseAnsi(data.mensaje);
+            console.log('[GMCP] useChannels=true, parsing ANSI');
+            const spans = parseAnsi(rawMsg);
+            console.log('[GMCP] After parseAnsi - spans count:', spans.length, 'first span text:', JSON.stringify(spans[0]?.text.slice(0, 50)));
+
             setChannelMessages(prev => {
               const updated = [...prev, { id: nextMsgId(), channel: data.canal, spans }];
+              console.log('[GMCP] setChannelMessages called, total messages:', updated.length);
               return updated.length > 500 ? updated.slice(-500) : updated;
             });
             const isOwnEcho = Date.now() - lastSentChannelTime.current < 1000;
@@ -402,12 +510,14 @@ export function TerminalScreen({ route, navigation }: Props) {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
   }, [inputText, walking, stopWalk, walkTo]);
 
-  // Scroll to end when layout changes (keyboard, channel, buttons appear/disappear)
+  // Scroll to end when layout changes (keyboard, channel, orientation, buttons appear/disappear)
   useEffect(() => {
     isAtBottomRef.current = true;
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 300);
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 600);
-  }, [keyboardVisible, activeChannel]);
+    const scrollToBottom = () => flatListRef.current?.scrollToEnd({ animated: false });
+    setTimeout(scrollToBottom, 200);
+    setTimeout(scrollToBottom, 500);
+    setTimeout(scrollToBottom, 1000);
+  }, [keyboardVisible, activeChannel, isLandscape]);
 
   const renderLine = useCallback(({ item }: { item: MudLine }) => (
     <AnsiText line={item} />
@@ -432,8 +542,11 @@ export function TerminalScreen({ route, navigation }: Props) {
               telnetRef.current?.disconnect();
               const telnet = new TelnetService(server, {
                 onData: (text: string) => {
+                  if (!text || text.length === 0) return;
                   pendingText.current += text;
-                  const parts = pendingText.current.split('\n');
+                  // Normalize line endings like in the main handler
+                  const normalized = pendingText.current.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+                  const parts = normalized.split('\n');
                   pendingText.current = parts.pop() ?? '';
                   for (const part of parts) {
                     if (part.length > 0) addLine(part);

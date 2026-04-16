@@ -64,7 +64,7 @@ export class TelnetService {
   }
 
   private processBytes(bytes: number[]): void {
-    let textChunk = '';
+    let textBytes: number[] = [];
     let i = 0;
 
     while (i < bytes.length) {
@@ -72,9 +72,9 @@ export class TelnetService {
 
       if (byte === IAC) {
         // Flush text accumulated so far
-        if (textChunk) {
-          this.handler.onData(textChunk);
-          textChunk = '';
+        if (textBytes.length > 0) {
+          this.emitText(textBytes);
+          textBytes = [];
         }
 
         i++;
@@ -83,7 +83,7 @@ export class TelnetService {
         const cmd = bytes[i];
         if (cmd === IAC) {
           // Escaped IAC -> literal 255
-          textChunk += String.fromCharCode(255);
+          textBytes.push(255);
           i++;
         } else if (cmd === WILL || cmd === WONT || cmd === DO || cmd === DONT) {
           i++;
@@ -110,14 +110,35 @@ export class TelnetService {
       } else {
         // Filter out null bytes and carriage returns
         if (byte !== 0 && byte !== 13) {
-          textChunk += String.fromCharCode(byte);
+          textBytes.push(byte);
         }
         i++;
       }
     }
 
-    if (textChunk) {
-      this.handler.onData(textChunk);
+    if (textBytes.length > 0) {
+      this.emitText(textBytes);
+    }
+  }
+
+  private emitText(bytes: number[]): void {
+    const encoding = this.server.encoding || 'utf8';
+    let text: string;
+
+    try {
+      // Try to decode using the specified encoding
+      text = Buffer.from(bytes).toString(encoding as BufferEncoding);
+    } catch {
+      // Fallback to UTF-8 if specified encoding fails
+      text = Buffer.from(bytes).toString('utf8');
+    }
+
+    if (text) {
+      if (text.length > 100 || text.includes('bando')) {
+        console.log('[telnetService] emitText encoding:', encoding, 'bytes count:', bytes.length, 'text length:', text.length);
+        console.log('[telnetService] First 100 chars:', JSON.stringify(text.slice(0, 100)));
+      }
+      this.handler.onData(text);
     }
   }
 
