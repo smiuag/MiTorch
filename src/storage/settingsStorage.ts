@@ -5,13 +5,11 @@ const SETTINGS_KEY = 'aljhtar_settings';
 export interface AppSettings {
   useChannels: boolean;
   fontSize: number;
-  showChannelPanel: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   useChannels: true,
   fontSize: 14,
-  showChannelPanel: true,
 };
 
 export async function loadSettings(): Promise<AppSettings> {

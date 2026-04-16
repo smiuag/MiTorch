@@ -7,7 +7,7 @@ import { loadSettings, saveSettings, AppSettings } from '../storage/settingsStor
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export function SettingsScreen({ navigation }: Props) {
-  const [settings, setSettings] = useState<AppSettings>({ useChannels: true, fontSize: 14, showChannelPanel: true });
+  const [settings, setSettings] = useState<AppSettings>({ useChannels: true, fontSize: 14 });
 
   useEffect(() => {
     loadSettings().then(setSettings);
@@ -41,21 +41,6 @@ export function SettingsScreen({ navigation }: Props) {
             onValueChange={(v) => updateSetting('useChannels', v)}
             trackColor={{ false: '#333', true: '#0a5a0a' }}
             thumbColor={settings.useChannels ? '#0c0' : '#666'}
-          />
-        </View>
-
-        <View style={[styles.row, styles.marginTop]}>
-          <View style={styles.rowInfo}>
-            <Text style={styles.rowTitle}>Panel de canales visible</Text>
-            <Text style={styles.rowDesc}>
-              Mostrar u ocultar el panel con las pestañas de canales. Puedes ocultarlo para ver más la pantalla principal.
-            </Text>
-          </View>
-          <Switch
-            value={settings.showChannelPanel}
-            onValueChange={(v) => updateSetting('showChannelPanel', v)}
-            trackColor={{ false: '#333', true: '#0a5a0a' }}
-            thumbColor={settings.showChannelPanel ? '#0c0' : '#666'}
           />
         </View>
 

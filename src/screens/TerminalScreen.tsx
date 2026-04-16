@@ -69,10 +69,8 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [miniPanelVisible, setMiniPanelVisible] = useState(true);
   const [useChannels, setUseChannels] = useState(true);
   const [fontSize, setFontSize] = useState(14);
-  const [showChannelPanel, setShowChannelPanel] = useState(true);
   const useChannelsRef = useRef(true);
   const fontSizeRef = useRef(14);
-  const showChannelPanelRef = useRef(true);
   const walkTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const activeChannelRef = useRef<string | null>(null);
   const miniPanelVisibleRef = useRef(true);
@@ -214,8 +212,6 @@ export function TerminalScreen({ route, navigation }: Props) {
       useChannelsRef.current = s.useChannels;
       setFontSize(s.fontSize);
       fontSizeRef.current = s.fontSize;
-      setShowChannelPanel(s.showChannelPanel);
-      showChannelPanelRef.current = s.showChannelPanel;
     });
     mapServiceRef.current.load();
   }, [server.id]);
@@ -669,7 +665,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
       {/* In portrait: vital bars + input below output */}
       {!isLandscape && <VitalBars hp={hp} hpMax={hpMax} energy={energy} energyMax={energyMax} />}
-      {!isLandscape && useChannels && showChannelPanel && channels.length > 0 && <ChannelTabs
+      {!isLandscape && useChannels && channels.length > 0 && <ChannelTabs
         channels={channels}
         aliases={channelAliases}
         activeChannel={activeChannel}
@@ -768,7 +764,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
       {/* In landscape: vital bars + input below buttons */}
       {isLandscape && <VitalBars hp={hp} hpMax={hpMax} energy={energy} energyMax={energyMax} />}
-      {isLandscape && useChannels && showChannelPanel && channels.length > 0 && <ChannelTabs
+      {isLandscape && useChannels && channels.length > 0 && <ChannelTabs
         channels={channels}
         aliases={channelAliases}
         activeChannel={activeChannel}
