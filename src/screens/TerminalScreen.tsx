@@ -23,7 +23,8 @@ import { MiniMap } from '../components/MiniMap';
 import { VitalBars } from '../components/VitalBars';
 import { RoomSearchResults } from '../components/RoomSearchResults';
 import { ChannelTabs, ChannelActivePanel, ChannelMessage, nextMsgId } from '../components/ChannelPanel';
-import { loadChannelAliases, saveChannelAliases, exportConfig } from '../storage/channelStorage';
+import { loadChannelAliases, saveChannelAliases } from '../storage/channelStorage';
+import { ConfigProfileModal } from '../components/ConfigProfileModal';
 import { MapService, MapRoom } from '../services/mapService';
 import { loadFKeys, saveFKeys } from '../storage/fkeyStorage';
 import { loadExtraButtons, saveExtraButtons } from '../storage/extraButtonStorage';
@@ -61,6 +62,8 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [channels, setChannels] = useState<string[]>([]);
   const [activeChannel, setActiveChannel] = useState<string | null>(null);
   const [channelAliases, setChannelAliases] = useState<Record<string, string>>({});
+  const [configModalVisible, setConfigModalVisible] = useState(false);
+  const [currentProfile, setCurrentProfile] = useState('');
   const walkTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const flatListRef = useRef<FlatList>(null);
   const telnetRef = useRef<TelnetService | null>(null);
@@ -504,10 +507,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           setChannelAliases(updated);
           saveChannelAliases(updated);
         }}
-        onConfigPress={async () => {
-          const config = await exportConfig();
-          addSystemLine('--- Config: ' + config.substring(0, 100) + '... ---');
-        }}
+        onConfigPress={() => setConfigModalVisible(true)}
       />}
       {!isLandscape && !activeChannel && (
         <View style={styles.inputContainer}>
@@ -601,10 +601,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           setChannelAliases(updated);
           saveChannelAliases(updated);
         }}
-        onConfigPress={async () => {
-          const config = await exportConfig();
-          addSystemLine('--- Config: ' + config.substring(0, 100) + '... ---');
-        }}
+        onConfigPress={() => setConfigModalVisible(true)}
       />}
       {isLandscape && !activeChannel && (
         <View style={styles.inputContainer}>
@@ -665,6 +662,20 @@ export function TerminalScreen({ route, navigation }: Props) {
         onSave={handleMacroSave}
         onDelete={handleMacroDelete}
         onClose={() => setMacroEditorVisible(false)}
+      />
+
+      {/* Config profile modal */}
+      <ConfigProfileModal
+        visible={configModalVisible}
+        serverId={server.id}
+        currentProfile={currentProfile}
+        onClose={() => setConfigModalVisible(false)}
+        onLoaded={(name) => {
+          setCurrentProfile(name);
+          loadFKeys(server.id).then(setFkeys);
+          loadExtraButtons(server.id).then(setExtraButtons);
+          loadChannelAliases().then(setChannelAliases);
+        }}
       />
     </SafeAreaView>
   );

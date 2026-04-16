@@ -54,30 +54,32 @@ export function ChannelTabs({
 
   return (
     <>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.tabBar}
-        contentContainerStyle={styles.tabBarContent}
-        keyboardShouldPersistTaps="always"
-      >
-        {sortedChannels.map(ch => (
-          <TouchableOpacity
-            key={ch}
-            style={[styles.tab, activeChannel === ch && styles.activeTab]}
-            onPress={() => onSelectChannel(activeChannel === ch ? null : ch)}
-            onLongPress={() => { setEditingChannel(ch); setEditAlias(aliases[ch] || ch); }}
-            activeOpacity={0.6}
-          >
-            <Text style={[styles.tabText, activeChannel === ch && styles.activeTabText]}>
-              {ch}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      <View style={styles.tabRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tabBar}
+          contentContainerStyle={styles.tabBarContent}
+          keyboardShouldPersistTaps="always"
+        >
+          {sortedChannels.map(ch => (
+            <TouchableOpacity
+              key={ch}
+              style={[styles.tab, activeChannel === ch && styles.activeTab]}
+              onPress={() => onSelectChannel(activeChannel === ch ? null : ch)}
+              onLongPress={() => { setEditingChannel(ch); setEditAlias(aliases[ch] || ch); }}
+              activeOpacity={0.6}
+            >
+              <Text style={[styles.tabText, activeChannel === ch && styles.activeTabText]}>
+                {ch}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
         <TouchableOpacity style={styles.configBtn} onPress={onConfigPress}>
           <Text style={styles.configIcon}>⚙</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </View>
 
       <Modal
         visible={editingChannel !== null}
@@ -211,8 +213,13 @@ export function ChannelActivePanel({
 }
 
 const styles = StyleSheet.create({
-  tabBar: {
+  tabRow: {
+    flexDirection: 'row',
     backgroundColor: '#111',
+    alignItems: 'center',
+  },
+  tabBar: {
+    flex: 1,
     maxHeight: 30,
   },
   tabBarContent: {
