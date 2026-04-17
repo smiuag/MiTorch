@@ -36,6 +36,7 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
   const [showNameModal, setShowNameModal] = useState(false);
   const [profileName, setProfileName] = useState('');
   const [isNewProfile, setIsNewProfile] = useState(true);
+  const [saveAsNew, setSaveAsNew] = useState(false);
   const hasChanges = useRef(false);
 
   const GRID_COLS = layout.gridSize;
@@ -247,7 +248,7 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
           },
           {
             text: 'Guardar como nuevo',
-            onPress: () => promptForProfileName(false),
+            onPress: () => promptForProfileName(false, true),
           },
         ]
       );
@@ -257,8 +258,9 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
     }
   };
 
-  const promptForProfileName = (isNew: boolean) => {
+  const promptForProfileName = (isNew: boolean, isSaveAsNew: boolean = false) => {
     setIsNewProfile(isNew);
+    setSaveAsNew(isSaveAsNew);
     setProfileName('');
     setShowNameModal(true);
   };
@@ -270,9 +272,11 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
     }
 
     try {
-      if (isNewProfile) {
+      // Always create new if it's a new profile or "save as new"
+      if (isNewProfile || saveAsNew) {
         await saveLayoutProfile(profileName, layout);
       } else if (editingProfileId) {
+        // Only update if editing existing without "save as new"
         await updateLayoutProfile(editingProfileId, profileName, layout);
       }
       setOriginalLayout(JSON.parse(JSON.stringify(layout)));
