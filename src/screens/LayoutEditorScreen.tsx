@@ -33,6 +33,9 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
   const [editOpacity, setEditOpacity] = useState(0.5);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [showGridSizeModal, setShowGridSizeModal] = useState(false);
+  const [showNameModal, setShowNameModal] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const [isNewProfile, setIsNewProfile] = useState(true);
   const hasChanges = useRef(false);
 
   const GRID_COLS = layout.gridSize;
@@ -254,34 +257,32 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
     }
   };
 
-  const promptForProfileName = (isNewProfile: boolean) => {
-    let profileName = '';
-    Alert.prompt(
-      'Guardar perfil como...',
-      'Nombre del perfil:',
-      [
-        { text: 'Cancelar', onPress: () => {} },
-        {
-          text: 'Guardar',
-          onPress: async (name) => {
-            if (!name.trim()) {
-              Alert.alert('Error', 'El nombre del perfil es requerido');
-              return;
-            }
-            if (isNewProfile) {
-              await saveLayoutProfile(name, layout);
-            } else if (editingProfileId) {
-              await updateLayoutProfile(editingProfileId, name, layout);
-            }
-            setOriginalLayout(JSON.parse(JSON.stringify(layout)));
-            hasChanges.current = false;
-            navigation.goBack();
-          },
-        },
-      ],
-      'plain-text',
-      editingProfileId ? '' : ''
-    );
+  const promptForProfileName = (isNew: boolean) => {
+    setIsNewProfile(isNew);
+    setProfileName('');
+    setShowNameModal(true);
+  };
+
+  const handleSaveProfileName = async () => {
+    if (!profileName.trim()) {
+      Alert.alert('Error', 'El nombre del perfil es requerido');
+      return;
+    }
+
+    try {
+      if (isNewProfile) {
+        await saveLayoutProfile(profileName, layout);
+      } else if (editingProfileId) {
+        await updateLayoutProfile(editingProfileId, profileName, layout);
+      }
+      setOriginalLayout(JSON.parse(JSON.stringify(layout)));
+      hasChanges.current = false;
+      setShowNameModal(false);
+      navigation.goBack();
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo guardar el perfil');
+      console.error(error);
+    }
   };
 
   return (
@@ -338,6 +339,42 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
           })
         )}
       </View>
+
+      {/* Profile Name Modal */}
+      <Modal
+        visible={showNameModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowNameModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.nameModal}>
+            <Text style={styles.nameModalTitle}>Guardar perfil como...</Text>
+            <TextInput
+              style={styles.nameModalInput}
+              placeholder="Nombre del perfil"
+              placeholderTextColor="#666"
+              value={profileName}
+              onChangeText={setProfileName}
+              autoFocus
+            />
+            <View style={styles.nameModalButtons}>
+              <TouchableOpacity
+                onPress={() => setShowNameModal(false)}
+                style={styles.nameModalCancelBtn}
+              >
+                <Text style={styles.nameModalCancelBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSaveProfileName}
+                style={styles.nameModalSaveBtn}
+              >
+                <Text style={styles.nameModalSaveBtnText}>Guardar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Grid Size Selection Modal */}
       <Modal
@@ -719,6 +756,68 @@ const styles = StyleSheet.create({
   gridSizeBtnText: {
     color: '#0c0',
     fontSize: 16,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
+  },
+  nameModal: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#333',
+    width: '100%',
+    maxWidth: 400,
+  },
+  nameModalTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  nameModalInput: {
+    backgroundColor: '#0a0a0a',
+    color: '#fff',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 6,
+    padding: 12,
+    fontSize: 14,
+    fontFamily: 'monospace',
+    marginBottom: 20,
+  },
+  nameModalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  nameModalCancelBtn: {
+    flex: 1,
+    backgroundColor: '#3a1a1a',
+    borderWidth: 2,
+    borderColor: '#cc3333',
+    borderRadius: 6,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  nameModalCancelBtnText: {
+    color: '#cc3333',
+    fontSize: 14,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
+  },
+  nameModalSaveBtn: {
+    flex: 1,
+    backgroundColor: '#1a3a1a',
+    borderWidth: 2,
+    borderColor: '#0c0',
+    borderRadius: 6,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  nameModalSaveBtnText: {
+    color: '#0c0',
+    fontSize: 14,
     fontFamily: 'monospace',
     fontWeight: 'bold',
   },
