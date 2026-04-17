@@ -362,6 +362,8 @@ export function TerminalScreen({ route, navigation }: Props) {
     for (const cmd of commands) {
       telnetRef.current.send(cmd.trim());
     }
+    // Add to command history
+    setCommandHistory(prev => [...prev.slice(-100), command]);
   }, [addSystemLine, walkTo, handleLocate]);
 
   const handleMacroSave = useCallback(async (macro: Macro) => {
