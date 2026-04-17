@@ -171,6 +171,7 @@ export function UnifiedTerminalLayout({
             onAliasChange={onAliasChange}
             onInputChange={onInputChange}
             onSend={onSend}
+            onSendCommand={onSendCommand}
             onConfigPress={onConfigPress}
             onScrollTerminalToBottom={handleScrollTerminalToBottom}
           />
@@ -227,6 +228,7 @@ export function UnifiedTerminalLayout({
             onAliasChange={onAliasChange}
             onInputChange={onInputChange}
             onSend={onSend}
+            onSendCommand={onSendCommand}
             onConfigPress={onConfigPress}
             onScrollTerminalToBottom={handleScrollTerminalToBottom}
           />
@@ -249,8 +251,10 @@ const styles = StyleSheet.create({
   },
   flexibleSection: {
     flex: 0,
+    overflow: 'hidden',
   },
   fixedSection: {
     flex: 0,
+    overflow: 'hidden',
   },
 });

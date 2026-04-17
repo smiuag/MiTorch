@@ -102,26 +102,22 @@ export function ChatSection({
     }
   };
 
-  // VitalBars height (approximately 40px)
-  const vitalBarsHeight = 40;
-  const inputHeight = 50;
-  const tabsHeight = 40;
-  const messagesHeight = height - vitalBarsHeight - inputHeight - tabsHeight;
-
   return (
     <View style={[styles.container, { height }]}>
       {/* Channel Tabs */}
-      <ChannelTabs
-        channels={channels}
-        aliases={channelAliases}
-        activeChannel={activeChannel}
-        onSelectChannel={onSelectChannel}
-        onAliasChange={onAliasChange}
-        onConfigPress={onConfigPress}
-        unreadCounts={unreadCounts}
-        allMessages={channelMessages}
-        fontSize={fontSize}
-      />
+      <View style={styles.tabsWrapper}>
+        <ChannelTabs
+          channels={channels}
+          aliases={channelAliases}
+          activeChannel={activeChannel}
+          onSelectChannel={onSelectChannel}
+          onAliasChange={onAliasChange}
+          onConfigPress={onConfigPress}
+          unreadCounts={unreadCounts}
+          allMessages={channelMessages}
+          fontSize={fontSize}
+        />
+      </View>
 
       {/* Messages List */}
       <FlatList
@@ -133,7 +129,7 @@ export function ChatSection({
             <AnsiText spans={item.spans} fontSize={fontSize - 2} />
           </View>
         )}
-        style={[styles.messagesList, { height: messagesHeight }]}
+        style={styles.messagesList}
         scrollEventThrottle={250}
         removeClippedSubviews={true}
         maxToRenderPerBatch={30}
@@ -141,12 +137,12 @@ export function ChatSection({
       />
 
       {/* Vital Bars */}
-      <View style={[styles.vitalBarsContainer, { height: vitalBarsHeight }]}>
+      <View style={styles.vitalBarsContainer}>
         <VitalBars hp={hp} hpMax={hpMax} energy={energy} energyMax={energyMax} />
       </View>
 
       {/* Input */}
-      <View style={[styles.inputContainer, { height: inputHeight }]}>
+      <View style={styles.inputContainer}>
         <TextInput
           ref={inputRef}
           style={[styles.input, { fontSize }]}
@@ -167,12 +163,18 @@ export function ChatSection({
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+    flexDirection: 'column',
     backgroundColor: '#1a1a1a',
     borderTopWidth: 1,
     borderTopColor: '#333',
     overflow: 'hidden',
   },
+  tabsWrapper: {
+    minHeight: 40,
+  },
   messagesList: {
+    flex: 1,
     backgroundColor: '#000',
   },
   messageContainer: {
@@ -180,6 +182,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   vitalBarsContainer: {
+    minHeight: 40,
     backgroundColor: '#0a0a0a',
     borderTopWidth: 1,
     borderTopColor: '#333',
@@ -193,6 +196,7 @@ const styles = StyleSheet.create({
     borderTopColor: '#333',
     paddingHorizontal: 8,
     paddingVertical: 8,
+    minHeight: 50,
     alignItems: 'center',
   },
   input: {
