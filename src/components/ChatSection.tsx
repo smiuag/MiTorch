@@ -12,6 +12,8 @@ import {
 import { AnsiText } from './AnsiText';
 import { ChannelMessage, ChannelTabs } from './ChannelPanel';
 import { VitalBars } from './VitalBars';
+import { MiniMap } from './MiniMap';
+import { MapRoom } from '../services/mapService';
 
 interface ChatSectionProps {
   height: number;
@@ -26,6 +28,8 @@ interface ChatSectionProps {
   hpMax: number;
   energy: number;
   energyMax: number;
+  currentRoom: MapRoom | null;
+  nearbyRooms: MapRoom[];
   onSelectChannel: (ch: string | null) => void;
   onAliasChange: (ch: string, alias: string) => void;
   onInputChange: (text: string) => void;
@@ -48,6 +52,8 @@ export function ChatSection({
   hpMax,
   energy,
   energyMax,
+  currentRoom,
+  nearbyRooms,
   onSelectChannel,
   onAliasChange,
   onInputChange,
@@ -101,8 +107,8 @@ export function ChatSection({
   const handleSend = () => {
     if (inputText.trim()) {
       let message = inputText;
-      // Add channel alias prefix if not in "Todos"
-      if (activeChannel && activeChannel !== 'Todos') {
+      // Add channel alias prefix if not in "Todos" or "Mapa"
+      if (activeChannel && activeChannel !== 'Todos' && activeChannel !== 'Mapa') {
         const alias = channelAliases[activeChannel] || activeChannel;
         message = `${alias} ${message}`;
       }
@@ -130,22 +136,32 @@ export function ChatSection({
         />
       </View>
 
-      {/* Messages List */}
-      <FlatList
-        ref={messagesListRef}
-        data={filteredMessages}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={({ item }) => (
-          <View style={styles.messageContainer}>
-            <AnsiText spans={item.spans} fontSize={fontSize - 2} addNewline={false} />
-          </View>
-        )}
-        style={styles.messagesList}
-        scrollEventThrottle={250}
-        removeClippedSubviews={true}
-        maxToRenderPerBatch={30}
-        updateCellsBatchingPeriod={50}
-      />
+      {/* Messages List or Map */}
+      {activeChannel === 'Mapa' ? (
+        <MiniMap
+          currentRoom={currentRoom}
+          nearbyRooms={nearbyRooms}
+          visible={true}
+          onToggle={() => {}}
+          inlineMode={true}
+        />
+      ) : (
+        <FlatList
+          ref={messagesListRef}
+          data={filteredMessages}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={({ item }) => (
+            <View style={styles.messageContainer}>
+              <AnsiText spans={item.spans} fontSize={fontSize - 2} addNewline={false} />
+            </View>
+          )}
+          style={styles.messagesList}
+          scrollEventThrottle={250}
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={30}
+          updateCellsBatchingPeriod={50}
+        />
+      )}
 
       {/* Vital Bars */}
       <View style={styles.vitalBarsContainer}>

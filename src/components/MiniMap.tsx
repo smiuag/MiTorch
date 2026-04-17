@@ -7,6 +7,7 @@ interface MiniMapProps {
   nearbyRooms: MapRoom[];
   visible: boolean;
   onToggle: () => void;
+  inlineMode?: boolean;
 }
 
 const MAP_SIZE = 200;
@@ -14,7 +15,7 @@ const ROOM_SIZE = 8;
 const CURRENT_ROOM_SIZE = 10;
 const VIEW_RADIUS = 15;
 
-export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle }: MiniMapProps) {
+export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMode }: MiniMapProps) {
   const mapContent = useMemo(() => {
     if (!currentRoom || nearbyRooms.length === 0) return null;
 
@@ -51,6 +52,69 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle }: MiniMap
 
     return { lines, roomDots };
   }, [currentRoom, nearbyRooms]);
+
+  if (inlineMode) {
+    if (!currentRoom || !mapContent) {
+      return <View style={styles.inlineEmpty} />;
+    }
+
+    return (
+      <View style={styles.inlineContainer}>
+        <Text style={styles.roomName} numberOfLines={1}>
+          {currentRoom.n}
+        </Text>
+
+        <View style={styles.mapArea}>
+          {mapContent.lines.map(line => {
+            const dx = line.x2 - line.x1;
+            const dy = line.y2 - line.y1;
+            const length = Math.sqrt(dx * dx + dy * dy);
+            const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+
+            return (
+              <View
+                key={line.key}
+                style={[
+                  styles.exitLine,
+                  {
+                    left: line.x1,
+                    top: line.y1,
+                    width: length,
+                    transform: [{ rotate: `${angle}deg` }],
+                  },
+                ]}
+              />
+            );
+          })}
+
+          {mapContent.roomDots.map(({ sx, sy, room, isCurrent }) => {
+            const size = isCurrent ? CURRENT_ROOM_SIZE : ROOM_SIZE;
+            const roomColor = room.c ?? 'rgba(0, 180, 0, 0.4)';
+            return (
+              <View
+                key={room.id}
+                style={[
+                  styles.roomDot,
+                  isCurrent ? styles.currentRoomDot : { backgroundColor: roomColor + '99' },
+                  {
+                    left: sx - size / 2,
+                    top: sy - size / 2,
+                    width: size,
+                    height: size,
+                    borderRadius: size / 2,
+                  },
+                ]}
+              />
+            );
+          })}
+        </View>
+
+        <Text style={styles.coords}>
+          [{currentRoom.x}, {currentRoom.y}, {currentRoom.z}]
+        </Text>
+      </View>
+    );
+  }
 
   if (!visible || !currentRoom || !mapContent) {
     return (
@@ -127,6 +191,21 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle }: MiniMap
 }
 
 const styles = StyleSheet.create({
+  inlineContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    borderColor: 'rgba(0, 200, 0, 0.2)',
+    borderWidth: 1,
+    padding: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  inlineEmpty: {
+    flex: 1,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   wrapperClosed: {
     position: 'absolute',
     top: 4,

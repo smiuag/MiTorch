@@ -167,6 +167,8 @@ export function UnifiedTerminalLayout({
             hpMax={hpMax}
             energy={energy}
             energyMax={energyMax}
+            currentRoom={currentRoom}
+            nearbyRooms={nearbyRooms}
             onSelectChannel={onSelectChannel}
             onAliasChange={onAliasChange}
             onInputChange={onInputChange}
@@ -223,6 +225,8 @@ export function UnifiedTerminalLayout({
             hpMax={hpMax}
             energy={energy}
             energyMax={energyMax}
+            currentRoom={currentRoom}
+            nearbyRooms={nearbyRooms}
             onSelectChannel={onSelectChannel}
             onAliasChange={onAliasChange}
             onInputChange={onInputChange}

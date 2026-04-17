@@ -58,8 +58,8 @@ export function ChannelTabs({
   const [editAlias, setEditAlias] = useState('');
   const sortedChannels = sortChannels(channels);
 
-  // Add "Todos" as the first channel
-  const allChannels = ['Todos', ...sortedChannels];
+  // Add "Todos" as the first channel and "Mapa" as the last
+  const allChannels = ['Todos', ...sortedChannels, 'Mapa'];
 
   return (
     <>
@@ -77,8 +77,8 @@ export function ChannelTabs({
               style={[styles.tab, activeChannel === ch && styles.activeTab]}
               onPress={() => onSelectChannel(activeChannel === ch ? null : ch)}
               onLongPress={() => {
-                // Only allow alias editing for non-Todos channels
-                if (ch !== 'Todos') {
+                // Only allow alias editing for non-Todos and non-Mapa channels
+                if (ch !== 'Todos' && ch !== 'Mapa') {
                   setEditingChannel(ch);
                   setEditAlias(aliases[ch] || ch);
                 }
@@ -88,7 +88,7 @@ export function ChannelTabs({
               <Text style={[styles.tabText, activeChannel === ch && styles.activeTabText]}>
                 {ch}
               </Text>
-              {ch !== 'Todos' && (unreadCounts[ch] || 0) > 0 && (
+              {ch !== 'Todos' && ch !== 'Mapa' && (unreadCounts[ch] || 0) > 0 && (
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>{unreadCounts[ch]}</Text>
                 </View>
