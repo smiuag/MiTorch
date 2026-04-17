@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Switch, ScrollView, Alert, FlatList, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -139,7 +139,7 @@ export function SettingsScreen({ navigation }: Props) {
         </View>
 
         {profiles.length > 0 ? (
-          <ScrollView style={styles.profilesList} nestedScrollEnabled>
+          <View style={styles.profilesListContainer}>
             {profiles.map((item, index) => {
               const date = new Date(item.createdAt);
               const dateStr = date.toLocaleDateString();
@@ -176,7 +176,7 @@ export function SettingsScreen({ navigation }: Props) {
                 </View>
               );
             })}
-          </ScrollView>
+          </View>
         ) : (
           <View style={[styles.row, styles.marginTop]}>
             <Text style={styles.noProfilesText}>
@@ -485,10 +485,8 @@ const styles = StyleSheet.create({
     minWidth: 30,
     textAlign: 'center',
   },
-  profilesList: {
-    maxHeight: 250,
+  profilesListContainer: {
     backgroundColor: '#0a0a0a',
-    borderRadius: 4,
   },
   profileListMargin: {
     marginTop: 8,
