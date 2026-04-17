@@ -35,11 +35,9 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
   const [showGridSizeModal, setShowGridSizeModal] = useState(false);
   const [showNameModal, setShowNameModal] = useState(false);
   const [showEditNameModal, setShowEditNameModal] = useState(false);
-  const [profileName, setProfileName] = useState('');
   const [currentProfileName, setCurrentProfileName] = useState('');
   const [editingProfileName, setEditingProfileName] = useState('');
-  const [isNewProfile, setIsNewProfile] = useState(true);
-  const [saveAsNew, setSaveAsNew] = useState(false);
+  const [isSaveAsNew, setIsSaveAsNew] = useState(false);
   const hasChanges = useRef(false);
 
   const GRID_COLS = layout.gridSize;
@@ -242,69 +240,65 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
   };
 
   const handleSave = async () => {
-    if (editingProfileId) {
-      // Editing existing profile - prompt to overwrite or save as new
+    if (!editingProfileId) {
+      // New profile - ask for name
+      setShowNameModal(true);
+      setIsSaveAsNew(false);
+    } else {
+      // Existing profile - ask to overwrite or save as new
       Alert.alert(
         'Guardar cambios',
-        '¿Sobrescribir el perfil existente o guardar como nuevo?',
+        `¿Sobrescribir "${currentProfileName}" o guardar como nuevo?`,
         [
           { text: 'Cancelar', onPress: () => {} },
           {
             text: 'Sobrescribir',
             onPress: async () => {
-              await updateLayoutProfile(editingProfileId, editingProfileName, layout);
-              setCurrentProfileName(editingProfileName);
-              setOriginalLayout(JSON.parse(JSON.stringify(layout)));
-              hasChanges.current = false;
-              navigation.goBack();
+              try {
+                await updateLayoutProfile(editingProfileId, currentProfileName, layout);
+                setOriginalLayout(JSON.parse(JSON.stringify(layout)));
+                hasChanges.current = false;
+                navigation.goBack();
+              } catch (error) {
+                Alert.alert('Error', 'No se pudo guardar el perfil');
+                console.error(error);
+              }
             },
           },
           {
             text: 'Guardar como nuevo',
-            onPress: () => promptForProfileName(false, true, editingProfileName),
+            onPress: () => {
+              setShowNameModal(true);
+              setIsSaveAsNew(true);
+            },
           },
         ]
       );
-    } else {
-      // New profile - always prompt for name
-      promptForProfileName(true);
     }
   };
 
-  const promptForProfileName = (isNew: boolean, isSaveAsNew: boolean = false, initialName: string = '') => {
-    setIsNewProfile(isNew);
-    setSaveAsNew(isSaveAsNew);
-    setProfileName(initialName);
-    setShowNameModal(true);
-  };
-
   const handleSaveProfileName = async () => {
-    if (!profileName.trim()) {
+    if (!currentProfileName.trim()) {
       Alert.alert('Error', 'El nombre del perfil es requerido');
       return;
     }
 
     try {
-      // Always create new if it's a new profile or "save as new"
-      if (isNewProfile || saveAsNew) {
-        const newProfileId = await saveLayoutProfile(profileName, layout);
-        // If save as new, update the state to reflect the new profile
-        if (saveAsNew) {
-          setEditingProfileId(newProfileId);
-          setCurrentProfileName(profileName);
-          setEditingProfileName(profileName);
-          setSaveAsNew(false);
-        }
-      } else if (editingProfileId) {
-        // Only update if editing existing without "save as new"
-        await updateLayoutProfile(editingProfileId, profileName, layout);
+      if (isSaveAsNew) {
+        // Create a copy with the new name
+        const newProfileId = await saveLayoutProfile(currentProfileName, layout);
+        setEditingProfileId(newProfileId);
+        setEditingProfileName(currentProfileName);
+      } else if (!editingProfileId) {
+        // Create new profile
+        const newProfileId = await saveLayoutProfile(currentProfileName, layout);
+        setEditingProfileId(newProfileId);
+        setEditingProfileName(currentProfileName);
+        navigation.goBack();
       }
       setOriginalLayout(JSON.parse(JSON.stringify(layout)));
       hasChanges.current = false;
       setShowNameModal(false);
-      if (isNewProfile) {
-        navigation.goBack();
-      }
     } catch (error) {
       Alert.alert('Error', 'No se pudo guardar el perfil');
       console.error(error);
@@ -409,13 +403,15 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.nameModal}>
-            <Text style={styles.nameModalTitle}>Guardar perfil como...</Text>
+            <Text style={styles.nameModalTitle}>
+              {isSaveAsNew ? 'Guardar como nuevo' : 'Guardar perfil como...'}
+            </Text>
             <TextInput
               style={styles.nameModalInput}
               placeholder="Nombre del perfil"
               placeholderTextColor="#666"
-              value={profileName}
-              onChangeText={setProfileName}
+              value={currentProfileName}
+              onChangeText={setCurrentProfileName}
               autoFocus
             />
             <View style={styles.nameModalButtons}>
