@@ -164,6 +164,9 @@ export function ChatSection({
           multiline={false}
           autoCapitalize="none"
           autoCorrect={false}
+          onSubmitEditing={handleSend}
+          blurOnSubmit={false}
+          returnKeyType="send"
         />
         <TouchableOpacity style={styles.sendButton} onPress={handleSend}>
           <Text style={styles.sendButtonText}>›</Text>

@@ -51,19 +51,20 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
       },
     }));
 
-  // Auto-scroll to bottom when new lines arrive (always show latest)
+  // Auto-scroll to bottom only if already at bottom, show button if scrolled up
   useEffect(() => {
-    if (lines.length > 0) {
+    if (lines.length > 0 && scrollAtBottom) {
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: false });
-        setScrollAtBottom(true);
-      }, 0);
+        setShowScrollToBottom(false);
+      }, 50);
     }
-  }, [lines]);
+  }, [lines, scrollAtBottom]);
 
   const handleScroll = (e: any) => {
     const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
-    const isAtBottom = contentOffset.y >= contentSize.height - layoutMeasurement.height - 50;
+    const threshold = 100;
+    const isAtBottom = contentOffset.y >= contentSize.height - layoutMeasurement.height - threshold;
     setScrollAtBottom(isAtBottom);
     setShowScrollToBottom(!isAtBottom);
   };
@@ -92,7 +93,7 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
           </View>
         )}
         onScroll={handleScroll}
-        scrollEventThrottle={250}
+        scrollEventThrottle={16}
         removeClippedSubviews={true}
         maxToRenderPerBatch={50}
         updateCellsBatchingPeriod={50}
