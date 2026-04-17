@@ -637,8 +637,6 @@ export function TerminalScreen({ route, navigation }: Props) {
 
       {/* Old UI commented out - using UnifiedTerminalLayout instead */}
 
-      </View>
-
       {/* Active channel panel handled by UnifiedTerminalLayout now */}
 
       {!keyboardVisible && !isLandscape && !activeChannel && <SafeAreaView edges={['bottom']} style={styles.safeBottom} />}
