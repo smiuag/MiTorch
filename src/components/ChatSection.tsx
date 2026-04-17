@@ -137,31 +137,32 @@ export function ChatSection({
       </View>
 
       {/* Messages List or Map */}
-      {activeChannel === 'Mapa' ? (
-        <MiniMap
-          currentRoom={currentRoom}
-          nearbyRooms={nearbyRooms}
-          visible={true}
-          onToggle={() => {}}
-          inlineMode={true}
-        />
-      ) : (
-        <FlatList
-          ref={messagesListRef}
-          data={filteredMessages}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={({ item }) => (
-            <View style={styles.messageContainer}>
-              <AnsiText spans={item.spans} fontSize={fontSize - 2} addNewline={false} />
-            </View>
-          )}
-          style={styles.messagesList}
-          scrollEventThrottle={250}
-          removeClippedSubviews={true}
-          maxToRenderPerBatch={30}
-          updateCellsBatchingPeriod={50}
-        />
-      )}
+      <View style={styles.messagesList}>
+        {activeChannel === 'Mapa' ? (
+          <MiniMap
+            currentRoom={currentRoom}
+            nearbyRooms={nearbyRooms}
+            visible={true}
+            onToggle={() => {}}
+            inlineMode={true}
+          />
+        ) : (
+          <FlatList
+            ref={messagesListRef}
+            data={filteredMessages}
+            keyExtractor={(item) => item.id.toString()}
+            renderItem={({ item }) => (
+              <View style={styles.messageContainer}>
+                <AnsiText spans={item.spans} fontSize={fontSize - 2} addNewline={false} />
+              </View>
+            )}
+            scrollEventThrottle={250}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={30}
+            updateCellsBatchingPeriod={50}
+          />
+        )}
+      </View>
 
       {/* Vital Bars */}
       <View style={styles.vitalBarsContainer}>
