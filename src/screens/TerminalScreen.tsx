@@ -362,8 +362,8 @@ export function TerminalScreen({ route, navigation }: Props) {
     for (const cmd of commands) {
       telnetRef.current.send(cmd.trim());
     }
-    // Add to command history
-    setCommandHistory(prev => [...prev.slice(-100), command]);
+    // Add to command history (max 50)
+    setCommandHistory(prev => [...prev.slice(-49), command]);
   }, [addSystemLine, walkTo, handleLocate]);
 
   const handleMacroSave = useCallback(async (macro: Macro) => {
@@ -583,7 +583,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     if (telnetRef.current) {
       telnetRef.current.send(text);
     }
-    setCommandHistory(prev => [...prev.slice(-100), text]);
+    setCommandHistory(prev => [...prev.slice(-49), text]);
     setInputText('');
     // Always scroll to bottom when sending
     isAtBottomRef.current = true;

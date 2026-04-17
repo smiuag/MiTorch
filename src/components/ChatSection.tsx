@@ -139,9 +139,9 @@ export function ChatSection({
     if (historyIndex === null) return;
     let nextIndex = historyIndex + 1;
     if (nextIndex >= commandHistory.length) {
-      setHistoryIndex(null);
-      onInputChange('');
-    } else if (commandHistory[nextIndex]) {
+      nextIndex = 0;
+    }
+    if (commandHistory[nextIndex]) {
       setHistoryIndex(nextIndex);
       onHistoryNavigate?.(commandHistory[nextIndex]);
       onInputChange(commandHistory[nextIndex]);
