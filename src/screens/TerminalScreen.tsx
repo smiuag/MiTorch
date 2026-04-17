@@ -305,9 +305,11 @@ export function TerminalScreen({ route, navigation }: Props) {
           roomName = roomName.replace(/^[>\]]\s*/, '');
           const mapSvc = mapServiceRef.current;
           if (mapSvc.isLoaded && roomName) {
-            mapSvc.setCurrentRoom(0);
             const room = mapSvc.findRoom(roomName);
-            if (room) foundRoom = room;
+            if (room) {
+              mapSvc.setCurrentRoom(room.id);
+              foundRoom = room;
+            }
           }
         }
       }
