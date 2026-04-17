@@ -236,14 +236,9 @@ export function TerminalScreen({ route, navigation }: Props) {
       setButtonLayout(null);
     }
 
-    // Only load map for the default server (Reinos de Leyenda)
-    const isDefaultServer = server.name === 'Reinos de Leyenda';
-    if (isDefaultServer) {
-      mapServiceRef.current.load();
-      setMapVisible(true);
-    } else {
-      setMapVisible(false);
-    }
+    // Load map (works with Reinos de Leyenda)
+    mapServiceRef.current.load();
+    setMapVisible(true);
   }, [server.id, server.name, server.layoutProfileId]);
 
 

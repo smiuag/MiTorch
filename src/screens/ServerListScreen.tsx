@@ -63,7 +63,10 @@ export function ServerListScreen({ navigation }: Props) {
   };
 
   const handleSave = async () => {
-    if (!formName.trim() || !formHost.trim() || !formProfileId) return;
+    if (!formName.trim() || !formHost.trim()) return;
+
+    // For new servers, require a profile
+    if (!editingServer && !formProfileId) return;
 
     const port = parseInt(formPort) || 5001;
     let updated: ServerProfile[];
@@ -71,7 +74,14 @@ export function ServerListScreen({ navigation }: Props) {
     if (editingServer) {
       updated = servers.map(s =>
         s.id === editingServer.id
-          ? { ...s, name: formName.trim(), host: formHost.trim(), port, layoutProfileId: formProfileId }
+          ? {
+              ...s,
+              name: formName.trim(),
+              host: formHost.trim(),
+              port,
+              // Keep existing layoutProfileId if updating, use formProfileId if it changed
+              layoutProfileId: formProfileId || s.layoutProfileId
+            }
           : s
       );
     } else {
@@ -208,11 +218,13 @@ export function ServerListScreen({ navigation }: Props) {
               keyboardType="number-pad"
             />
 
-            <Text style={styles.label}>Perfil de botones</Text>
+            <Text style={styles.label}>Perfil de botones{editingServer ? ' (opcional)' : ' (requerido)'}</Text>
             {profiles.length === 0 ? (
               <View style={styles.noProfilesContainer}>
                 <Text style={styles.noProfilesText}>
-                  Crea primero una configuración de botones en Ajustes
+                  {editingServer
+                    ? 'Sin perfiles disponibles. Crea uno en Ajustes para asignar.'
+                    : 'Crea primero una configuración de botones en Ajustes'}
                 </Text>
               </View>
             ) : (
@@ -239,11 +251,11 @@ export function ServerListScreen({ navigation }: Props) {
                 <Text style={styles.cancelText}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.saveBtn, (profiles.length === 0 || !formProfileId) && styles.saveBtnDisabled]}
+                style={[styles.saveBtn, (!editingServer && profiles.length === 0) && styles.saveBtnDisabled]}
                 onPress={handleSave}
-                disabled={profiles.length === 0 || !formProfileId}
+                disabled={!editingServer && profiles.length === 0}
               >
-                <Text style={[styles.saveText, (profiles.length === 0 || !formProfileId) && styles.saveTextDisabled]}>
+                <Text style={[styles.saveText, (!editingServer && profiles.length === 0) && styles.saveTextDisabled]}>
                   Guardar
                 </Text>
               </TouchableOpacity>
