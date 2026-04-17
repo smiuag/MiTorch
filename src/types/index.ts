@@ -31,7 +31,7 @@ export type RootStackParamList = {
   ServerList: undefined;
   Terminal: { server: ServerProfile };
   Settings: undefined;
-  LayoutEditor: undefined;
+  LayoutEditor: { orientation: 'portrait' | 'landscape' };
 };
 
 export type LayoutItemType = 'button' | 'vitalbars' | 'input' | 'chat' | 'terminal';

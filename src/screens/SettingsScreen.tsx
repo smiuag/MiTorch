@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Switch, Alert, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Switch, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { loadSettings, saveSettings, AppSettings } from '../storage/settingsStorage';
-import { saveLayout, createDefaultLayout } from '../storage/layoutStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export function SettingsScreen({ navigation }: Props) {
-  const [settings, setSettings] = useState<AppSettings>({ useChannels: true, fontSize: 14, useFloatingButtons: false, floatingOrientation: 'portrait', useCustomKeyboard: true });
+  const [settings, setSettings] = useState<AppSettings>({ useChannels: true, fontSize: 14, useCustomKeyboard: true });
 
   useEffect(() => {
     loadSettings().then(setSettings);
@@ -48,21 +47,6 @@ export function SettingsScreen({ navigation }: Props) {
 
         <View style={[styles.row, styles.marginTop]}>
           <View style={styles.rowInfo}>
-            <Text style={styles.rowTitle}>Usar botones flotantes</Text>
-            <Text style={styles.rowDesc}>
-              Interfaz personalizable con botones flotantes.
-            </Text>
-          </View>
-          <Switch
-            value={settings.useFloatingButtons}
-            onValueChange={(v) => updateSetting('useFloatingButtons', v)}
-            trackColor={{ false: '#333', true: '#0a5a0a' }}
-            thumbColor={settings.useFloatingButtons ? '#0c0' : '#666'}
-          />
-        </View>
-
-        <View style={[styles.row, styles.marginTop]}>
-          <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Teclado personalizado</Text>
             <Text style={styles.rowDesc}>
               Usa el teclado personalizado en lugar del del teléfono.
@@ -76,62 +60,23 @@ export function SettingsScreen({ navigation }: Props) {
           />
         </View>
 
-        {settings.useFloatingButtons && (
-          <>
-            <View style={[styles.row, styles.marginTop, styles.orientationRow]}>
-              <View style={[styles.rowInfo, styles.orientationRowInfo]}>
-                <Text style={styles.rowTitle}>Orientación preferida</Text>
-                <Text style={styles.rowDesc}>
-                  Orientación por defecto del layout flotante.
-                </Text>
-              </View>
-              <View style={styles.orientationControls}>
-                <TouchableOpacity
-                  style={[styles.orientBtn, styles.orientBtnFlex, settings.floatingOrientation === 'portrait' && styles.orientBtnActive]}
-                  onPress={() => updateSetting('floatingOrientation', 'portrait')}
-                >
-                  <Text style={styles.orientBtnText}>Vertical</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.orientBtn, styles.orientBtnFlex, settings.floatingOrientation === 'landscape' && styles.orientBtnActive]}
-                  onPress={() => updateSetting('floatingOrientation', 'landscape')}
-                >
-                  <Text style={styles.orientBtnText}>Horizontal</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+        <View style={[styles.row, styles.marginTop]}>
+          <Text style={styles.sectionLabel}>Configuración de layout</Text>
+        </View>
 
-            <TouchableOpacity
-              style={[styles.row, styles.marginTop, styles.defaultBtn]}
-              onPress={() => {
-                Alert.alert(
-                  'Cargar configuración por defecto',
-                  '¿Reemplazar la configuración actual con la configuración por defecto? Se perderá la configuración actual.',
-                  [
-                    { text: 'Cancelar', onPress: () => {}, style: 'cancel' },
-                    {
-                      text: 'Cargar',
-                      onPress: async () => {
-                        const defaultLayout = createDefaultLayout(settings.floatingOrientation);
-                        await saveLayout(defaultLayout);
-                      },
-                      style: 'destructive',
-                    },
-                  ]
-                );
-              }}
-            >
-              <Text style={styles.defaultBtnText}>Cargar configuración por defecto</Text>
-            </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.row, styles.marginTop, styles.configBtn]}
+          onPress={() => navigation.navigate('LayoutEditor', { orientation: 'portrait' })}
+        >
+          <Text style={styles.configBtnText}>Configurar layout vertical ↓</Text>
+        </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.row, styles.marginTop, styles.configBtn]}
-              onPress={() => navigation.navigate('LayoutEditor')}
-            >
-              <Text style={styles.configBtnText}>Configurar pantalla flotante →</Text>
-            </TouchableOpacity>
-          </>
-        )}
+        <TouchableOpacity
+          style={[styles.row, styles.marginTop, styles.configBtn]}
+          onPress={() => navigation.navigate('LayoutEditor', { orientation: 'landscape' })}
+        >
+          <Text style={styles.configBtnText}>Configurar layout horizontal →</Text>
+        </TouchableOpacity>
 
         <View style={[styles.row, styles.marginTop]}>
           <View style={styles.rowInfo}>
@@ -311,15 +256,12 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     fontWeight: 'bold',
   },
-  defaultBtn: {
-    justifyContent: 'center',
-    backgroundColor: '#2a1a0a',
-    borderColor: '#cc9933',
-  },
-  defaultBtnText: {
-    color: '#cc9933',
-    fontSize: 14,
+  sectionLabel: {
+    color: '#666',
+    fontSize: 12,
     fontFamily: 'monospace',
     fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
 });

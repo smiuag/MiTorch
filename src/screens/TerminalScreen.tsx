@@ -79,14 +79,10 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [useChannels, setUseChannels] = useState(true);
   const [fontSize, setFontSize] = useState(14);
-  const [useFloatingButtons, setUseFloatingButtons] = useState(false);
-  const [floatingOrientation, setFloatingOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [useCustomKeyboard, setUseCustomKeyboard] = useState(true);
   const [layoutVersion, setLayoutVersion] = useState(0);
   const useChannelsRef = useRef(true);
   const fontSizeRef = useRef(14);
-  const useFloatingButtonsRef = useRef(false);
-  const useFloatingButtonsOrientationRef = useRef<'portrait' | 'landscape'>('portrait');
   const walkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const walkPathRef = useRef<string[]>([]);
   const walkStepRef = useRef(0);
@@ -238,10 +234,6 @@ export function TerminalScreen({ route, navigation }: Props) {
       useChannelsRef.current = s.useChannels;
       setFontSize(s.fontSize);
       fontSizeRef.current = s.fontSize;
-      setUseFloatingButtons(s.useFloatingButtons);
-      useFloatingButtonsRef.current = s.useFloatingButtons;
-      setFloatingOrientation(s.floatingOrientation);
-      useFloatingButtonsOrientationRef.current = s.floatingOrientation;
       setUseCustomKeyboard(s.useCustomKeyboard);
     });
 

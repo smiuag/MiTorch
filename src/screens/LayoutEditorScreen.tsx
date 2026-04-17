@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, FloatingLayout, LayoutItem, LayoutItemType } from '../types';
 import { loadLayout, saveLayout } from '../storage/layoutStorage';
-import { loadSettings } from '../storage/settingsStorage';
+import { saveOrientationLayout } from '../storage/orientationLayoutStorage';
 import { computeGridMetrics, hasCollision, occupiedCells } from '../utils/gridUtils';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'LayoutEditor'>;
@@ -46,19 +46,16 @@ function genId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
 
-export function LayoutEditorScreen({ navigation }: Props) {
+export function LayoutEditorScreen({ navigation, route }: Props) {
   const { width, height } = useWindowDimensions();
   const [layout, setLayout] = useState<FloatingLayout>({ gridCols: 6, gridRows: 8, items: [] });
-  const [preferredOrientation, setPreferredOrientation] = useState<'portrait' | 'landscape'>('portrait');
+  const editingOrientation = route.params.orientation;
   const [modalState, setModalState] = useState<ModalState>(null);
 
-  // Load layout and preferred orientation on mount
+  // Load layout for the specified orientation on mount
   useEffect(() => {
-    loadSettings().then(s => {
-      setPreferredOrientation(s.floatingOrientation);
-    });
-    loadLayout().then(setLayout);
-  }, []);
+    loadLayout(editingOrientation).then(setLayout);
+  }, [editingOrientation]);
 
   // Detect actual device orientation from current dimensions
   const actualOrientation = width > height ? 'landscape' : 'portrait';
@@ -68,11 +65,11 @@ export function LayoutEditorScreen({ navigation }: Props) {
   // Get the "portrait width" (the smaller dimension)
   const portraitWidth = Math.min(width, height);
 
-  // Grid dimensions are FIXED based on preferred orientation
+  // Grid dimensions are FIXED based on editing orientation
   // Portrait: 12 columns × 22 rows
   // Landscape: 24 columns × 10 rows
-  const targetGridCols = preferredOrientation === 'portrait' ? 12 : 24;
-  const targetGridRows = preferredOrientation === 'portrait' ? 22 : 10;
+  const targetGridCols = editingOrientation === 'portrait' ? 12 : 24;
+  const targetGridRows = editingOrientation === 'portrait' ? 22 : 10;
 
   // Calculate cellSize based on portrait width divided by target columns
   const cellSize = Math.max(30, Math.min(70, Math.floor(portraitWidth / targetGridCols)));
@@ -152,7 +149,25 @@ export function LayoutEditorScreen({ navigation }: Props) {
   };
 
   const handleSave = async () => {
-    await saveLayout(layout);
+    await saveLayout(layout, editingOrientation);
+
+    // Also save to orientationLayoutStorage for UnifiedTerminalLayout
+    const floatingButtons = layout.items
+      .filter(item => item.type === 'button')
+      .map(item => ({
+        id: item.id,
+        label: item.label || '',
+        command: item.command || '',
+        color: item.color || '#3399cc',
+        gridX: item.col,
+        gridRow: item.row,
+      }));
+
+    await saveOrientationLayout({
+      orientation: editingOrientation,
+      floatingButtons,
+    });
+
     navigation.goBack();
   };
 
@@ -169,7 +184,7 @@ export function LayoutEditorScreen({ navigation }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.headerBtn}>{'< Volver'}</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Editor de pantalla</Text>
+        <Text style={styles.headerTitle}>Layout {editingOrientation === 'portrait' ? 'Vertical' : 'Horizontal'}</Text>
         <TouchableOpacity onPress={handleSave}>
           <Text style={styles.headerBtn}>Guardar</Text>
         </TouchableOpacity>

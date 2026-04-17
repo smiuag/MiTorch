@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FloatingLayout, LayoutItem } from '../types';
 
-const LAYOUT_KEY = 'aljhtar_floating_layout';
+const LAYOUT_PORTRAIT_KEY = 'aljhtar_floating_layout_portrait';
+const LAYOUT_LANDSCAPE_KEY = 'aljhtar_floating_layout_landscape';
 
 const DEFAULT_LAYOUT: FloatingLayout = {
   gridCols: 12,
@@ -80,12 +81,14 @@ export function createDefaultLayout(orientation: 'portrait' | 'landscape' = 'por
   };
 }
 
-export async function loadLayout(): Promise<FloatingLayout> {
-  const json = await AsyncStorage.getItem(LAYOUT_KEY);
-  if (!json) return { ...DEFAULT_LAYOUT };
+export async function loadLayout(orientation: 'portrait' | 'landscape'): Promise<FloatingLayout> {
+  const key = orientation === 'portrait' ? LAYOUT_PORTRAIT_KEY : LAYOUT_LANDSCAPE_KEY;
+  const json = await AsyncStorage.getItem(key);
+  if (!json) return createDefaultLayout(orientation);
   return { ...DEFAULT_LAYOUT, ...JSON.parse(json) };
 }
 
-export async function saveLayout(layout: FloatingLayout): Promise<void> {
-  await AsyncStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+export async function saveLayout(layout: FloatingLayout, orientation: 'portrait' | 'landscape'): Promise<void> {
+  const key = orientation === 'portrait' ? LAYOUT_PORTRAIT_KEY : LAYOUT_LANDSCAPE_KEY;
+  await AsyncStorage.setItem(key, JSON.stringify(layout));
 }

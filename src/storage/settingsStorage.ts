@@ -5,16 +5,12 @@ const SETTINGS_KEY = 'aljhtar_settings';
 export interface AppSettings {
   useChannels: boolean;
   fontSize: number;
-  useFloatingButtons: boolean;
-  floatingOrientation: 'portrait' | 'landscape';
   useCustomKeyboard: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   useChannels: true,
   fontSize: 14,
-  useFloatingButtons: false,
-  floatingOrientation: 'portrait',
   useCustomKeyboard: true,
 };
 
