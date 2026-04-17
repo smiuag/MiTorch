@@ -87,7 +87,10 @@ export function TerminalScreen({ route, navigation }: Props) {
   const fontSizeRef = useRef(14);
   const useFloatingButtonsRef = useRef(false);
   const useFloatingButtonsOrientationRef = useRef<'portrait' | 'landscape'>('portrait');
-  const walkTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const walkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const walkPathRef = useRef<string[]>([]);
+  const walkStepRef = useRef(0);
+  const walkActiveRef = useRef(false);
   const activeChannelRef = useRef<string | null>(null);
   const lastSentChannelTime = useRef(0);
 
@@ -219,6 +222,14 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, []);
 
   useEffect(() => {
+    return () => {
+      if (walkTimeoutRef.current) {
+        clearTimeout(walkTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     loadFKeys(server.id).then(setFkeys);
     loadExtraButtons(server.id).then(setExtraButtons);
     loadChannelAliases().then(setChannelAliases);
@@ -256,15 +267,24 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, []);
 
   const stopWalk = useCallback(() => {
-    for (const t of walkTimers.current) clearTimeout(t);
-    walkTimers.current = [];
+    if (walkTimeoutRef.current) {
+      clearTimeout(walkTimeoutRef.current);
+      walkTimeoutRef.current = null;
+    }
+    walkPathRef.current = [];
+    walkStepRef.current = 0;
+    walkActiveRef.current = false;
     setWalking(false);
   }, []);
 
   const walkTo = useCallback((targetRoom: MapRoom) => {
-    // Cancel any existing walk first
-    for (const t of walkTimers.current) clearTimeout(t);
-    walkTimers.current = [];
+    // Prevent re-entrance from renders
+    if (walkActiveRef.current) return;
+
+    if (walkTimeoutRef.current) {
+      clearTimeout(walkTimeoutRef.current);
+      walkTimeoutRef.current = null;
+    }
 
     const mapSvc = mapServiceRef.current;
     const current = mapSvc.getCurrentRoom();
@@ -277,24 +297,36 @@ export function TerminalScreen({ route, navigation }: Props) {
       addSystemLine('--- No se encuentra camino ---');
       return;
     }
+
+    walkActiveRef.current = true;
     setWalking(true);
     setSearchVisible(false);
-    const STEP_DELAY = 500;
-    for (let i = 0; i < path.length; i++) {
-      const direction = path[i];
-      const isLast = i === path.length - 1;
-      const delay = (i + 1) * STEP_DELAY;  // Start delay at 500ms, not 0
 
-      const t = setTimeout(() => {
+    walkPathRef.current = path;
+    walkStepRef.current = 0;
+
+    const STEP_DELAY = 1100;
+    const processNextStep = () => {
+      const step = walkStepRef.current;
+      const allPaths = walkPathRef.current;
+
+      if (step < allPaths.length && walkActiveRef.current) {
         if (telnetRef.current) {
-          telnetRef.current.send(direction);
+          telnetRef.current.send(allPaths[step]);
         }
-        if (isLast) {
-          setWalking(false);
-        }
-      }, delay);
-      walkTimers.current.push(t);
-    }
+        walkStepRef.current = step + 1;
+        walkTimeoutRef.current = setTimeout(processNextStep, STEP_DELAY);
+      } else {
+        // Walk completed or cancelled
+        walkTimeoutRef.current = null;
+        walkPathRef.current = [];
+        walkStepRef.current = 0;
+        walkActiveRef.current = false;
+        setWalking(false);
+      }
+    };
+
+    processNextStep();
   }, [addSystemLine]);
 
   const handleLocate = useCallback(() => {
