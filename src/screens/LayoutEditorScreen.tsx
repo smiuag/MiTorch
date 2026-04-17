@@ -182,13 +182,7 @@ export function LayoutEditorScreen({ navigation }: Props) {
       >
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setModalState(null)}>
-              <Text style={styles.modalBtn}>Cancelar</Text>
-            </TouchableOpacity>
             <Text style={styles.modalTitle}>Editar botón</Text>
-            <TouchableOpacity onPress={handleSaveButton}>
-              <Text style={styles.modalBtn}>✓ Guardar</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={styles.modalContent}>
@@ -268,6 +262,21 @@ export function LayoutEditorScreen({ navigation }: Props) {
                 <Text style={styles.deleteBtnText}>Eliminar botón</Text>
               </TouchableOpacity>
             )}
+
+            <View style={styles.buttonRow}>
+              <TouchableOpacity
+                onPress={() => setModalState(null)}
+                style={styles.cancelBtn}
+              >
+                <Text style={styles.cancelBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSaveButton}
+                style={styles.saveBtn}
+              >
+                <Text style={styles.saveBtnText}>Guardar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </SafeAreaView>
       </Modal>
@@ -332,14 +341,8 @@ const styles = StyleSheet.create({
     borderBottomColor: '#333',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     paddingHorizontal: 16,
-  },
-  modalBtn: {
-    color: '#0c0',
-    fontSize: 14,
-    fontFamily: 'monospace',
-    fontWeight: 'bold',
   },
   modalTitle: {
     color: '#fff',
@@ -432,6 +435,43 @@ const styles = StyleSheet.create({
   },
   deleteBtnText: {
     color: '#cc3333',
+    fontSize: 14,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+  },
+  cancelBtn: {
+    flex: 1,
+    backgroundColor: '#3a1a1a',
+    borderWidth: 2,
+    borderColor: '#cc3333',
+    borderRadius: 6,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginHorizontal: 8,
+  },
+  cancelBtnText: {
+    color: '#cc3333',
+    fontSize: 14,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
+  },
+  saveBtn: {
+    flex: 1,
+    backgroundColor: '#1a3a1a',
+    borderWidth: 2,
+    borderColor: '#0c0',
+    borderRadius: 6,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginHorizontal: 8,
+  },
+  saveBtnText: {
+    color: '#0c0',
     fontSize: 14,
     fontFamily: 'monospace',
     fontWeight: 'bold',
