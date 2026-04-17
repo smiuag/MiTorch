@@ -623,6 +623,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         currentRoom={currentRoom}
         nearbyRooms={nearbyRooms}
         mapVisible={mapVisible}
+        commandHistory={commandHistory}
         onInputChange={setInputText}
         onSend={handleSend}
         onSendCommand={sendCommand}

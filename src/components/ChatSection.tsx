@@ -37,6 +37,8 @@ interface ChatSectionProps {
   onSendCommand: (command: string) => void;
   onConfigPress: () => void;
   onScrollTerminalToBottom?: () => void;
+  commandHistory?: string[];
+  onHistoryNavigate?: (command: string) => void;
 }
 
 export function ChatSection({
@@ -61,11 +63,14 @@ export function ChatSection({
   onSendCommand,
   onConfigPress,
   onScrollTerminalToBottom,
+  commandHistory = [],
+  onHistoryNavigate,
 }: ChatSectionProps) {
   const { width } = useWindowDimensions();
   const inputRef = useRef<TextInput>(null);
   const messagesListRef = useRef<FlatList>(null);
   const [filteredMessages, setFilteredMessages] = useState<ChannelMessage[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
 
   // Filter messages based on active channel
   useEffect(() => {
@@ -114,8 +119,32 @@ export function ChatSection({
       }
       onSendCommand(message);
       onInputChange('');
+      setHistoryIndex(null);
       // Auto-scroll terminal to bottom when sending
       onScrollTerminalToBottom?.();
+    }
+  };
+
+  const handleHistoryPrev = () => {
+    let nextIndex = historyIndex === null ? commandHistory.length - 1 : historyIndex - 1;
+    if (nextIndex < 0) nextIndex = commandHistory.length - 1;
+    if (commandHistory[nextIndex]) {
+      setHistoryIndex(nextIndex);
+      onHistoryNavigate?.(commandHistory[nextIndex]);
+      onInputChange(commandHistory[nextIndex]);
+    }
+  };
+
+  const handleHistoryNext = () => {
+    if (historyIndex === null) return;
+    let nextIndex = historyIndex + 1;
+    if (nextIndex >= commandHistory.length) {
+      setHistoryIndex(null);
+      onInputChange('');
+    } else if (commandHistory[nextIndex]) {
+      setHistoryIndex(nextIndex);
+      onHistoryNavigate?.(commandHistory[nextIndex]);
+      onInputChange(commandHistory[nextIndex]);
     }
   };
 
@@ -171,6 +200,9 @@ export function ChatSection({
 
       {/* Input */}
       <View style={styles.inputContainer}>
+        <TouchableOpacity style={styles.historyButton} onPress={handleHistoryPrev}>
+          <Text style={styles.historyButtonText}>▲</Text>
+        </TouchableOpacity>
         <TextInput
           ref={inputRef}
           style={[styles.input, { fontSize }]}
@@ -185,6 +217,9 @@ export function ChatSection({
           blurOnSubmit={false}
           returnKeyType="send"
         />
+        <TouchableOpacity style={styles.historyButton} onPress={handleHistoryNext}>
+          <Text style={styles.historyButtonText}>▼</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.sendButton} onPress={handleSend}>
           <Text style={styles.sendButtonText}>›</Text>
         </TouchableOpacity>
@@ -239,9 +274,22 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    marginRight: 8,
+    marginHorizontal: 4,
     borderWidth: 1,
     borderColor: '#333',
+  },
+  historyButton: {
+    backgroundColor: '#2a2a2a',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderRadius: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  historyButtonText: {
+    color: '#888',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   sendButton: {
     backgroundColor: '#3399cc',

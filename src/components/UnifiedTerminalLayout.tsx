@@ -32,6 +32,7 @@ interface UnifiedTerminalLayoutProps {
   currentRoom: MapRoom | null;
   nearbyRooms: MapRoom[];
   mapVisible: boolean;
+  commandHistory?: string[];
   onInputChange: (text: string) => void;
   onSend: () => void;
   onSendCommand: (command: string) => void;
@@ -58,6 +59,7 @@ export function UnifiedTerminalLayout({
   currentRoom,
   nearbyRooms,
   mapVisible,
+  commandHistory,
   onInputChange,
   onSend,
   onSendCommand,
@@ -176,6 +178,7 @@ export function UnifiedTerminalLayout({
             onSendCommand={onSendCommand}
             onConfigPress={onConfigPress}
             onScrollTerminalToBottom={handleScrollTerminalToBottom}
+            commandHistory={commandHistory}
           />
         </View>
       </Animated.View>
@@ -234,6 +237,7 @@ export function UnifiedTerminalLayout({
             onSendCommand={onSendCommand}
             onConfigPress={onConfigPress}
             onScrollTerminalToBottom={handleScrollTerminalToBottom}
+            commandHistory={commandHistory}
           />
         </View>
       </Animated.View>
