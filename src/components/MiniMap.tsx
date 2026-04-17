@@ -10,10 +10,10 @@ interface MiniMapProps {
   inlineMode?: boolean;
 }
 
-const MAP_SIZE = 200;
-const ROOM_SIZE = 8;
-const CURRENT_ROOM_SIZE = 10;
-const VIEW_RADIUS = 15;
+const MAP_SIZE = 180;
+const ROOM_SIZE = 7.2;
+const CURRENT_ROOM_SIZE = 9;
+const VIEW_RADIUS = 13.5;
 
 export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMode }: MiniMapProps) {
   const mapContent = useMemo(() => {
