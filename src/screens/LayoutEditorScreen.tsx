@@ -10,8 +10,6 @@ import { loadLayout, saveLayout, LayoutButton, ButtonLayout } from '../storage/l
 
 type Props = NativeStackScreenProps<RootStackParamList, 'LayoutEditor'>;
 
-const GRID_COLS = 11;
-const GRID_ROWS = 11;
 const HEADER_HEIGHT = 56;
 const COLORS = ['#cc3333', '#3399cc', '#33cc33', '#cc9933', '#9933cc', '#cc3399', '#333333', '#666666'];
 
@@ -25,14 +23,17 @@ function genId(): string {
 
 export function LayoutEditorScreen({ navigation }: Props) {
   const { width, height } = useWindowDimensions();
-  const [layout, setLayout] = useState<ButtonLayout>({ buttons: [] });
-  const [originalLayout, setOriginalLayout] = useState<ButtonLayout>({ buttons: [] });
+  const [layout, setLayout] = useState<ButtonLayout>({ buttons: [], gridSize: 11 });
+  const [originalLayout, setOriginalLayout] = useState<ButtonLayout>({ buttons: [], gridSize: 11 });
   const [modalState, setModalState] = useState<ModalState>(null);
   const [editLabel, setEditLabel] = useState('');
   const [editCommand, setEditCommand] = useState('');
   const [editColor, setEditColor] = useState('#666666');
   const [editOpacity, setEditOpacity] = useState(0.5);
   const hasChanges = useRef(false);
+
+  const GRID_COLS = layout.gridSize;
+  const GRID_ROWS = layout.gridSize;
 
   // Load layout on mount
   useEffect(() => {

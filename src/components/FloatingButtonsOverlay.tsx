@@ -16,10 +16,9 @@ interface FloatingButtonsOverlayProps {
   disabled?: boolean;
   availableHeight?: number;
   availableWidth?: number;
+  gridSize?: number;
 }
 
-const GRID_COLS = 11;
-const GRID_ROWS = 11;
 const GAP = 1;
 
 export function FloatingButtonsOverlay({
@@ -29,6 +28,7 @@ export function FloatingButtonsOverlay({
   disabled = false,
   availableHeight = 0,
   availableWidth = 0,
+  gridSize = 11,
 }: FloatingButtonsOverlayProps) {
   const { width, height } = Dimensions.get('window');
   const isPortrait = orientation === 'portrait';
@@ -42,9 +42,9 @@ export function FloatingButtonsOverlay({
     containerWidth = width * 0.6;
   }
 
-  // Calculate cell size to fit 11x11 grid
-  const cellWidth = Math.floor((containerWidth - GAP * (GRID_COLS - 1)) / GRID_COLS);
-  const cellHeight = Math.floor((containerHeight - GAP * (GRID_ROWS - 1)) / GRID_ROWS);
+  // Calculate cell size to fit dynamic grid
+  const cellWidth = Math.floor((containerWidth - GAP * (gridSize - 1)) / gridSize);
+  const cellHeight = Math.floor((containerHeight - GAP * (gridSize - 1)) / gridSize);
   const cellSize = Math.min(cellWidth, cellHeight);
 
   return (

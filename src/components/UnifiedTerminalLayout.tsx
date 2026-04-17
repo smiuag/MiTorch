@@ -89,9 +89,12 @@ export function UnifiedTerminalLayout({
   };
 
   // Load button layout
+  const [gridSize, setGridSize] = useState(11);
+
   useEffect(() => {
     (async () => {
       const buttonLayout = await loadLayout();
+      setGridSize(buttonLayout.gridSize);
       setOrientationLayout({
         orientation: isLandscape ? 'landscape' : 'portrait',
         floatingButtons: buttonLayout.buttons.map(btn => ({
@@ -165,6 +168,7 @@ export function UnifiedTerminalLayout({
               onSendCommand={onSendCommand}
               availableHeight={availableHeight}
               availableWidth={flexibleWidth}
+              gridSize={gridSize}
             />
           )}
         </View>
@@ -226,6 +230,7 @@ export function UnifiedTerminalLayout({
               onSendCommand={onSendCommand}
               availableHeight={flexibleHeight}
               availableWidth={width}
+              gridSize={gridSize}
             />
           )}
         </View>

@@ -1,17 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Switch, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Switch, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { loadSettings, saveSettings, AppSettings } from '../storage/settingsStorage';
+import { loadLayout, saveLayout } from '../storage/layoutStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export function SettingsScreen({ navigation }: Props) {
-  const [settings, setSettings] = useState<AppSettings>({ useChannels: true, fontSize: 14, useCustomKeyboard: true });
+  const [settings, setSettings] = useState<AppSettings>({ fontSize: 14 });
+  const [gridSize, setGridSize] = useState(11);
 
   useEffect(() => {
     loadSettings().then(setSettings);
+    loadLayout().then(layout => setGridSize(layout.gridSize));
   }, []);
 
   const updateSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
@@ -36,6 +39,34 @@ export function SettingsScreen({ navigation }: Props) {
         >
           <Text style={styles.configBtnText}>Configurar layout ⚙️</Text>
         </TouchableOpacity>
+
+        <View style={[styles.row, styles.marginTop]}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Tamaño de grid</Text>
+            <Text style={styles.rowDesc}>
+              Selecciona el tamaño de la cuadrícula de botones.
+            </Text>
+          </View>
+          <View style={styles.gridSizeControls}>
+            {[11, 10, 9, 8].map(size => (
+              <TouchableOpacity
+                key={size}
+                style={[
+                  styles.gridSizeBtn,
+                  gridSize === size && styles.gridSizeBtnActive,
+                ]}
+                onPress={async () => {
+                  const layout = await loadLayout();
+                  layout.gridSize = size;
+                  await saveLayout(layout);
+                  setGridSize(size);
+                }}
+              >
+                <Text style={styles.gridSizeBtnText}>{size}×{size}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
 
         <View style={[styles.row, styles.marginTop]}>
           <View style={styles.rowInfo}>
@@ -222,5 +253,29 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textTransform: 'uppercase',
     letterSpacing: 1,
+  },
+  gridSizeControls: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  gridSizeBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  gridSizeBtnActive: {
+    backgroundColor: '#0a3a0a',
+    borderColor: '#0c0',
+  },
+  gridSizeBtnText: {
+    color: '#ccc',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
   },
 });

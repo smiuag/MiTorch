@@ -12,12 +12,14 @@ export interface LayoutButton {
 
 export interface ButtonLayout {
   buttons: LayoutButton[];
+  gridSize: number;
 }
 
 const LAYOUT_KEY = 'aljhtar_button_layout';
 
 const DEFAULT_LAYOUT: ButtonLayout = {
   buttons: [],
+  gridSize: 11,
 };
 
 let buttonIdCounter = 0;
@@ -42,7 +44,7 @@ export function createDefaultLayout(): ButtonLayout {
     { id: genId(), col: 6, row: 6, label: 'Sudeste', command: 'sudeste', color: '#cc3333', opacity: 0.5 },
   ];
 
-  return { buttons };
+  return { buttons, gridSize: 11 };
 }
 
 export async function loadLayout(): Promise<ButtonLayout> {
