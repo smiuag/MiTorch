@@ -185,7 +185,6 @@ export function UnifiedTerminalLayout({
         style={[
           styles.portraitContainer,
           {
-            height: availableHeight + keyboardHeight,
             transform: [{ translateY: translateYRef.current }],
           },
         ]}
