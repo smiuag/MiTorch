@@ -1,0 +1,11 @@
+﻿
+> torch-zhyla@1.0.0 start
+> expo start 8081
+
+node.exe : Invalid project root: C:\proyectos\Claude\BlowTorch\aljhtar-store\8081
+En C:\Program Files\nodejs\npm.ps1: 29 Carácter: 3
++   & $NODE_EXE $NPM_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Invalid project...htar-store\8081:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

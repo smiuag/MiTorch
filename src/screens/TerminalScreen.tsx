@@ -35,6 +35,10 @@ import { loadFKeys, saveFKeys } from '../storage/fkeyStorage';
 import { loadExtraButtons, saveExtraButtons } from '../storage/extraButtonStorage';
 import { TerminalPanel } from '../components/TerminalPanel';
 import { UnifiedTerminalLayout } from '../components/UnifiedTerminalLayout';
+import { AliasWizardModal, WizardResult } from '../components/AliasWizardModal';
+import { parseAliasOutput, ParsedAlias } from '../utils/aliasParser';
+import { loadServers, saveServers } from '../storage/serverStorage';
+import { saveLayoutProfile } from '../storage/layoutProfileStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Terminal'>;
 
@@ -77,7 +81,12 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [fontSize, setFontSize] = useState(14);
   const [buttonLayout, setButtonLayout] = useState<ButtonLayout | null>(null);
+  const [aliasWizardVisible, setAliasWizardVisible] = useState(false);
+  const [capturedAliases, setCapturedAliases] = useState<ParsedAlias[]>([]);
   const fontSizeRef = useRef(14);
+  const isCapturingAliasRef = useRef(false);
+  const aliasBufferRef = useRef<string[]>([]);
+  const aliasTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const walkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const walkPathRef = useRef<string[]>([]);
   const walkStepRef = useRef(0);
@@ -124,6 +133,21 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, []);
 
   const addMultipleLines = useCallback((texts: string[]) => {
+    // Capture alias output if in progress
+    if (isCapturingAliasRef.current) {
+      aliasBufferRef.current.push(...texts);
+      // Reset timer: wait 1.5s with no new lines before parsing
+      if (aliasTimerRef.current) clearTimeout(aliasTimerRef.current);
+      aliasTimerRef.current = setTimeout(() => {
+        isCapturingAliasRef.current = false;
+        const parsed = parseAliasOutput(aliasBufferRef.current);
+        if (parsed.length > 0) {
+          setCapturedAliases(parsed);
+          setAliasWizardVisible(true);
+        }
+      }, 1500);
+    }
+
     const newLines: MudLine[] = [];
     const channelMessagesToAdd: ChannelMessage[] = [];
 
@@ -436,6 +460,41 @@ export function TerminalScreen({ route, navigation }: Props) {
     setMacroEditorVisible(false);
   }, [server.id, editingTarget]);
 
+  const handleWizardSave = useCallback(
+    async (result: WizardResult) => {
+      try {
+        // Create layout profile
+        const layout: ButtonLayout = {
+          buttons: result.buttons,
+          gridSize: result.gridSize,
+        };
+        const profileId = await saveLayoutProfile(`Perfil de ${server.name}`, layout);
+
+        // Update server with profileId
+        const servers = await loadServers();
+        const updated = servers.map(s =>
+          s.id === server.id ? { ...s, layoutProfileId: profileId } : s
+        );
+        await saveServers(updated);
+
+        // Update channelAliases
+        const newAliases = { ...channelAliases, ...result.channelAliasUpdates };
+        setChannelAliases(newAliases);
+        await saveChannelAliases(server.id, newAliases);
+
+        // Activate buttons in current session
+        setButtonLayout(layout);
+        setAliasWizardVisible(false);
+
+        addSystemLine('✓ Configuración guardada');
+      } catch (e) {
+        console.error('Error saving wizard configuration:', e);
+        addSystemLine('✗ Error al guardar la configuración');
+      }
+    },
+    [server.id, server.name, channelAliases, addSystemLine]
+  );
+
   useEffect(() => {
     navigation.setOptions({ title: server.name });
 
@@ -578,6 +637,20 @@ export function TerminalScreen({ route, navigation }: Props) {
       addSystemLine('--- Movimiento cancelado ---');
     }
 
+    // Intercept alias command for wizard if no profile
+    if (text.toLowerCase() === 'alias' && !server.layoutProfileId) {
+      isCapturingAliasRef.current = true;
+      aliasBufferRef.current = [];
+      setInputText('');
+      if (telnetRef.current) {
+        telnetRef.current.send(text);
+      }
+      setCommandHistory(prev => [...prev.slice(-49), text]);
+      isAtBottomRef.current = true;
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
+      return;
+    }
+
     // Intercept irsala command
     const irsalaMatch = text.match(/^irsala\s+(.+)$/i);
     if (irsalaMatch) {
@@ -681,6 +754,15 @@ export function TerminalScreen({ route, navigation }: Props) {
         onSave={handleMacroSave}
         onDelete={handleMacroDelete}
         onClose={() => setMacroEditorVisible(false)}
+      />
+
+      {/* Alias wizard modal */}
+      <AliasWizardModal
+        visible={aliasWizardVisible}
+        aliases={capturedAliases}
+        channels={channels.filter(c => c !== 'Todos' && c !== 'Mapa')}
+        onSave={handleWizardSave}
+        onDiscard={() => setAliasWizardVisible(false)}
       />
 
     </SafeAreaView>
