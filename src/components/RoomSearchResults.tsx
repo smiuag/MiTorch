@@ -24,18 +24,22 @@ export function RoomSearchResults({ rooms, visible, onSelect, onClose }: RoomSea
         data={rooms}
         keyExtractor={item => String(item.id)}
         style={styles.list}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.roomItem}
-            onPress={() => onSelect(item)}
-          >
-            <View style={[styles.colorDot, { backgroundColor: item.c ?? '#0b0' }]} />
-            <View style={styles.roomInfo}>
-              <Text style={styles.roomName}>{item.n}</Text>
-            </View>
-            <Text style={styles.goText}>Ir</Text>
-          </TouchableOpacity>
-        )}
+        renderItem={({ item }) => {
+          const exits = Object.keys(item.e || {}).sort().join(', ');
+          return (
+            <TouchableOpacity
+              style={styles.roomItem}
+              onPress={() => onSelect(item)}
+            >
+              <View style={[styles.colorDot, { backgroundColor: item.c ?? '#0b0' }]} />
+              <View style={styles.roomInfo}>
+                <Text style={styles.roomName}>{item.n}</Text>
+                {exits && <Text style={styles.roomExits}>{exits}</Text>}
+              </View>
+              <Text style={styles.goText}>Ir</Text>
+            </TouchableOpacity>
+          );
+        }}
       />
     </View>
   );
@@ -101,6 +105,12 @@ const styles = StyleSheet.create({
     color: '#ccc',
     fontSize: 13,
     fontFamily: 'monospace',
+  },
+  roomExits: {
+    color: '#666',
+    fontSize: 10,
+    fontFamily: 'monospace',
+    marginTop: 2,
   },
   goText: {
     color: '#0c0',
