@@ -299,10 +299,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     height: 40,
+    marginLeft: 6,
   },
   sendButtonText: {
     color: '#fff',
-    fontSize: 20,
+    fontSize: 26,
     fontWeight: 'bold',
+    lineHeight: 26,
   },
 });
