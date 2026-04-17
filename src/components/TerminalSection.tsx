@@ -98,6 +98,7 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
         removeClippedSubviews={true}
         maxToRenderPerBatch={50}
         updateCellsBatchingPeriod={50}
+        contentContainerStyle={{ paddingTop: mapVisible ? 130 : 0 }}
       />
 
       {showScrollToBottom && (
@@ -121,10 +122,15 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   mapContainer: {
-    width: '100%',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     height: 120,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
+    zIndex: 5,
+    backgroundColor: '#000',
   },
   lineContainer: {
     paddingHorizontal: 8,
