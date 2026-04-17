@@ -287,7 +287,14 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
     try {
       // Always create new if it's a new profile or "save as new"
       if (isNewProfile || saveAsNew) {
-        await saveLayoutProfile(profileName, layout);
+        const newProfileId = await saveLayoutProfile(profileName, layout);
+        // If save as new, update the state to reflect the new profile
+        if (saveAsNew) {
+          setEditingProfileId(newProfileId);
+          setCurrentProfileName(profileName);
+          setEditingProfileName(profileName);
+          setSaveAsNew(false);
+        }
       } else if (editingProfileId) {
         // Only update if editing existing without "save as new"
         await updateLayoutProfile(editingProfileId, profileName, layout);
@@ -295,7 +302,9 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
       setOriginalLayout(JSON.parse(JSON.stringify(layout)));
       hasChanges.current = false;
       setShowNameModal(false);
-      navigation.goBack();
+      if (isNewProfile) {
+        navigation.goBack();
+      }
     } catch (error) {
       Alert.alert('Error', 'No se pudo guardar el perfil');
       console.error(error);
