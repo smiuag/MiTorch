@@ -274,7 +274,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
     borderWidth: 1,
     borderColor: '#333',
-    minHeight: 40,
+    height: 40,
   },
   historyButton: {
     backgroundColor: '#2a2a2a',
@@ -284,6 +284,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     minHeight: 40,
+    height: 40,
   },
   historyButtonText: {
     color: '#888',
@@ -297,7 +298,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     justifyContent: 'center',
     alignItems: 'center',
-    minHeight: 40,
+    height: 40,
   },
   sendButtonText: {
     color: '#fff',
