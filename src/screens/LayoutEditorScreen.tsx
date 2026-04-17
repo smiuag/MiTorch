@@ -252,7 +252,8 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
           {
             text: 'Sobrescribir',
             onPress: async () => {
-              await updateLayoutProfile(editingProfileId, '', layout);
+              await updateLayoutProfile(editingProfileId, editingProfileName, layout);
+              setCurrentProfileName(editingProfileName);
               setOriginalLayout(JSON.parse(JSON.stringify(layout)));
               hasChanges.current = false;
               navigation.goBack();
@@ -260,7 +261,7 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
           },
           {
             text: 'Guardar como nuevo',
-            onPress: () => promptForProfileName(false, true),
+            onPress: () => promptForProfileName(false, true, editingProfileName),
           },
         ]
       );
@@ -270,10 +271,10 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
     }
   };
 
-  const promptForProfileName = (isNew: boolean, isSaveAsNew: boolean = false) => {
+  const promptForProfileName = (isNew: boolean, isSaveAsNew: boolean = false, initialName: string = '') => {
     setIsNewProfile(isNew);
     setSaveAsNew(isSaveAsNew);
-    setProfileName('');
+    setProfileName(initialName);
     setShowNameModal(true);
   };
 
