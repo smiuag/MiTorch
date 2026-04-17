@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MudLine } from '../types';
 import { ChannelMessage } from './ChannelPanel';
 import { MapRoom } from '../services/mapService';
-import { TerminalSection } from './TerminalSection';
+import { TerminalSection, TerminalSectionHandle } from './TerminalSection';
 import { ChatSection } from './ChatSection';
 
 interface UnifiedTerminalLayoutProps {
@@ -69,6 +69,7 @@ export function UnifiedTerminalLayout({
   const isLandscape = width > height;
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const translateYRef = useRef(new Animated.Value(0));
+  const terminalSectionRef = useRef<TerminalSectionHandle>(null);
 
   const FIXED_SECTION_PERCENT = 0.4;
   const FLEXIBLE_SECTION_PERCENT = 0.6;
@@ -76,6 +77,10 @@ export function UnifiedTerminalLayout({
   const availableHeight = height - insets.top - insets.bottom;
   const fixedHeight = availableHeight * FIXED_SECTION_PERCENT;
   const flexibleHeight = availableHeight * FLEXIBLE_SECTION_PERCENT;
+
+  const handleScrollTerminalToBottom = () => {
+    terminalSectionRef.current?.scrollToBottom();
+  };
 
   useEffect(() => {
     const keyboardShowListener = Keyboard.addListener('keyboardDidShow', (e) => {
@@ -118,6 +123,7 @@ export function UnifiedTerminalLayout({
       >
         <View style={[styles.flexibleSection, { width: `${FLEXIBLE_SECTION_PERCENT * 100}%` }]}>
           <TerminalSection
+            ref={terminalSectionRef}
             lines={lines}
             fontSize={fontSize}
             mapVisible={mapVisible}
@@ -147,6 +153,7 @@ export function UnifiedTerminalLayout({
             onInputChange={onInputChange}
             onSend={onSend}
             onConfigPress={onConfigPress}
+            onScrollTerminalToBottom={handleScrollTerminalToBottom}
           />
         </View>
       </Animated.View>
@@ -165,6 +172,7 @@ export function UnifiedTerminalLayout({
       >
         <View style={[styles.flexibleSection, { height: flexibleHeight }]}>
           <TerminalSection
+            ref={terminalSectionRef}
             lines={lines}
             fontSize={fontSize}
             mapVisible={mapVisible}
@@ -194,6 +202,7 @@ export function UnifiedTerminalLayout({
             onInputChange={onInputChange}
             onSend={onSend}
             onConfigPress={onConfigPress}
+            onScrollTerminalToBottom={handleScrollTerminalToBottom}
           />
         </View>
       </Animated.View>

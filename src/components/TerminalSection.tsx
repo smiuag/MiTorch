@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import {
   View,
   StyleSheet,
@@ -11,6 +11,10 @@ import { AnsiText } from './AnsiText';
 import { MiniMap } from './MiniMap';
 import { MapRoom } from '../services/mapService';
 
+export interface TerminalSectionHandle {
+  scrollToBottom: () => void;
+}
+
 interface TerminalSectionProps {
   lines: MudLine[];
   fontSize: number;
@@ -19,20 +23,33 @@ interface TerminalSectionProps {
   currentRoom: MapRoom | null;
   nearbyRooms: MapRoom[];
   height: number;
+  onScrollToBottom?: () => void;
 }
 
-export function TerminalSection({
-  lines,
-  fontSize,
-  mapVisible,
-  onToggleMap,
-  currentRoom,
-  nearbyRooms,
-  height,
-}: TerminalSectionProps) {
-  const flatListRef = useRef<FlatList>(null);
-  const [scrollAtBottom, setScrollAtBottom] = useState(true);
-  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSectionProps>(
+  function TerminalSectionImpl(
+    {
+      lines,
+      fontSize,
+      mapVisible,
+      onToggleMap,
+      currentRoom,
+      nearbyRooms,
+      height,
+    },
+    ref
+  ) {
+    const flatListRef = useRef<FlatList>(null);
+    const [scrollAtBottom, setScrollAtBottom] = useState(true);
+    const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+
+    useImperativeHandle(ref, () => ({
+      scrollToBottom: () => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+        setScrollAtBottom(true);
+        setShowScrollToBottom(false);
+      },
+    }));
 
   // Auto-scroll to bottom when new lines arrive
   useEffect(() => {
@@ -93,7 +110,8 @@ export function TerminalSection({
       )}
     </View>
   );
-}
+  }
+);
 
 const styles = StyleSheet.create({
   container: {

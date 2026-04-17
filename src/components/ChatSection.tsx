@@ -31,6 +31,7 @@ interface ChatSectionProps {
   onInputChange: (text: string) => void;
   onSend: () => void;
   onConfigPress: () => void;
+  onScrollTerminalToBottom?: () => void;
 }
 
 export function ChatSection({
@@ -51,6 +52,7 @@ export function ChatSection({
   onInputChange,
   onSend,
   onConfigPress,
+  onScrollTerminalToBottom,
 }: ChatSectionProps) {
   const { width } = useWindowDimensions();
   const inputRef = useRef<TextInput>(null);
@@ -95,6 +97,8 @@ export function ChatSection({
       }
       onSendCommand(message);
       onInputChange('');
+      // Auto-scroll terminal to bottom when sending
+      onScrollTerminalToBottom?.();
     }
   };
 
