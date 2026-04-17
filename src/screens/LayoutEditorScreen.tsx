@@ -428,7 +428,7 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
                 style={styles.input}
                 value={editLabel}
                 onChangeText={setEditLabel}
-                placeholder="Ej: Norte"
+                placeholder="Ej: F1"
                 placeholderTextColor="#666"
               />
             </View>
@@ -439,7 +439,7 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
                 style={styles.input}
                 value={editCommand}
                 onChangeText={setEditCommand}
-                placeholder="Ej: norte"
+                placeholder="Ej: formular curar heridas ligeras:$arg:me$"
                 placeholderTextColor="#666"
               />
             </View>
@@ -614,11 +614,12 @@ const styles = StyleSheet.create({
   colorGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
+    justifyContent: 'space-between',
   },
   colorOption: {
-    width: 50,
-    height: 50,
+    width: '11.5%',
+    aspectRatio: 1,
     borderRadius: 4,
     borderWidth: 2,
     borderColor: 'transparent',
@@ -630,7 +631,7 @@ const styles = StyleSheet.create({
   },
   checkmark: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 12,
     fontWeight: 'bold',
   },
   sliderContainer: {
