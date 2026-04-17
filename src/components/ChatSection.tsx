@@ -208,6 +208,7 @@ const styles = StyleSheet.create({
   messagesList: {
     flexGrow: 1,
     backgroundColor: '#000',
+    overflow: 'hidden',
   },
   messageContainer: {
     paddingHorizontal: 8,
