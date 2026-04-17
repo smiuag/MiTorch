@@ -153,6 +153,8 @@ export function ChatSection({
           placeholder="Say something..."
           placeholderTextColor="#666"
           multiline={false}
+          autoCapitalize="none"
+          autoCorrect={false}
           onSubmitEditing={handleSend}
         />
         <TouchableOpacity style={styles.sendButton} onPress={handleSend}>
