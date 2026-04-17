@@ -614,7 +614,7 @@ const styles = StyleSheet.create({
   colorGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 5,
     justifyContent: 'center',
   },
   colorOption: {
