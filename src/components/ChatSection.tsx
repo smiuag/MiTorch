@@ -174,7 +174,7 @@ const styles = StyleSheet.create({
     minHeight: 40,
   },
   messagesList: {
-    flex: 1,
+    flexGrow: 1,
     backgroundColor: '#000',
   },
   messageContainer: {
@@ -182,11 +182,11 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   vitalBarsContainer: {
-    minHeight: 40,
     backgroundColor: '#0a0a0a',
     borderTopWidth: 1,
     borderTopColor: '#333',
     justifyContent: 'center',
+    paddingVertical: 4,
     paddingHorizontal: 8,
   },
   inputContainer: {
@@ -195,9 +195,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#333',
     paddingHorizontal: 8,
-    paddingVertical: 8,
-    minHeight: 50,
+    paddingVertical: 6,
     alignItems: 'center',
+    zIndex: 10,
   },
   input: {
     flex: 1,
