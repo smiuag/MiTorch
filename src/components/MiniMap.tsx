@@ -8,7 +8,6 @@ interface MiniMapProps {
   visible: boolean;
   onToggle: () => void;
   inlineMode?: boolean;
-  onRoomSelect?: (room: MapRoom) => void;
 }
 
 const MAP_SIZE = 180;
@@ -16,7 +15,7 @@ const ROOM_SIZE = 7.2;
 const CURRENT_ROOM_SIZE = 9;
 const VIEW_RADIUS = 13.5;
 
-export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMode, onRoomSelect }: MiniMapProps) {
+export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMode }: MiniMapProps) {
   const mapContent = useMemo(() => {
     if (!currentRoom || nearbyRooms.length === 0) return null;
 
@@ -91,12 +90,9 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMod
           {mapContent.roomDots.map(({ sx, sy, room, isCurrent }) => {
             const size = isCurrent ? CURRENT_ROOM_SIZE : ROOM_SIZE;
             const roomColor = room.c ?? 'rgba(0, 180, 0, 0.4)';
-            const RoomElement = inlineMode && onRoomSelect ? TouchableOpacity : View;
             return (
-              <RoomElement
+              <View
                 key={room.id}
-                onPress={inlineMode && onRoomSelect ? () => onRoomSelect(room) : undefined}
-                activeOpacity={inlineMode && onRoomSelect ? 0.7 : 1}
                 style={[
                   styles.roomDot,
                   isCurrent ? styles.currentRoomDot : { backgroundColor: roomColor + '99' },
@@ -163,12 +159,9 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMod
           {mapContent.roomDots.map(({ sx, sy, room, isCurrent }) => {
             const size = isCurrent ? CURRENT_ROOM_SIZE : ROOM_SIZE;
             const roomColor = room.c ?? 'rgba(0, 180, 0, 0.4)';
-            const RoomElement = inlineMode && onRoomSelect ? TouchableOpacity : View;
             return (
-              <RoomElement
+              <View
                 key={room.id}
-                onPress={inlineMode && onRoomSelect ? () => onRoomSelect(room) : undefined}
-                activeOpacity={inlineMode && onRoomSelect ? 0.7 : 1}
                 style={[
                   styles.roomDot,
                   isCurrent ? styles.currentRoomDot : { backgroundColor: roomColor + '99' },

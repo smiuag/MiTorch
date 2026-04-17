@@ -595,7 +595,6 @@ export function TerminalScreen({ route, navigation }: Props) {
         }}
         onToggleMap={() => setMapVisible(v => !v)}
         onConfigPress={() => setConfigModalVisible(true)}
-        onRoomSelect={walkTo}
       />
 
       {/* Old layouts kept for backwards compatibility - commented out */}
