@@ -77,11 +77,8 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [configModalVisible, setConfigModalVisible] = useState(false);
   const [currentProfile, setCurrentProfile] = useState('');
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
-  const [useChannels, setUseChannels] = useState(true);
   const [fontSize, setFontSize] = useState(14);
-  const [useCustomKeyboard, setUseCustomKeyboard] = useState(true);
   const [layoutVersion, setLayoutVersion] = useState(0);
-  const useChannelsRef = useRef(true);
   const fontSizeRef = useRef(14);
   const walkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const walkPathRef = useRef<string[]>([]);
@@ -145,7 +142,7 @@ export function TerminalScreen({ route, navigation }: Props) {
       let channelName: string | null = null;
       let messageText = text;
 
-      if (useChannelsRef.current && channels.length > 0) {
+      if (channels.length > 0) {
         // Try to match patterns like "[canal]:", "canal:", or similar
         const patterns = [
           new RegExp(`^\\[(${channels.join('|')})\\]\\s+(.+)$`, 'i'),
@@ -230,11 +227,8 @@ export function TerminalScreen({ route, navigation }: Props) {
     loadExtraButtons(server.id).then(setExtraButtons);
     loadChannelAliases().then(setChannelAliases);
     loadSettings().then(s => {
-      setUseChannels(s.useChannels);
-      useChannelsRef.current = s.useChannels;
       setFontSize(s.fontSize);
       fontSizeRef.current = s.fontSize;
-      setUseCustomKeyboard(s.useCustomKeyboard);
     });
 
     // Only load map for the default server (Reinos de Leyenda)
@@ -468,7 +462,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
         // Add all lines at once to avoid multiple re-renders
         if (linesToAdd.length > 0) {
-          console.log('[onData] Adding', linesToAdd.length, 'lines. useChannels:', useChannelsRef.current, 'First line:', JSON.stringify(linesToAdd[0].slice(0, 100)));
+          console.log('[onData] Adding', linesToAdd.length, 'lines. First line:', JSON.stringify(linesToAdd[0].slice(0, 100)));
           addMultipleLines(linesToAdd);
         }
       },
@@ -505,25 +499,18 @@ export function TerminalScreen({ route, navigation }: Props) {
           console.log('[GMCP] Message length:', rawMsg.length, 'Contains \\n:', rawMsg.includes('\n'), 'Contains \\r:', rawMsg.includes('\r'));
           console.log('[GMCP] Char codes at position 0-10:', Array.from(rawMsg.slice(0, 10)).map(c => c.charCodeAt(0)));
 
-          if (!useChannelsRef.current) {
-            // No channel management: show in main output
-            console.log('[GMCP] useChannels=false, calling addLine');
-            addLine(rawMsg);
-          } else {
-            console.log('[GMCP] useChannels=true, parsing ANSI');
-            const spans = parseAnsi(rawMsg);
-            console.log('[GMCP] After parseAnsi - spans count:', spans.length, 'first span text:', JSON.stringify(spans[0]?.text.slice(0, 50)));
+          const spans = parseAnsi(rawMsg);
+          console.log('[GMCP] After parseAnsi - spans count:', spans.length, 'first span text:', JSON.stringify(spans[0]?.text.slice(0, 50)));
 
-            setChannelMessages(prev => {
-              const updated = [...prev, { id: nextMsgId(), channel: data.canal, spans }];
-              console.log('[GMCP] setChannelMessages called, total messages:', updated.length);
-              return updated.length > 500 ? updated.slice(-500) : updated;
-            });
-            const isOwnEcho = Date.now() - lastSentChannelTime.current < 1000;
-            const isReading = activeChannelRef.current === data.canal || activeChannelRef.current === 'Todos';
-            if (!isOwnEcho && !isReading) {
-              setUnreadCounts(prev => ({ ...prev, [data.canal]: (prev[data.canal] || 0) + 1 }));
-            }
+          setChannelMessages(prev => {
+            const updated = [...prev, { id: nextMsgId(), channel: data.canal, spans }];
+            console.log('[GMCP] setChannelMessages called, total messages:', updated.length);
+            return updated.length > 500 ? updated.slice(-500) : updated;
+          });
+          const isOwnEcho = Date.now() - lastSentChannelTime.current < 1000;
+          const isReading = activeChannelRef.current === data.canal || activeChannelRef.current === 'Todos';
+          if (!isOwnEcho && !isReading) {
+            setUnreadCounts(prev => ({ ...prev, [data.canal]: (prev[data.canal] || 0) + 1 }));
           }
         }
 
@@ -665,45 +652,6 @@ export function TerminalScreen({ route, navigation }: Props) {
         onConfigPress={() => setConfigModalVisible(true)}
       />
 
-      {/* Old layouts kept for backwards compatibility - commented out */}
-      {false && useFloatingButtons && (
-        <FloatingLayout
-          key={layoutVersion}
-          orientation={floatingOrientation}
-          availableHeight={availableHeight}
-          layoutVersion={layoutVersion}
-          onInputActiveChange={setCustomKeyboardActive}
-          hp={hp}
-          hpMax={hpMax}
-          energy={energy}
-          energyMax={energyMax}
-          inputText={inputText}
-          onInputChange={setInputText}
-          onSend={handleSend}
-          onSendCommand={sendCommand}
-          channels={channels}
-          channelMessages={channelMessages}
-          channelAliases={channelAliases}
-          activeChannel={activeChannel}
-          onSelectChannel={handleSelectChannel}
-          unreadCounts={unreadCounts}
-          onAliasChange={(ch, alias) => {
-            const updated = { ...channelAliases, [ch]: alias };
-            setChannelAliases(updated);
-            saveChannelAliases(updated);
-          }}
-          fontSize={fontSize}
-          onConfigPress={() => setConfigModalVisible(true)}
-          lines={lines}
-          mapVisible={mapVisible}
-          onToggleMap={() => setMapVisible(v => !v)}
-          currentRoom={currentRoom}
-          nearbyRooms={nearbyRooms}
-          useCustomKeyboard={useCustomKeyboard}
-        />
-      )}
-
-      {/* Old UI commented out - using UnifiedTerminalLayout instead */}
 
       {/* Active channel panel handled by UnifiedTerminalLayout now */}
 

@@ -3,15 +3,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const SETTINGS_KEY = 'aljhtar_settings';
 
 export interface AppSettings {
-  useChannels: boolean;
   fontSize: number;
-  useCustomKeyboard: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-  useChannels: true,
   fontSize: 14,
-  useCustomKeyboard: true,
 };
 
 export async function loadSettings(): Promise<AppSettings> {

@@ -30,52 +30,11 @@ export function SettingsScreen({ navigation }: Props) {
       </View>
 
       <ScrollView style={styles.section} contentContainerStyle={styles.sectionContent}>
-        <View style={styles.row}>
-          <View style={styles.rowInfo}>
-            <Text style={styles.rowTitle}>Gestionar canales</Text>
-            <Text style={styles.rowDesc}>
-              Muestra los canales en pestañas separadas.
-            </Text>
-          </View>
-          <Switch
-            value={settings.useChannels}
-            onValueChange={(v) => updateSetting('useChannels', v)}
-            trackColor={{ false: '#333', true: '#0a5a0a' }}
-            thumbColor={settings.useChannels ? '#0c0' : '#666'}
-          />
-        </View>
-
-        <View style={[styles.row, styles.marginTop]}>
-          <View style={styles.rowInfo}>
-            <Text style={styles.rowTitle}>Teclado personalizado</Text>
-            <Text style={styles.rowDesc}>
-              Usa el teclado personalizado en lugar del del teléfono.
-            </Text>
-          </View>
-          <Switch
-            value={settings.useCustomKeyboard}
-            onValueChange={(v) => updateSetting('useCustomKeyboard', v)}
-            trackColor={{ false: '#333', true: '#0a5a0a' }}
-            thumbColor={settings.useCustomKeyboard ? '#0c0' : '#666'}
-          />
-        </View>
-
-        <View style={[styles.row, styles.marginTop]}>
-          <Text style={styles.sectionLabel}>Configuración de layout</Text>
-        </View>
-
         <TouchableOpacity
-          style={[styles.row, styles.marginTop, styles.configBtn]}
-          onPress={() => navigation.navigate('LayoutEditor', { orientation: 'portrait' })}
+          style={[styles.row, styles.configBtn]}
+          onPress={() => navigation.navigate('LayoutEditor')}
         >
-          <Text style={styles.configBtnText}>Configurar layout vertical ↓</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.row, styles.marginTop, styles.configBtn]}
-          onPress={() => navigation.navigate('LayoutEditor', { orientation: 'landscape' })}
-        >
-          <Text style={styles.configBtnText}>Configurar layout horizontal →</Text>
+          <Text style={styles.configBtnText}>Configurar layout ⚙️</Text>
         </TouchableOpacity>
 
         <View style={[styles.row, styles.marginTop]}>

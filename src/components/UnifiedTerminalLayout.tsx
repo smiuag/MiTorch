@@ -13,7 +13,7 @@ import { MapRoom } from '../services/mapService';
 import { TerminalSection, TerminalSectionHandle } from './TerminalSection';
 import { ChatSection } from './ChatSection';
 import { FloatingButtonsOverlay } from './FloatingButtonsOverlay';
-import { loadOrientationLayout } from '../storage/orientationLayoutStorage';
+import { loadLayout } from '../storage/layoutStorage';
 
 interface UnifiedTerminalLayoutProps {
   lines: MudLine[];
@@ -87,11 +87,25 @@ export function UnifiedTerminalLayout({
     terminalSectionRef.current?.scrollToBottom();
   };
 
-  // Load floating buttons layout for current orientation
+  // Load floating buttons layout and convert to OrientationLayout
   useEffect(() => {
     (async () => {
-      const layout = await loadOrientationLayout(isLandscape ? 'landscape' : 'portrait');
-      setOrientationLayout(layout);
+      const fullLayout = await loadLayout();
+      const floatingButtons = fullLayout.items
+        .filter(item => item.type === 'button')
+        .map(item => ({
+          id: item.id,
+          label: item.label || '',
+          command: item.command || '',
+          color: item.color || '#3399cc',
+          gridX: item.col,
+          gridRow: item.row,
+        }));
+
+      setOrientationLayout({
+        orientation: isLandscape ? 'landscape' : 'portrait',
+        floatingButtons,
+      });
     })();
   }, [isLandscape]);
 
