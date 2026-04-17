@@ -262,6 +262,10 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, []);
 
   const walkTo = useCallback((targetRoom: MapRoom) => {
+    // Cancel any existing walk first
+    for (const t of walkTimers.current) clearTimeout(t);
+    walkTimers.current = [];
+
     const mapSvc = mapServiceRef.current;
     const current = mapSvc.getCurrentRoom();
     if (!current) {
@@ -277,7 +281,6 @@ export function TerminalScreen({ route, navigation }: Props) {
     setWalking(true);
     setSearchVisible(false);
     const STEP_DELAY = 500;
-    walkTimers.current = [];
     for (let i = 0; i < path.length; i++) {
       const t = setTimeout(() => {
         if (telnetRef.current) {
