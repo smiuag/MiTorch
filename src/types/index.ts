@@ -67,6 +67,7 @@ export interface FloatingButton {
   color: string;
   gridX: number;
   gridRow: number;
+  opacity?: number;
 }
 
 export interface OrientationLayout {

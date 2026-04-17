@@ -100,6 +100,7 @@ export function UnifiedTerminalLayout({
           color: btn.color,
           gridX: btn.col,
           gridRow: btn.row,
+          opacity: btn.opacity,
         })),
       });
     })();

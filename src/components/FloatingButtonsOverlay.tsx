@@ -53,7 +53,7 @@ export function FloatingButtonsOverlay({
               left: item.x,
               top: item.y,
               backgroundColor: item.button.color,
-              opacity: disabled ? 0.5 : 0.85,
+              opacity: disabled ? 0.5 : (item.button.opacity ?? 0.85),
             },
           ]}
           onPress={() => onSendCommand(item.button.command)}

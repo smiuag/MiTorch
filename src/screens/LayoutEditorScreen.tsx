@@ -29,6 +29,7 @@ export function LayoutEditorScreen({ navigation }: Props) {
   const [editLabel, setEditLabel] = useState('');
   const [editCommand, setEditCommand] = useState('');
   const [editColor, setEditColor] = useState('#666666');
+  const [editOpacity, setEditOpacity] = useState(0.5);
 
   // Load layout on mount
   useEffect(() => {
@@ -49,10 +50,12 @@ export function LayoutEditorScreen({ navigation }: Props) {
       setEditLabel(existingButton.label);
       setEditCommand(existingButton.command);
       setEditColor(existingButton.color);
+      setEditOpacity(existingButton.opacity);
     } else {
       setEditLabel('');
       setEditCommand('');
       setEditColor('#666666');
+      setEditOpacity(0.5);
     }
     setModalState({ mode: 'edit-button', button: existingButton || null, col, row });
   };
@@ -72,7 +75,7 @@ export function LayoutEditorScreen({ navigation }: Props) {
       // Edit existing button
       updated = updated.map(b =>
         b.id === button.id
-          ? { ...b, label: editLabel, command: editCommand, color: editColor }
+          ? { ...b, label: editLabel, command: editCommand, color: editColor, opacity: editOpacity }
           : b
       );
     } else {
@@ -84,6 +87,7 @@ export function LayoutEditorScreen({ navigation }: Props) {
         label: editLabel,
         command: editCommand,
         color: editColor,
+        opacity: editOpacity,
       });
     }
 
@@ -155,6 +159,7 @@ export function LayoutEditorScreen({ navigation }: Props) {
                     height: cellSize,
                     backgroundColor: button ? button.color : '#1a1a1a',
                     borderColor: '#333',
+                    opacity: button ? button.opacity : 1,
                   },
                 ]}
                 activeOpacity={0.7}
@@ -225,6 +230,33 @@ export function LayoutEditorScreen({ navigation }: Props) {
                     {editColor === color && <Text style={styles.checkmark}>✓</Text>}
                   </TouchableOpacity>
                 ))}
+              </View>
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Opacidad: {Math.round(editOpacity * 100)}%</Text>
+              <View style={styles.sliderContainer}>
+                <TouchableOpacity
+                  onPress={() => setEditOpacity(Math.max(0, editOpacity - 0.1))}
+                  style={styles.sliderBtn}
+                >
+                  <Text style={styles.sliderBtnText}>−</Text>
+                </TouchableOpacity>
+                <View
+                  style={[
+                    styles.sliderTrack,
+                    {
+                      backgroundColor: editColor,
+                      opacity: editOpacity,
+                    },
+                  ]}
+                />
+                <TouchableOpacity
+                  onPress={() => setEditOpacity(Math.min(1, editOpacity + 0.1))}
+                  style={styles.sliderBtn}
+                >
+                  <Text style={styles.sliderBtnText}>+</Text>
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -361,6 +393,33 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  sliderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  sliderBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#0a3a0a',
+    borderWidth: 1,
+    borderColor: '#0c0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sliderBtnText: {
+    color: '#0c0',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  sliderTrack: {
+    flex: 1,
+    height: 36,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#333',
   },
   deleteBtn: {
     backgroundColor: '#2a1a1a',
