@@ -8,6 +8,8 @@ interface MiniMapProps {
   visible: boolean;
   onToggle: () => void;
   inlineMode?: boolean;
+  walking?: boolean;
+  onStop?: () => void;
 }
 
 const MAP_SIZE = 180;
@@ -15,7 +17,7 @@ const ROOM_SIZE = 7.2;
 const CURRENT_ROOM_SIZE = 9;
 const VIEW_RADIUS = 13.5;
 
-export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMode }: MiniMapProps) {
+export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMode, walking, onStop }: MiniMapProps) {
   const mapContent = useMemo(() => {
     if (!currentRoom || nearbyRooms.length === 0) return null;
 
@@ -107,6 +109,21 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMod
               />
             );
           })}
+
+          {walking && onStop && (
+            <TouchableOpacity
+              style={[
+                styles.stopButton,
+                {
+                  left: MAP_SIZE / 2 - 25,
+                  top: MAP_SIZE / 2 - 20,
+                },
+              ]}
+              onPress={onStop}
+            >
+              <Text style={styles.stopButtonText}>STOP</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
       </View>
@@ -173,6 +190,21 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMod
               />
             );
           })}
+
+          {walking && onStop && (
+            <TouchableOpacity
+              style={[
+                styles.stopButton,
+                {
+                  left: MAP_SIZE / 2 - 25,
+                  top: MAP_SIZE / 2 - 20,
+                },
+              ]}
+              onPress={onStop}
+            >
+              <Text style={styles.stopButtonText}>STOP</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
       </View>
@@ -268,5 +300,21 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 0, 0.8)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.6)',
+  },
+  stopButton: {
+    position: 'absolute',
+    backgroundColor: '#cc3333',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  stopButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
   },
 });

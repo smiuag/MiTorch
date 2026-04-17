@@ -34,12 +34,14 @@ interface UnifiedTerminalLayoutProps {
   mapVisible: boolean;
   commandHistory?: string[];
   buttonLayout: ButtonLayout | null;
+  walking?: boolean;
   onInputChange: (text: string) => void;
   onSend: () => void;
   onSendCommand: (command: string) => void;
   onSelectChannel: (ch: string | null) => void;
   onAliasChange: (ch: string, alias: string) => void;
   onToggleMap: () => void;
+  onStop?: () => void;
 }
 
 export function UnifiedTerminalLayout({
@@ -61,12 +63,14 @@ export function UnifiedTerminalLayout({
   mapVisible,
   commandHistory,
   buttonLayout,
+  walking,
   onInputChange,
   onSend,
   onSendCommand,
   onSelectChannel,
   onAliasChange,
   onToggleMap,
+  onStop,
 }: UnifiedTerminalLayoutProps) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -193,6 +197,8 @@ export function UnifiedTerminalLayout({
             onSendCommand={onSendCommand}
             onScrollTerminalToBottom={handleScrollTerminalToBottom}
             commandHistory={commandHistory}
+            walking={walking}
+            onStop={onStop}
           />
         </View>
       </Animated.View>
@@ -254,6 +260,8 @@ export function UnifiedTerminalLayout({
             onSendCommand={onSendCommand}
             onScrollTerminalToBottom={handleScrollTerminalToBottom}
             commandHistory={commandHistory}
+            walking={walking}
+            onStop={onStop}
           />
         </View>
       </Animated.View>

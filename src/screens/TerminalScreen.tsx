@@ -355,8 +355,9 @@ export function TerminalScreen({ route, navigation }: Props) {
   const sendCommand = useCallback((command: string) => {
     if (!telnetRef.current) return;
 
-    // Intercept "parar" or "stop" to stop walking
-    if ((command.toLowerCase() === 'parar' || command.toLowerCase() === 'stop') && walking) {
+    // Intercept "parar" or "stop" to stop walking (with or without channel prefix)
+    const stopMatch = command.match(/^(?:\w+\s+)?(parar|stop)$/i);
+    if (stopMatch && walking) {
       stopWalk();
       return;
     }
@@ -597,13 +598,6 @@ export function TerminalScreen({ route, navigation }: Props) {
       return;
     }
 
-    // Intercept "parar" or "stop" to stop walking
-    if ((text.toLowerCase() === 'parar' || text.toLowerCase() === 'stop') && walking) {
-      stopWalk();
-      setInputText('');
-      return;
-    }
-
     if (telnetRef.current) {
       telnetRef.current.send(text);
     }
@@ -651,6 +645,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         mapVisible={mapVisible}
         commandHistory={commandHistory}
         buttonLayout={buttonLayout}
+        walking={walking}
         onInputChange={setInputText}
         onSend={handleSend}
         onSendCommand={sendCommand}
@@ -661,6 +656,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           saveChannelAliases(server.id, updated);
         }}
         onToggleMap={() => setMapVisible(v => !v)}
+        onStop={stopWalk}
       />
 
 
@@ -670,7 +666,11 @@ export function TerminalScreen({ route, navigation }: Props) {
       <RoomSearchResults
         rooms={searchResults}
         visible={searchVisible}
-        onSelect={(room) => walkTo(room)}
+        onSelect={(room) => {
+          setSearchVisible(false);
+          handleSelectChannel('Mapa');
+          walkTo(room);
+        }}
         onClose={() => setSearchVisible(false)}
       />
 

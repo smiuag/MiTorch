@@ -38,6 +38,8 @@ interface ChatSectionProps {
   onScrollTerminalToBottom?: () => void;
   commandHistory?: string[];
   onHistoryNavigate?: (command: string) => void;
+  walking?: boolean;
+  onStop?: () => void;
 }
 
 export function ChatSection({
@@ -63,6 +65,8 @@ export function ChatSection({
   onScrollTerminalToBottom,
   commandHistory = [],
   onHistoryNavigate,
+  walking,
+  onStop,
 }: ChatSectionProps) {
   const { width } = useWindowDimensions();
   const inputRef = useRef<TextInput>(null);
@@ -171,6 +175,8 @@ export function ChatSection({
             visible={true}
             onToggle={() => {}}
             inlineMode={true}
+            walking={walking}
+            onStop={onStop}
           />
         ) : (
           <FlatList
@@ -303,8 +309,9 @@ const styles = StyleSheet.create({
   },
   sendButtonText: {
     color: '#fff',
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: 'bold',
-    lineHeight: 26,
+    lineHeight: 22,
+    textAlignVertical: 'center',
   },
 });
