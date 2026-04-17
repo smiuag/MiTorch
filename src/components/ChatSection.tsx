@@ -89,6 +89,15 @@ export function ChatSection({
     }
   }, [filteredMessages]);
 
+  // Auto-scroll to bottom when changing channels
+  useEffect(() => {
+    if (filteredMessages.length > 0) {
+      setTimeout(() => {
+        messagesListRef.current?.scrollToEnd({ animated: false });
+      }, 0);
+    }
+  }, [activeChannel]);
+
   const handleSend = () => {
     if (inputText.trim()) {
       let message = inputText;
