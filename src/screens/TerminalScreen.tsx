@@ -283,7 +283,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     for (let i = 0; i < path.length; i++) {
       const direction = path[i];
       const isLast = i === path.length - 1;
-      const delay = i * STEP_DELAY;
+      const delay = (i + 1) * STEP_DELAY;  // Start delay at 500ms, not 0
 
       const t = setTimeout(() => {
         if (telnetRef.current) {
