@@ -30,6 +30,7 @@ interface ChatSectionProps {
   onAliasChange: (ch: string, alias: string) => void;
   onInputChange: (text: string) => void;
   onSend: () => void;
+  onSendCommand: (command: string) => void;
   onConfigPress: () => void;
   onScrollTerminalToBottom?: () => void;
 }
@@ -51,6 +52,7 @@ export function ChatSection({
   onAliasChange,
   onInputChange,
   onSend,
+  onSendCommand,
   onConfigPress,
   onScrollTerminalToBottom,
 }: ChatSectionProps) {
