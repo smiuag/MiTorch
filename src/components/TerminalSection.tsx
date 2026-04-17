@@ -89,7 +89,7 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
         keyExtractor={(item) => item.id.toString()}
         renderItem={({ item }) => (
           <View style={styles.lineContainer}>
-            <AnsiText spans={item.spans} fontSize={fontSize} />
+            <AnsiText spans={item.spans} fontSize={fontSize} addNewline={false} />
           </View>
         )}
         onScroll={handleScroll}
