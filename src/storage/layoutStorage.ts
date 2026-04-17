@@ -34,7 +34,7 @@ export function createDefaultLayout(): ButtonLayout {
     { id: genId(), col: 6, row: 4, label: 'Noreste', command: 'noreste', color: '#cc3333', opacity: 0.5 },
     // Middle row (row 5)
     { id: genId(), col: 4, row: 5, label: 'Oeste', command: 'oeste', color: '#cc3333', opacity: 0.5 },
-    { id: genId(), col: 5, row: 5, label: 'Localizar', command: 'ojear', color: '#3399cc', opacity: 0.5 },
+    { id: genId(), col: 5, row: 5, label: 'LOC', command: 'locate', color: '#3399cc', opacity: 0.5 },
     { id: genId(), col: 6, row: 5, label: 'Este', command: 'este', color: '#cc3333', opacity: 0.5 },
     // Bottom row (row 6)
     { id: genId(), col: 4, row: 6, label: 'Sudoeste', command: 'sudoeste', color: '#cc3333', opacity: 0.5 },
