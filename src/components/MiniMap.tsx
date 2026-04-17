@@ -109,9 +109,6 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMod
           })}
         </View>
 
-        <Text style={styles.coords}>
-          [{currentRoom.x}, {currentRoom.y}, {currentRoom.z}]
-        </Text>
       </View>
     );
   }
@@ -178,9 +175,6 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMod
           })}
         </View>
 
-        <Text style={styles.coords}>
-          [{currentRoom.x}, {currentRoom.y}, {currentRoom.z}]
-        </Text>
       </View>
 
       <TouchableOpacity style={styles.toggleBtn} onPress={onToggle} activeOpacity={0.7}>
@@ -274,12 +268,5 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 0, 0.8)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.6)',
-  },
-  coords: {
-    color: 'rgba(102, 102, 102, 0.6)',
-    fontSize: 8,
-    fontFamily: 'monospace',
-    textAlign: 'center',
-    marginTop: 2,
   },
 });

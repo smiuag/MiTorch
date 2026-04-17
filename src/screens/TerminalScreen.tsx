@@ -277,7 +277,6 @@ export function TerminalScreen({ route, navigation }: Props) {
       addSystemLine('--- No se encuentra camino ---');
       return;
     }
-    addSystemLine(`--- Caminando a "${targetRoom.n}" (${path.length} pasos) ---`);
     setWalking(true);
     setSearchVisible(false);
     const STEP_DELAY = 500;
@@ -288,7 +287,6 @@ export function TerminalScreen({ route, navigation }: Props) {
         }
         if (i === path.length - 1) {
           setWalking(false);
-          addSystemLine('--- Llegaste a tu destino ---');
         }
       }, i * STEP_DELAY);
       walkTimers.current.push(t);
@@ -322,9 +320,16 @@ export function TerminalScreen({ route, navigation }: Props) {
   const sendCommand = useCallback((command: string) => {
     if (!telnetRef.current) return;
 
+    // Intercept "parar" or "stop" to stop walking
+    if ((command.toLowerCase() === 'parar' || command.toLowerCase() === 'stop') && walking) {
+      stopWalk();
+      return;
+    }
+
     // Intercept irsala command
     const irsalaMatch = command.match(/^irsala\s+(.+)$/i);
     if (irsalaMatch) {
+      Keyboard.dismiss();
       const query = irsalaMatch[1];
       const mapSvc = mapServiceRef.current;
       if (mapSvc.isLoaded) {
@@ -554,10 +559,9 @@ export function TerminalScreen({ route, navigation }: Props) {
       return;
     }
 
-    // Intercept "parar" to stop walking
-    if (text.toLowerCase() === 'parar' && walking) {
+    // Intercept "parar" or "stop" to stop walking
+    if ((text.toLowerCase() === 'parar' || text.toLowerCase() === 'stop') && walking) {
       stopWalk();
-      addSystemLine('--- Movimiento cancelado ---');
       setInputText('');
       return;
     }
