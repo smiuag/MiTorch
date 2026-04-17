@@ -17,19 +17,3 @@ export async function saveChannelAliases(serverId: string, aliases: Record<strin
   await AsyncStorage.setItem(getAliasKey(serverId), JSON.stringify(aliases));
 }
 
-// Full config export/import (aliases + fkeys + extra buttons)
-export async function exportConfig(): Promise<string> {
-  const config: Record<string, any> = {};
-  const aliasJson = await AsyncStorage.getItem(ALIAS_KEY);
-  if (aliasJson) config[ALIAS_KEY] = JSON.parse(aliasJson);
-  return JSON.stringify(config, null, 2);
-}
-
-export async function importConfig(configJson: string): Promise<void> {
-  const config = JSON.parse(configJson);
-  for (const [key, value] of Object.entries(config)) {
-    if (key.startsWith('aljhtar_')) {
-      await AsyncStorage.setItem(key, JSON.stringify(value));
-    }
-  }
-}

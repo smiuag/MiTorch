@@ -31,7 +31,6 @@ interface FloatingLayoutProps {
   unreadCounts: Record<string, number>;
   onAliasChange: (ch: string, alias: string) => void;
   fontSize: number;
-  onConfigPress: () => void;
   lines: MudLine[];
   mapVisible: boolean;
   onToggleMap: () => void;
@@ -61,7 +60,6 @@ export function FloatingLayout({
   unreadCounts,
   onAliasChange,
   fontSize,
-  onConfigPress,
   lines,
   mapVisible,
   onToggleMap,
@@ -229,7 +227,6 @@ export function FloatingLayout({
                     activeChannel={activeChannel}
                     onSelectChannel={handleSelectChannelWithPrefix}
                     onAliasChange={onAliasChange}
-                    onConfigPress={onConfigPress}
                     unreadCounts={unreadCounts}
                     allMessages={channelMessages}
                     fontSize={fontSize}

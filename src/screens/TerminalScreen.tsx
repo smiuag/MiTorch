@@ -494,7 +494,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           console.log('[GMCP]', module, 'canal:', data.canal);
           console.log('[GMCP] Raw message (first 150 chars):', JSON.stringify(rawMsg.slice(0, 150)));
           console.log('[GMCP] Message length:', rawMsg.length, 'Contains \\n:', rawMsg.includes('\n'), 'Contains \\r:', rawMsg.includes('\r'));
-          console.log('[GMCP] Char codes at position 0-10:', Array.from(rawMsg.slice(0, 10)).map(c => c.charCodeAt(0)));
+          console.log('[GMCP] Char codes at position 0-10:', rawMsg.slice(0, 10).split('').map((c: string) => c.charCodeAt(0)));
 
           const spans = parseAnsi(rawMsg);
           console.log('[GMCP] After parseAnsi - spans count:', spans.length, 'first span text:', JSON.stringify(spans[0]?.text.slice(0, 50)));

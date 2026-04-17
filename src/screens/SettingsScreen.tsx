@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Switch, ScrollView, Alert, FlatList } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Switch, ScrollView, Alert, FlatList, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { loadSettings, saveSettings, AppSettings } from '../storage/settingsStorage';
-import { listLayoutProfiles, deleteLayoutProfile, LayoutProfileMeta } from '../storage/layoutProfileStorage';
+import { listLayoutProfiles, deleteLayoutProfile, updateLayoutProfile, duplicateLayoutProfile, loadLayoutProfile, LayoutProfileMeta } from '../storage/layoutProfileStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
@@ -13,6 +13,10 @@ export function SettingsScreen({ navigation }: Props) {
   const [settings, setSettings] = useState<AppSettings>({ fontSize: 14 });
   const [profiles, setProfiles] = useState<LayoutProfileMeta[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [renamingProfileId, setRenamingProfileId] = useState<string | null>(null);
+  const [renamingProfileName, setRenamingProfileName] = useState('');
+  const [duplicatingProfileId, setDuplicatingProfileId] = useState<string | null>(null);
+  const [duplicatingProfileName, setDuplicatingProfileName] = useState('');
 
   useEffect(() => {
     loadSettings().then(setSettings);
@@ -51,6 +55,43 @@ export function SettingsScreen({ navigation }: Props) {
         },
       ]
     );
+  };
+
+  const handleRenameProfile = async (id: string, currentName: string) => {
+    setRenamingProfileId(id);
+    setRenamingProfileName(currentName);
+  };
+
+  const handleSaveRename = async (id: string) => {
+    if (!renamingProfileName.trim()) return;
+    try {
+      const layout = await loadLayoutProfile(id);
+      if (layout) {
+        await updateLayoutProfile(id, renamingProfileName.trim(), layout);
+        await loadProfiles();
+      }
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo renombrar el perfil');
+    }
+    setRenamingProfileId(null);
+    setRenamingProfileName('');
+  };
+
+  const handleDuplicateProfile = (id: string, name: string) => {
+    setDuplicatingProfileId(id);
+    setDuplicatingProfileName(`${name} (copia)`);
+  };
+
+  const handleSaveDuplicate = async (sourceId: string) => {
+    if (!duplicatingProfileName.trim()) return;
+    try {
+      await duplicateLayoutProfile(sourceId, duplicatingProfileName.trim());
+      await loadProfiles();
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo duplicar el perfil');
+    }
+    setDuplicatingProfileId(null);
+    setDuplicatingProfileName('');
   };
 
   return (
@@ -112,11 +153,26 @@ export function SettingsScreen({ navigation }: Props) {
                     <Text style={styles.profileName}>{item.name}</Text>
                     <Text style={styles.profileDate}>{dateStr}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => handleDeleteProfile(item.id, item.name)}
-                  >
-                    <Text style={styles.deleteProfileBtn}>✕</Text>
-                  </TouchableOpacity>
+                  <View style={styles.profileActions}>
+                    <TouchableOpacity
+                      onPress={() => handleRenameProfile(item.id, item.name)}
+                      style={styles.actionBtn}
+                    >
+                      <Text style={styles.actionBtnText}>✎</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleDuplicateProfile(item.id, item.name)}
+                      style={styles.actionBtn}
+                    >
+                      <Text style={styles.actionBtnText}>⬚</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleDeleteProfile(item.id, item.name)}
+                      style={styles.actionBtn}
+                    >
+                      <Text style={styles.deleteProfileBtn}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               );
             })}
@@ -137,6 +193,67 @@ export function SettingsScreen({ navigation }: Props) {
           <Text style={styles.newProfileBtnText}>+ Nuevo perfil</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Rename Profile Modal */}
+      <Modal
+        visible={renamingProfileId !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRenamingProfileId(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Renombrar perfil</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={renamingProfileName}
+              onChangeText={setRenamingProfileName}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholderTextColor="#666"
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setRenamingProfileId(null)}>
+                <Text style={styles.cancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.saveBtn} onPress={() => handleSaveRename(renamingProfileId!)}>
+                <Text style={styles.saveText}>Guardar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Duplicate Profile Modal */}
+      <Modal
+        visible={duplicatingProfileId !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDuplicatingProfileId(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Duplicar perfil</Text>
+            <Text style={styles.modalHint}>Nombre del nuevo perfil</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={duplicatingProfileName}
+              onChangeText={setDuplicatingProfileName}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholderTextColor="#666"
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setDuplicatingProfileId(null)}>
+                <Text style={styles.cancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.saveBtn} onPress={() => handleSaveDuplicate(duplicatingProfileId!)}>
+                <Text style={styles.saveText}>Duplicar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -241,17 +358,95 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'monospace',
   },
+  profileActions: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  actionBtn: {
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  actionBtnText: {
+    color: '#0c0',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   deleteProfileBtn: {
     color: '#cc3333',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
-    paddingLeft: 12,
   },
   noProfilesText: {
     color: '#666',
     fontSize: 12,
     fontFamily: 'monospace',
     fontStyle: 'italic',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  modalTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    fontFamily: 'monospace',
+  },
+  modalHint: {
+    color: '#888',
+    fontSize: 11,
+    marginBottom: 12,
+    fontFamily: 'monospace',
+  },
+  modalInput: {
+    backgroundColor: '#0a0a0a',
+    color: '#fff',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 6,
+    padding: 12,
+    fontSize: 14,
+    fontFamily: 'monospace',
+    marginBottom: 16,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  cancelBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 6,
+    backgroundColor: '#2a2a2a',
+  },
+  cancelText: {
+    color: '#999',
+    fontSize: 14,
+  },
+  saveBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 6,
+    backgroundColor: '#00cc00',
+  },
+  saveText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   fontSizeControls: {
     flexDirection: 'row',

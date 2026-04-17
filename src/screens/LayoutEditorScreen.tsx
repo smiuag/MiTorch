@@ -34,10 +34,7 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [showGridSizeModal, setShowGridSizeModal] = useState(false);
   const [showNameModal, setShowNameModal] = useState(false);
-  const [showEditNameModal, setShowEditNameModal] = useState(false);
   const [currentProfileName, setCurrentProfileName] = useState('');
-  const [editingProfileName, setEditingProfileName] = useState('');
-  const [isSaveAsNew, setIsSaveAsNew] = useState(false);
   const hasChanges = useRef(false);
 
   const GRID_COLS = layout.gridSize;
@@ -58,7 +55,6 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
           const profile = profiles.find(p => p.id === profileId);
           if (profile) {
             setCurrentProfileName(profile.name);
-            setEditingProfileName(profile.name);
           }
         }
       });
@@ -240,40 +236,20 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
   };
 
   const handleSave = async () => {
-    if (!editingProfileId) {
-      // New profile - ask for name
-      setShowNameModal(true);
-      setIsSaveAsNew(false);
+    if (editingProfileId) {
+      // Editing existing profile - just update and go back
+      try {
+        await updateLayoutProfile(editingProfileId, currentProfileName, layout);
+        setOriginalLayout(JSON.parse(JSON.stringify(layout)));
+        hasChanges.current = false;
+        navigation.goBack();
+      } catch (error) {
+        Alert.alert('Error', 'No se pudo guardar el perfil');
+        console.error(error);
+      }
     } else {
-      // Existing profile - ask to overwrite or save as new
-      Alert.alert(
-        'Guardar cambios',
-        `¿Sobrescribir "${currentProfileName}" o guardar como nuevo?`,
-        [
-          { text: 'Cancelar', onPress: () => {} },
-          {
-            text: 'Sobrescribir',
-            onPress: async () => {
-              try {
-                await updateLayoutProfile(editingProfileId, currentProfileName, layout);
-                setOriginalLayout(JSON.parse(JSON.stringify(layout)));
-                hasChanges.current = false;
-                navigation.goBack();
-              } catch (error) {
-                Alert.alert('Error', 'No se pudo guardar el perfil');
-                console.error(error);
-              }
-            },
-          },
-          {
-            text: 'Guardar como nuevo',
-            onPress: () => {
-              setShowNameModal(true);
-              setIsSaveAsNew(true);
-            },
-          },
-        ]
-      );
+      // Creating new profile - ask for name
+      setShowNameModal(true);
     }
   };
 
@@ -284,46 +260,15 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
     }
 
     try {
-      if (isSaveAsNew) {
-        // Create a copy with the new name
-        const newProfileId = await saveLayoutProfile(currentProfileName, layout);
-        setEditingProfileId(newProfileId);
-        setEditingProfileName(currentProfileName);
-      } else if (!editingProfileId) {
-        // Create new profile
-        const newProfileId = await saveLayoutProfile(currentProfileName, layout);
-        setEditingProfileId(newProfileId);
-        setEditingProfileName(currentProfileName);
-        navigation.goBack();
-      }
+      // Create new profile
+      const newProfileId = await saveLayoutProfile(currentProfileName, layout);
+      setEditingProfileId(newProfileId);
       setOriginalLayout(JSON.parse(JSON.stringify(layout)));
       hasChanges.current = false;
       setShowNameModal(false);
+      navigation.goBack();
     } catch (error) {
       Alert.alert('Error', 'No se pudo guardar el perfil');
-      console.error(error);
-    }
-  };
-
-  const handleSaveEditingProfileName = async () => {
-    if (!editingProfileName.trim()) {
-      Alert.alert('Error', 'El nombre del perfil es requerido');
-      return;
-    }
-
-    if (editingProfileName === currentProfileName) {
-      setShowEditNameModal(false);
-      return;
-    }
-
-    try {
-      if (editingProfileId) {
-        await updateLayoutProfile(editingProfileId, editingProfileName, layout);
-        setCurrentProfileName(editingProfileName);
-      }
-      setShowEditNameModal(false);
-    } catch (error) {
-      Alert.alert('Error', 'No se pudo actualizar el nombre');
       console.error(error);
     }
   };
@@ -334,18 +279,9 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.headerBtn}>{'< Volver'}</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => {
-            if (editingProfileId) {
-              setShowEditNameModal(true);
-            }
-          }}
-          disabled={!editingProfileId}
-        >
-          <Text style={styles.headerTitle}>
-            {currentProfileName || 'Nuevo perfil'}
-          </Text>
-        </TouchableOpacity>
+        <Text style={styles.headerTitle}>
+          {currentProfileName || 'Nuevo perfil'}
+        </Text>
         <TouchableOpacity onPress={handleSave}>
           <Text style={styles.headerBtn}>Guardar</Text>
         </TouchableOpacity>
@@ -394,7 +330,7 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
         )}
       </View>
 
-      {/* Profile Name Modal */}
+      {/* Profile Name Modal - only for new profiles */}
       <Modal
         visible={showNameModal}
         transparent
@@ -403,9 +339,7 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.nameModal}>
-            <Text style={styles.nameModalTitle}>
-              {isSaveAsNew ? 'Guardar como nuevo' : 'Guardar perfil como...'}
-            </Text>
+            <Text style={styles.nameModalTitle}>Guardar perfil como...</Text>
             <TextInput
               style={styles.nameModalInput}
               placeholder="Nombre del perfil"
@@ -423,42 +357,6 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleSaveProfileName}
-                style={styles.nameModalSaveBtn}
-              >
-                <Text style={styles.nameModalSaveBtnText}>Guardar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Edit Profile Name Modal */}
-      <Modal
-        visible={showEditNameModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowEditNameModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.nameModal}>
-            <Text style={styles.nameModalTitle}>Editar nombre del perfil</Text>
-            <TextInput
-              style={styles.nameModalInput}
-              placeholder="Nombre del perfil"
-              placeholderTextColor="#666"
-              value={editingProfileName}
-              onChangeText={setEditingProfileName}
-              autoFocus
-            />
-            <View style={styles.nameModalButtons}>
-              <TouchableOpacity
-                onPress={() => setShowEditNameModal(false)}
-                style={styles.nameModalCancelBtn}
-              >
-                <Text style={styles.nameModalCancelBtnText}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleSaveEditingProfileName}
                 style={styles.nameModalSaveBtn}
               >
                 <Text style={styles.nameModalSaveBtnText}>Guardar</Text>

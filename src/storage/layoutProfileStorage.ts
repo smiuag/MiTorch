@@ -86,3 +86,15 @@ export async function deleteLayoutProfile(id: string): Promise<void> {
     throw e;
   }
 }
+
+export async function duplicateLayoutProfile(sourceId: string, newName: string): Promise<string> {
+  try {
+    const layout = await loadLayoutProfile(sourceId);
+    if (!layout) throw new Error('Source profile not found');
+
+    return await saveLayoutProfile(newName, layout);
+  } catch (e) {
+    console.error('Error duplicating layout profile:', e);
+    throw e;
+  }
+}
