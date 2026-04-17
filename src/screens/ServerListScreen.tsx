@@ -228,19 +228,34 @@ export function ServerListScreen({ navigation }: Props) {
                 </Text>
               </View>
             ) : (
-              <ScrollView style={styles.profileSelector} nestedScrollEnabled>
-                {profiles.map(profile => (
-                  <TouchableOpacity
-                    key={profile.id}
-                    style={[styles.profileOption, formProfileId === profile.id && styles.profileOptionSelected]}
-                    onPress={() => setFormProfileId(profile.id)}
-                  >
-                    <Text style={[styles.profileOptionText, formProfileId === profile.id && styles.profileOptionTextSelected]}>
-                      {profile.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              <>
+                <ScrollView style={styles.profileSelector} nestedScrollEnabled>
+                  {profiles.map(profile => (
+                    <View key={profile.id} style={styles.profileOptionRow}>
+                      <TouchableOpacity
+                        style={[styles.profileOption, formProfileId === profile.id && styles.profileOptionSelected, { flex: 1 }]}
+                        onPress={() => setFormProfileId(profile.id)}
+                      >
+                        <Text style={[styles.profileOptionText, formProfileId === profile.id && styles.profileOptionTextSelected]}>
+                          {profile.name}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.profileEditBtn}
+                        onPress={() => navigation.navigate('LayoutEditor', { profileId: profile.id })}
+                      >
+                        <Text style={styles.profileEditBtnText}>✎</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </ScrollView>
+                <TouchableOpacity
+                  style={styles.newProfileBtn}
+                  onPress={() => navigation.navigate('LayoutEditor')}
+                >
+                  <Text style={styles.newProfileBtnText}>+ Nuevo perfil</Text>
+                </TouchableOpacity>
+              </>
             )}
 
             <View style={styles.modalButtons}>
@@ -659,6 +674,40 @@ const styles = StyleSheet.create({
   profileOptionTextSelected: {
     color: '#0c0',
     fontWeight: 'bold',
+  },
+  profileOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1a1a',
+  },
+  profileEditBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileEditBtnText: {
+    color: '#0c0',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  newProfileBtn: {
+    backgroundColor: '#0a3a0a',
+    borderWidth: 1,
+    borderColor: '#0c0',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  newProfileBtnText: {
+    color: '#0c0',
+    fontSize: 14,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
   },
   saveBtnDisabled: {
     backgroundColor: '#333',

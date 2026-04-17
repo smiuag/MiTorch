@@ -89,6 +89,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     pointerEvents: 'box-none',
+    zIndex: 10,
   },
   button: {
     position: 'absolute',
