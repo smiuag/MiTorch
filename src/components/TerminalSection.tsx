@@ -51,14 +51,15 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
       },
     }));
 
-  // Auto-scroll to bottom when new lines arrive
+  // Auto-scroll to bottom when new lines arrive (always show latest)
   useEffect(() => {
-    if (scrollAtBottom && lines.length > 0) {
+    if (lines.length > 0) {
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: false });
+        setScrollAtBottom(true);
       }, 0);
     }
-  }, [lines, scrollAtBottom]);
+  }, [lines]);
 
   const handleScroll = (e: any) => {
     const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
