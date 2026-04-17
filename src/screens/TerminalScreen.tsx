@@ -175,6 +175,20 @@ export function TerminalScreen({ route, navigation }: Props) {
         // Add to main display
         const newLine: MudLine = { id: lineIdCounter++, spans };
         newLines.push(newLine);
+
+        // Check for "Sigues a X en dirección Y" pattern to update map when following someone
+        const cleanText = messageText.replace(/\x1b\[[0-9;]*m/g, '').trim();
+        const followMatch = cleanText.match(/Sigues a .+ en dirección ([a-záéíóúñ]+)/i);
+        if (followMatch) {
+          const direction = followMatch[1];
+          const mapSvc = mapServiceRef.current;
+          if (mapSvc.isLoaded) {
+            const room = mapSvc.moveByDirection(direction);
+            if (room) {
+              updateMapPosition(room);
+            }
+          }
+        }
       }
     }
 
