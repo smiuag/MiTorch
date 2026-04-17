@@ -6,9 +6,10 @@ interface AnsiTextProps {
   line?: MudLine;
   spans?: AnsiSpan[];
   fontSize?: number;
+  addNewline?: boolean;
 }
 
-export function AnsiText({ line, spans, fontSize = 14 }: AnsiTextProps) {
+export function AnsiText({ line, spans, fontSize = 14, addNewline = true }: AnsiTextProps) {
   const spansToRender = spans || line?.spans || [];
 
   return (
@@ -27,7 +28,7 @@ export function AnsiText({ line, spans, fontSize = 14 }: AnsiTextProps) {
           {span.text}
         </Text>
       ))}
-      {'\n'}
+      {addNewline && '\n'}
     </Text>
   );
 }
