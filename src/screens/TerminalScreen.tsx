@@ -639,8 +639,6 @@ export function TerminalScreen({ route, navigation }: Props) {
 
       {/* Active channel panel handled by UnifiedTerminalLayout now */}
 
-      {!keyboardVisible && !isLandscape && !activeChannel && <SafeAreaView edges={['bottom']} style={styles.safeBottom} />}
-
       {/* Room search results */}
       <RoomSearchResults
         rooms={searchResults}
