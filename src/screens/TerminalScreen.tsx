@@ -261,7 +261,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     setWalking(false);
   }, []);
 
-  const walkTo = useCallback((targetRoom: MapRoom) => {
+  const walkTo = useCallback(async (targetRoom: MapRoom) => {
     // Cancel any existing walk first
     for (const t of walkTimers.current) clearTimeout(t);
     walkTimers.current = [];
@@ -279,22 +279,18 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
     setWalking(true);
     setSearchVisible(false);
-    const STEP_DELAY = 500;
-    for (let i = 0; i < path.length; i++) {
-      const direction = path[i];
-      const isLast = i === path.length - 1;
-      const delay = (i + 1) * STEP_DELAY;  // Start delay at 500ms, not 0
 
-      const t = setTimeout(() => {
-        if (telnetRef.current) {
-          telnetRef.current.send(direction);
-        }
-        if (isLast) {
-          setWalking(false);
-        }
-      }, delay);
-      walkTimers.current.push(t);
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+    const STEP_DELAY = 500;
+
+    for (const direction of path) {
+      if (telnetRef.current) {
+        telnetRef.current.send(direction);
+      }
+      await sleep(STEP_DELAY);
     }
+
+    setWalking(false);
   }, [addSystemLine]);
 
   const handleLocate = useCallback(() => {
