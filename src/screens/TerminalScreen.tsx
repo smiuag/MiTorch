@@ -281,14 +281,18 @@ export function TerminalScreen({ route, navigation }: Props) {
     setSearchVisible(false);
     const STEP_DELAY = 500;
     for (let i = 0; i < path.length; i++) {
+      const direction = path[i];
+      const isLast = i === path.length - 1;
+      const delay = i * STEP_DELAY;
+
       const t = setTimeout(() => {
         if (telnetRef.current) {
-          telnetRef.current.send(path[i]);
+          telnetRef.current.send(direction);
         }
-        if (i === path.length - 1) {
+        if (isLast) {
           setWalking(false);
         }
-      }, i * STEP_DELAY);
+      }, delay);
       walkTimers.current.push(t);
     }
   }, [addSystemLine]);
