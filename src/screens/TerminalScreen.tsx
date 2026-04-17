@@ -326,6 +326,12 @@ export function TerminalScreen({ route, navigation }: Props) {
       return;
     }
 
+    // Intercept LOCATE command
+    if (command.toLowerCase() === 'locate') {
+      handleLocate();
+      return;
+    }
+
     // Intercept irsala command
     const irsalaMatch = command.match(/^irsala\s+(.+)$/i);
     if (irsalaMatch) {
@@ -350,7 +356,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     for (const cmd of commands) {
       telnetRef.current.send(cmd.trim());
     }
-  }, [addSystemLine, walkTo]);
+  }, [addSystemLine, walkTo, handleLocate]);
 
   const handleMacroSave = useCallback(async (macro: Macro) => {
     if (editingTarget.type === 'fkey') {
