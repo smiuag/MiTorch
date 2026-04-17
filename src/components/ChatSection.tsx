@@ -128,7 +128,7 @@ export function ChatSection({
         keyExtractor={(item) => item.id.toString()}
         renderItem={({ item }) => (
           <View style={styles.messageContainer}>
-            <AnsiText spans={item.spans} fontSize={fontSize - 2} addNewline={true} />
+            <AnsiText spans={item.spans} fontSize={fontSize - 2} addNewline={false} />
           </View>
         )}
         style={styles.messagesList}
