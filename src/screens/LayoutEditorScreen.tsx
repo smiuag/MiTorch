@@ -6,7 +6,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
-import { loadLayout, saveLayout, LayoutButton, ButtonLayout } from '../storage/layoutStorage';
+import { LayoutButton, ButtonLayout } from '../storage/layoutStorage';
+import { loadLayoutProfile, saveLayoutProfile, updateLayoutProfile } from '../storage/layoutProfileStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'LayoutEditor'>;
 
@@ -21,7 +22,7 @@ function genId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
 
-export function LayoutEditorScreen({ navigation }: Props) {
+export function LayoutEditorScreen({ navigation, route }: Props) {
   const { width, height } = useWindowDimensions();
   const [layout, setLayout] = useState<ButtonLayout>({ buttons: [], gridSize: 11 });
   const [originalLayout, setOriginalLayout] = useState<ButtonLayout>({ buttons: [], gridSize: 11 });
@@ -30,6 +31,8 @@ export function LayoutEditorScreen({ navigation }: Props) {
   const [editCommand, setEditCommand] = useState('');
   const [editColor, setEditColor] = useState('#666666');
   const [editOpacity, setEditOpacity] = useState(0.5);
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
+  const [showGridSizeModal, setShowGridSizeModal] = useState(false);
   const hasChanges = useRef(false);
 
   const GRID_COLS = layout.gridSize;
@@ -37,12 +40,81 @@ export function LayoutEditorScreen({ navigation }: Props) {
 
   // Load layout on mount
   useEffect(() => {
-    loadLayout().then(loaded => {
-      setLayout(loaded);
-      setOriginalLayout(JSON.parse(JSON.stringify(loaded)));
-      hasChanges.current = false;
+    const profileId = route.params?.profileId;
+    if (profileId) {
+      loadLayoutProfile(profileId).then(loaded => {
+        if (loaded) {
+          setLayout(loaded);
+          setOriginalLayout(JSON.parse(JSON.stringify(loaded)));
+          setEditingProfileId(profileId);
+        }
+      });
+    } else {
+      // New profile - show grid size selection modal
+      setShowGridSizeModal(true);
+      setEditingProfileId(null);
+    }
+    hasChanges.current = false;
+  }, [route.params?.profileId]);
+
+  const createDefaultButtons = (gridSize: number): LayoutButton[] => {
+    const center = Math.floor(gridSize / 2);
+    const offsets = [-1, 0, 1];
+    const buttons: LayoutButton[] = [];
+
+    // LOC en el centro
+    buttons.push({
+      id: genId(),
+      col: center,
+      row: center,
+      label: 'LOC',
+      command: 'locate',
+      color: '#3399cc',
+      opacity: 0.5,
     });
-  }, []);
+
+    // 8 direcciones alrededor del centro
+    const directions = [
+      { label: 'Noroeste', command: 'noroeste', offset: [-1, -1] },
+      { label: 'Norte', command: 'norte', offset: [0, -1] },
+      { label: 'Noreste', command: 'noreste', offset: [1, -1] },
+      { label: 'Oeste', command: 'oeste', offset: [-1, 0] },
+      { label: 'Este', command: 'este', offset: [1, 0] },
+      { label: 'Sudoeste', command: 'sudoeste', offset: [-1, 1] },
+      { label: 'Sur', command: 'sur', offset: [0, 1] },
+      { label: 'Sudeste', command: 'sudeste', offset: [1, 1] },
+    ];
+
+    directions.forEach(dir => {
+      const col = center + dir.offset[0];
+      const row = center + dir.offset[1];
+      // Validar que está dentro de la grilla
+      if (col >= 0 && col < gridSize && row >= 0 && row < gridSize) {
+        buttons.push({
+          id: genId(),
+          col,
+          row,
+          label: dir.label,
+          command: dir.command,
+          color: '#cc3333',
+          opacity: 0.5,
+        });
+      }
+    });
+
+    return buttons;
+  };
+
+  const handleSelectGridSize = (gridSize: number) => {
+    const defaultButtons = createDefaultButtons(gridSize);
+    const newLayout: ButtonLayout = {
+      buttons: defaultButtons,
+      gridSize,
+    };
+    setLayout(newLayout);
+    setOriginalLayout(JSON.parse(JSON.stringify(newLayout)));
+    setShowGridSizeModal(false);
+  };
 
   // Detect changes
   useEffect(() => {
@@ -130,7 +202,7 @@ export function LayoutEditorScreen({ navigation }: Props) {
       });
     }
 
-    setLayout({ buttons: updated });
+    setLayout({ ...layout, buttons: updated });
     setModalState(null);
   };
 
@@ -143,6 +215,7 @@ export function LayoutEditorScreen({ navigation }: Props) {
         text: 'Eliminar',
         onPress: () => {
           setLayout({
+            ...layout,
             buttons: layout.buttons.filter(b => b.id !== modalState.button!.id),
           });
           setModalState(null);
@@ -153,10 +226,62 @@ export function LayoutEditorScreen({ navigation }: Props) {
   };
 
   const handleSave = async () => {
-    await saveLayout(layout);
-    setOriginalLayout(JSON.parse(JSON.stringify(layout)));
-    hasChanges.current = false;
-    navigation.goBack();
+    if (editingProfileId) {
+      // Editing existing profile - prompt to overwrite or save as new
+      Alert.alert(
+        'Guardar cambios',
+        '¿Sobrescribir el perfil existente o guardar como nuevo?',
+        [
+          { text: 'Cancelar', onPress: () => {} },
+          {
+            text: 'Sobrescribir',
+            onPress: async () => {
+              await updateLayoutProfile(editingProfileId, '', layout);
+              setOriginalLayout(JSON.parse(JSON.stringify(layout)));
+              hasChanges.current = false;
+              navigation.goBack();
+            },
+          },
+          {
+            text: 'Guardar como nuevo',
+            onPress: () => promptForProfileName(false),
+          },
+        ]
+      );
+    } else {
+      // New profile - always prompt for name
+      promptForProfileName(true);
+    }
+  };
+
+  const promptForProfileName = (isNewProfile: boolean) => {
+    let profileName = '';
+    Alert.prompt(
+      'Guardar perfil como...',
+      'Nombre del perfil:',
+      [
+        { text: 'Cancelar', onPress: () => {} },
+        {
+          text: 'Guardar',
+          onPress: async (name) => {
+            if (!name.trim()) {
+              Alert.alert('Error', 'El nombre del perfil es requerido');
+              return;
+            }
+            if (isNewProfile) {
+              await saveLayoutProfile(name, layout);
+            } else if (editingProfileId) {
+              await updateLayoutProfile(editingProfileId, name, layout);
+            }
+            setOriginalLayout(JSON.parse(JSON.stringify(layout)));
+            hasChanges.current = false;
+            navigation.goBack();
+          },
+        },
+      ],
+      'plain-text',
+      editingProfileId ? '' : ''
+    );
   };
 
   return (
@@ -213,6 +338,35 @@ export function LayoutEditorScreen({ navigation }: Props) {
           })
         )}
       </View>
+
+      {/* Grid Size Selection Modal */}
+      <Modal
+        visible={showGridSizeModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowGridSizeModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.gridSizeModal}>
+            <Text style={styles.gridSizeTitle}>Seleccionar tamaño de grilla</Text>
+            <Text style={styles.gridSizeSubtitle}>
+              Los botones por defecto (LOC + 8 direcciones) se crearán en el centro
+            </Text>
+
+            <View style={styles.gridSizeOptions}>
+              {[8, 9, 10, 11].map(size => (
+                <TouchableOpacity
+                  key={size}
+                  onPress={() => handleSelectGridSize(size)}
+                  style={styles.gridSizeBtn}
+                >
+                  <Text style={styles.gridSizeBtnText}>{size}x{size}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Edit Button Modal */}
       <Modal
@@ -514,6 +668,57 @@ const styles = StyleSheet.create({
   saveBtnText: {
     color: '#0c0',
     fontSize: 14,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  gridSizeModal: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#333',
+    width: '100%',
+    maxWidth: 400,
+  },
+  gridSizeTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  gridSizeSubtitle: {
+    color: '#999',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  gridSizeOptions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    gap: 12,
+  },
+  gridSizeBtn: {
+    flex: 1,
+    backgroundColor: '#0a3a0a',
+    borderWidth: 2,
+    borderColor: '#0c0',
+    borderRadius: 8,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  gridSizeBtnText: {
+    color: '#0c0',
+    fontSize: 16,
     fontFamily: 'monospace',
     fontWeight: 'bold',
   },

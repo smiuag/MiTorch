@@ -13,7 +13,7 @@ import { MapRoom } from '../services/mapService';
 import { TerminalSection, TerminalSectionHandle } from './TerminalSection';
 import { ChatSection } from './ChatSection';
 import { FloatingButtonsOverlay } from './FloatingButtonsOverlay';
-import { loadLayout } from '../storage/layoutStorage';
+import { ButtonLayout } from '../storage/layoutStorage';
 
 interface UnifiedTerminalLayoutProps {
   lines: MudLine[];
@@ -33,13 +33,13 @@ interface UnifiedTerminalLayoutProps {
   nearbyRooms: MapRoom[];
   mapVisible: boolean;
   commandHistory?: string[];
+  buttonLayout: ButtonLayout | null;
   onInputChange: (text: string) => void;
   onSend: () => void;
   onSendCommand: (command: string) => void;
   onSelectChannel: (ch: string | null) => void;
   onAliasChange: (ch: string, alias: string) => void;
   onToggleMap: () => void;
-  onConfigPress: () => void;
 }
 
 export function UnifiedTerminalLayout({
@@ -60,13 +60,13 @@ export function UnifiedTerminalLayout({
   nearbyRooms,
   mapVisible,
   commandHistory,
+  buttonLayout,
   onInputChange,
   onSend,
   onSendCommand,
   onSelectChannel,
   onAliasChange,
   onToggleMap,
-  onConfigPress,
 }: UnifiedTerminalLayoutProps) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -88,13 +88,8 @@ export function UnifiedTerminalLayout({
     terminalSectionRef.current?.scrollToBottom();
   };
 
-  // Load button layout
-  const [gridSize, setGridSize] = useState(11);
-
   useEffect(() => {
-    (async () => {
-      const buttonLayout = await loadLayout();
-      setGridSize(buttonLayout.gridSize);
+    if (buttonLayout) {
       setOrientationLayout({
         orientation: isLandscape ? 'landscape' : 'portrait',
         floatingButtons: buttonLayout.buttons.map(btn => ({
@@ -107,8 +102,10 @@ export function UnifiedTerminalLayout({
           opacity: btn.opacity,
         })),
       });
-    })();
-  }, [isLandscape]);
+    } else {
+      setOrientationLayout(null);
+    }
+  }, [buttonLayout, isLandscape]);
 
   // Keyboard handling
   useEffect(() => {
@@ -161,14 +158,14 @@ export function UnifiedTerminalLayout({
             nearbyRooms={nearbyRooms}
             height={availableHeight}
           />
-          {orientationLayout && orientationLayout.floatingButtons.length > 0 && (
+          {orientationLayout && orientationLayout.floatingButtons.length > 0 && buttonLayout && (
             <FloatingButtonsOverlay
               buttons={orientationLayout.floatingButtons}
               orientation="landscape"
               onSendCommand={onSendCommand}
               availableHeight={availableHeight}
               availableWidth={flexibleWidth}
-              gridSize={gridSize}
+              gridSize={buttonLayout.gridSize}
             />
           )}
         </View>
@@ -194,7 +191,6 @@ export function UnifiedTerminalLayout({
             onInputChange={onInputChange}
             onSend={onSend}
             onSendCommand={onSendCommand}
-            onConfigPress={onConfigPress}
             onScrollTerminalToBottom={handleScrollTerminalToBottom}
             commandHistory={commandHistory}
           />
@@ -223,14 +219,14 @@ export function UnifiedTerminalLayout({
             nearbyRooms={nearbyRooms}
             height={flexibleHeight}
           />
-          {orientationLayout && orientationLayout.floatingButtons.length > 0 && (
+          {orientationLayout && orientationLayout.floatingButtons.length > 0 && buttonLayout && (
             <FloatingButtonsOverlay
               buttons={orientationLayout.floatingButtons}
               orientation="portrait"
               onSendCommand={onSendCommand}
               availableHeight={flexibleHeight}
               availableWidth={width}
-              gridSize={gridSize}
+              gridSize={buttonLayout.gridSize}
             />
           )}
         </View>
@@ -256,7 +252,6 @@ export function UnifiedTerminalLayout({
             onInputChange={onInputChange}
             onSend={onSend}
             onSendCommand={onSendCommand}
-            onConfigPress={onConfigPress}
             onScrollTerminalToBottom={handleScrollTerminalToBottom}
             commandHistory={commandHistory}
           />

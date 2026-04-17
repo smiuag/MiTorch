@@ -14,6 +14,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, ServerProfile } from '../types';
 import { loadServers, saveServers } from '../storage/serverStorage';
+import { listLayoutProfiles, LayoutProfileMeta } from '../storage/layoutProfileStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ServerList'>;
 
@@ -23,24 +24,32 @@ function generateId(): string {
 
 export function ServerListScreen({ navigation }: Props) {
   const [servers, setServers] = useState<ServerProfile[]>([]);
+  const [profiles, setProfiles] = useState<LayoutProfileMeta[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingServer, setEditingServer] = useState<ServerProfile | null>(null);
   const [formName, setFormName] = useState('');
   const [formHost, setFormHost] = useState('');
   const [formPort, setFormPort] = useState('');
+  const [formProfileId, setFormProfileId] = useState<string | undefined>(undefined);
   const [helpModalVisible, setHelpModalVisible] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       loadServers().then(setServers);
+      loadProfiles().then(setProfiles);
     }, [])
   );
+
+  const loadProfiles = async () => {
+    return await listLayoutProfiles();
+  };
 
   const openAdd = () => {
     setEditingServer(null);
     setFormName('');
-    setFormHost('');
-    setFormPort('23');
+    setFormHost('rlmud.org');
+    setFormPort('5001');
+    setFormProfileId(profiles.length > 0 ? profiles[0].id : undefined);
     setModalVisible(true);
   };
 
@@ -49,19 +58,20 @@ export function ServerListScreen({ navigation }: Props) {
     setFormName(server.name);
     setFormHost(server.host);
     setFormPort(String(server.port));
+    setFormProfileId(server.layoutProfileId);
     setModalVisible(true);
   };
 
   const handleSave = async () => {
-    if (!formName.trim() || !formHost.trim()) return;
+    if (!formName.trim() || !formHost.trim() || !formProfileId) return;
 
-    const port = parseInt(formPort) || 23;
+    const port = parseInt(formPort) || 5001;
     let updated: ServerProfile[];
 
     if (editingServer) {
       updated = servers.map(s =>
         s.id === editingServer.id
-          ? { ...s, name: formName.trim(), host: formHost.trim(), port }
+          ? { ...s, name: formName.trim(), host: formHost.trim(), port, layoutProfileId: formProfileId }
           : s
       );
     } else {
@@ -70,6 +80,7 @@ export function ServerListScreen({ navigation }: Props) {
         name: formName.trim(),
         host: formHost.trim(),
         port,
+        layoutProfileId: formProfileId,
       };
       updated = [...servers, newServer];
     }
@@ -144,7 +155,7 @@ export function ServerListScreen({ navigation }: Props) {
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
           ListEmptyComponent={
-            <Text style={styles.emptyText}>No servers configured. Tap + to add one.</Text>
+            <Text style={styles.emptyText}>No hay personajes. Pulsa + para crear uno.</Text>
           }
         />
       </View>
@@ -164,15 +175,15 @@ export function ServerListScreen({ navigation }: Props) {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>
-              {editingServer ? 'Edit Server' : 'Add Server'}
+              {editingServer ? 'Editar personaje' : 'Añadir personaje'}
             </Text>
 
-            <Text style={styles.label}>Name</Text>
+            <Text style={styles.label}>Nombre</Text>
             <TextInput
               style={styles.modalInput}
               value={formName}
               onChangeText={setFormName}
-              placeholder="My MUD"
+              placeholder="Mi personaje"
               placeholderTextColor="#666"
             />
 
@@ -181,31 +192,60 @@ export function ServerListScreen({ navigation }: Props) {
               style={styles.modalInput}
               value={formHost}
               onChangeText={setFormHost}
-              placeholder="mud.example.com"
+              placeholder="rlmud.org"
               placeholderTextColor="#666"
               autoCapitalize="none"
               autoCorrect={false}
             />
 
-            <Text style={styles.label}>Port</Text>
+            <Text style={styles.label}>Puerto</Text>
             <TextInput
               style={styles.modalInput}
               value={formPort}
               onChangeText={setFormPort}
-              placeholder="23"
+              placeholder="5001"
               placeholderTextColor="#666"
               keyboardType="number-pad"
             />
+
+            <Text style={styles.label}>Perfil de botones</Text>
+            {profiles.length === 0 ? (
+              <View style={styles.noProfilesContainer}>
+                <Text style={styles.noProfilesText}>
+                  Crea primero una configuración de botones en Ajustes
+                </Text>
+              </View>
+            ) : (
+              <ScrollView style={styles.profileSelector} scrollEnabled={profiles.length > 5}>
+                {profiles.map(profile => (
+                  <TouchableOpacity
+                    key={profile.id}
+                    style={[styles.profileOption, formProfileId === profile.id && styles.profileOptionSelected]}
+                    onPress={() => setFormProfileId(profile.id)}
+                  >
+                    <Text style={[styles.profileOptionText, formProfileId === profile.id && styles.profileOptionTextSelected]}>
+                      {profile.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={styles.cancelBtn}
                 onPress={() => setModalVisible(false)}
               >
-                <Text style={styles.cancelText}>Cancel</Text>
+                <Text style={styles.cancelText}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-                <Text style={styles.saveText}>Save</Text>
+              <TouchableOpacity
+                style={[styles.saveBtn, (profiles.length === 0 || !formProfileId) && styles.saveBtnDisabled]}
+                onPress={handleSave}
+                disabled={profiles.length === 0 || !formProfileId}
+              >
+                <Text style={[styles.saveText, (profiles.length === 0 || !formProfileId) && styles.saveTextDisabled]}>
+                  Guardar
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -232,9 +272,9 @@ export function ServerListScreen({ navigation }: Props) {
               onStartShouldSetResponder={() => true}
               onMoveShouldSetResponder={() => true}
             >
-              <Text style={styles.helpModalSectionTitle}>Conectar a un servidor</Text>
+              <Text style={styles.helpModalSectionTitle}>Conectar a un personaje</Text>
               <Text style={styles.helpModalText}>
-                Pulsa el botón + para añadir un nuevo servidor. Introduce el nombre, dirección de host y puerto. Luego selecciona el servidor de la lista para conectar.
+                Pulsa el botón + para crear un nuevo personaje. Introduce el nombre del personaje, host y puerto. Selecciona un perfil de botones guardado. Luego pulsa en el personaje para conectar.
               </Text>
 
               <Text style={styles.helpModalSectionTitle}>Durante la partida</Text>
@@ -565,5 +605,54 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     fontFamily: 'monospace',
+  },
+  noProfilesContainer: {
+    backgroundColor: '#0a0a0a',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 6,
+    padding: 12,
+    marginBottom: 12,
+  },
+  noProfilesText: {
+    color: '#cc3333',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    fontStyle: 'italic',
+  },
+  profileSelector: {
+    backgroundColor: '#0a0a0a',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 6,
+    maxHeight: 150,
+    marginBottom: 12,
+  },
+  profileOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1a1a',
+  },
+  profileOptionSelected: {
+    backgroundColor: '#0a3a0a',
+    borderLeftWidth: 3,
+    borderLeftColor: '#0c0',
+  },
+  profileOptionText: {
+    color: '#999',
+    fontSize: 14,
+    fontFamily: 'monospace',
+  },
+  profileOptionTextSelected: {
+    color: '#0c0',
+    fontWeight: 'bold',
+  },
+  saveBtnDisabled: {
+    backgroundColor: '#333',
+    opacity: 0.5,
+  },
+  saveTextDisabled: {
+    color: '#666',
   },
 });

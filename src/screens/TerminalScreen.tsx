@@ -28,11 +28,11 @@ import { RoomSearchResults } from '../components/RoomSearchResults';
 import { ChannelTabs, ChannelActivePanel, ChannelMessage, nextMsgId } from '../components/ChannelPanel';
 import { loadChannelAliases, saveChannelAliases } from '../storage/channelStorage';
 import { loadSettings } from '../storage/settingsStorage';
-import { ConfigProfileModal } from '../components/ConfigProfileModal';
 import { MapService, MapRoom } from '../services/mapService';
+import { loadLayoutProfile } from '../storage/layoutProfileStorage';
+import { ButtonLayout } from '../storage/layoutStorage';
 import { loadFKeys, saveFKeys } from '../storage/fkeyStorage';
 import { loadExtraButtons, saveExtraButtons } from '../storage/extraButtonStorage';
-import { FloatingLayout } from '../components/FloatingLayout';
 import { TerminalPanel } from '../components/TerminalPanel';
 import { UnifiedTerminalLayout } from '../components/UnifiedTerminalLayout';
 
@@ -74,11 +74,9 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [channels, setChannels] = useState<string[]>([]);
   const [activeChannel, setActiveChannel] = useState<string | null>(null);
   const [channelAliases, setChannelAliases] = useState<Record<string, string>>({});
-  const [configModalVisible, setConfigModalVisible] = useState(false);
-  const [currentProfile, setCurrentProfile] = useState('');
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [fontSize, setFontSize] = useState(14);
-  const [layoutVersion, setLayoutVersion] = useState(0);
+  const [buttonLayout, setButtonLayout] = useState<ButtonLayout | null>(null);
   const fontSizeRef = useRef(14);
   const walkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const walkPathRef = useRef<string[]>([]);
@@ -225,11 +223,18 @@ export function TerminalScreen({ route, navigation }: Props) {
   useEffect(() => {
     loadFKeys(server.id).then(setFkeys);
     loadExtraButtons(server.id).then(setExtraButtons);
-    loadChannelAliases().then(setChannelAliases);
+    loadChannelAliases(server.id).then(setChannelAliases);
     loadSettings().then(s => {
       setFontSize(s.fontSize);
       fontSizeRef.current = s.fontSize;
     });
+
+    // Load layout profile if assigned
+    if (server.layoutProfileId) {
+      loadLayoutProfile(server.layoutProfileId).then(setButtonLayout);
+    } else {
+      setButtonLayout(null);
+    }
 
     // Only load map for the default server (Reinos de Leyenda)
     const isDefaultServer = server.name === 'Reinos de Leyenda';
@@ -239,11 +244,8 @@ export function TerminalScreen({ route, navigation }: Props) {
     } else {
       setMapVisible(false);
     }
-  }, [server.id, server.name]);
+  }, [server.id, server.name, server.layoutProfileId]);
 
-  useFocusEffect(useCallback(() => {
-    setLayoutVersion(v => v + 1);
-  }, []));
 
   const updateMapPosition = useCallback((room: MapRoom) => {
     setCurrentRoom(room);
@@ -639,6 +641,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         nearbyRooms={nearbyRooms}
         mapVisible={mapVisible}
         commandHistory={commandHistory}
+        buttonLayout={buttonLayout}
         onInputChange={setInputText}
         onSend={handleSend}
         onSendCommand={sendCommand}
@@ -646,10 +649,9 @@ export function TerminalScreen({ route, navigation }: Props) {
         onAliasChange={(ch, alias) => {
           const updated = { ...channelAliases, [ch]: alias };
           setChannelAliases(updated);
-          saveChannelAliases(updated);
+          saveChannelAliases(server.id, updated);
         }}
         onToggleMap={() => setMapVisible(v => !v)}
-        onConfigPress={() => setConfigModalVisible(true)}
       />
 
 
@@ -672,19 +674,6 @@ export function TerminalScreen({ route, navigation }: Props) {
         onClose={() => setMacroEditorVisible(false)}
       />
 
-      {/* Config profile modal */}
-      <ConfigProfileModal
-        visible={configModalVisible}
-        serverId={server.id}
-        currentProfile={currentProfile}
-        onClose={() => setConfigModalVisible(false)}
-        onLoaded={(name) => {
-          setCurrentProfile(name);
-          loadFKeys(server.id).then(setFkeys);
-          loadExtraButtons(server.id).then(setExtraButtons);
-          loadChannelAliases().then(setChannelAliases);
-        }}
-      />
     </SafeAreaView>
   );
 }

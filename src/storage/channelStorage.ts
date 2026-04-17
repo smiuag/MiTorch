@@ -1,17 +1,20 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const ALIAS_KEY = 'aljhtar_channel_aliases';
 const CONFIG_KEY = 'aljhtar_full_config';
 
-// Channel aliases: { "chat": "ch", "bando": "bando" }
-export async function loadChannelAliases(): Promise<Record<string, string>> {
-  const json = await AsyncStorage.getItem(ALIAS_KEY);
+function getAliasKey(serverId: string): string {
+  return `aljhtar_channel_aliases_${serverId}`;
+}
+
+// Channel aliases per server: { "chat": "ch", "bando": "bando" }
+export async function loadChannelAliases(serverId: string): Promise<Record<string, string>> {
+  const json = await AsyncStorage.getItem(getAliasKey(serverId));
   if (!json) return {};
   return JSON.parse(json);
 }
 
-export async function saveChannelAliases(aliases: Record<string, string>): Promise<void> {
-  await AsyncStorage.setItem(ALIAS_KEY, JSON.stringify(aliases));
+export async function saveChannelAliases(serverId: string, aliases: Record<string, string>): Promise<void> {
+  await AsyncStorage.setItem(getAliasKey(serverId), JSON.stringify(aliases));
 }
 
 // Full config export/import (aliases + fkeys + extra buttons)

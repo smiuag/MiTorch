@@ -1,26 +1,56 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Switch, ScrollView, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Switch, ScrollView, Alert, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { loadSettings, saveSettings, AppSettings } from '../storage/settingsStorage';
-import { loadLayout, saveLayout } from '../storage/layoutStorage';
+import { listLayoutProfiles, deleteLayoutProfile, LayoutProfileMeta } from '../storage/layoutProfileStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export function SettingsScreen({ navigation }: Props) {
   const [settings, setSettings] = useState<AppSettings>({ fontSize: 14 });
-  const [gridSize, setGridSize] = useState(11);
+  const [profiles, setProfiles] = useState<LayoutProfileMeta[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     loadSettings().then(setSettings);
-    loadLayout().then(layout => setGridSize(layout.gridSize));
   }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadProfiles();
+    }, [])
+  );
+
+  const loadProfiles = async () => {
+    const loaded = await listLayoutProfiles();
+    setProfiles(loaded);
+  };
 
   const updateSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     const updated = { ...settings, [key]: value };
     setSettings(updated);
     saveSettings(updated);
+  };
+
+  const handleDeleteProfile = (id: string, name: string) => {
+    Alert.alert(
+      'Eliminar perfil',
+      `¿Eliminar "${name}"?`,
+      [
+        { text: 'Cancelar', onPress: () => {} },
+        {
+          text: 'Eliminar',
+          onPress: async () => {
+            await deleteLayoutProfile(id);
+            await loadProfiles();
+          },
+          style: 'destructive',
+        },
+      ]
+    );
   };
 
   return (
@@ -33,41 +63,54 @@ export function SettingsScreen({ navigation }: Props) {
       </View>
 
       <ScrollView style={styles.section} contentContainerStyle={styles.sectionContent}>
-        <TouchableOpacity
-          style={[styles.row, styles.configBtn]}
-          onPress={() => navigation.navigate('LayoutEditor')}
-        >
-          <Text style={styles.configBtnText}>Configurar layout ⚙️</Text>
-        </TouchableOpacity>
-
-        <View style={[styles.row, styles.marginTop]}>
-          <View style={styles.rowInfo}>
-            <Text style={styles.rowTitle}>Tamaño de grid</Text>
-            <Text style={styles.rowDesc}>
-              Selecciona el tamaño de la cuadrícula de botones.
-            </Text>
-          </View>
-          <View style={styles.gridSizeControls}>
-            {[11, 10, 9, 8].map(size => (
-              <TouchableOpacity
-                key={size}
-                style={[
-                  styles.gridSizeBtn,
-                  gridSize === size && styles.gridSizeBtnActive,
-                ]}
-                onPress={async () => {
-                  const layout = await loadLayout();
-                  layout.gridSize = size;
-                  await saveLayout(layout);
-                  setGridSize(size);
-                }}
-              >
-                <Text style={styles.gridSizeBtnText}>{size}×{size}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+        {/* Profiles Section */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Perfiles de botones</Text>
         </View>
 
+        <TouchableOpacity
+          style={[styles.row, styles.newProfileBtn]}
+          onPress={() => navigation.navigate('LayoutEditor')}
+        >
+          <Text style={styles.newProfileBtnText}>+ Nuevo perfil</Text>
+        </TouchableOpacity>
+
+        {profiles.length > 0 ? (
+          <FlatList
+            scrollEnabled={false}
+            data={profiles}
+            keyExtractor={item => item.id}
+            renderItem={({ item }) => {
+              const date = new Date(item.createdAt);
+              const dateStr = date.toLocaleDateString();
+
+              return (
+                <View style={[styles.row, styles.profileRow, styles.marginTop]}>
+                  <TouchableOpacity
+                    style={{ flex: 1 }}
+                    onPress={() => navigation.navigate('LayoutEditor', { profileId: item.id })}
+                  >
+                    <Text style={styles.profileName}>{item.name}</Text>
+                    <Text style={styles.profileDate}>{dateStr}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => handleDeleteProfile(item.id, item.name)}
+                  >
+                    <Text style={styles.deleteProfileBtn}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            }}
+          />
+        ) : (
+          <View style={[styles.row, styles.marginTop]}>
+            <Text style={styles.noProfilesText}>
+              No hay perfiles. Crea uno para comenzar.
+            </Text>
+          </View>
+        )}
+
+        {/* Font Size Section */}
         <View style={[styles.row, styles.marginTop]}>
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Tamaño de fuente</Text>
@@ -131,6 +174,17 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 16,
   },
+  sectionHeader: {
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    color: '#0c0',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -140,19 +194,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2a2a2a',
   },
-  orientationRow: {
-    flexDirection: 'column',
-    alignItems: 'stretch',
+  profileRow: {
+    alignItems: 'flex-start',
   },
   rowInfo: {
     flex: 1,
     marginRight: 12,
-    marginBottom: 0,
-  },
-  orientationRowInfo: {
-    flex: 0,
-    marginRight: 0,
-    marginBottom: 12,
   },
   rowTitle: {
     color: '#ccc',
@@ -168,6 +215,41 @@ const styles = StyleSheet.create({
   },
   marginTop: {
     marginTop: 12,
+  },
+  newProfileBtn: {
+    justifyContent: 'center',
+    backgroundColor: '#0a3a0a',
+    borderColor: '#0c0',
+  },
+  newProfileBtnText: {
+    color: '#0c0',
+    fontSize: 14,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
+  },
+  profileName: {
+    color: '#ccc',
+    fontSize: 14,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+    marginBottom: 4,
+  },
+  profileDate: {
+    color: '#666',
+    fontSize: 11,
+    fontFamily: 'monospace',
+  },
+  deleteProfileBtn: {
+    color: '#cc3333',
+    fontSize: 18,
+    fontWeight: 'bold',
+    paddingLeft: 12,
+  },
+  noProfilesText: {
+    color: '#666',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    fontStyle: 'italic',
   },
   fontSizeControls: {
     flexDirection: 'row',
@@ -205,77 +287,5 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     minWidth: 30,
     textAlign: 'center',
-  },
-  orientationControls: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
-    width: '100%',
-  },
-  orientBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#333',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  orientBtnFlex: {
-    flex: 1,
-  },
-  orientBtnActive: {
-    backgroundColor: '#0a3a0a',
-    borderColor: '#0c0',
-  },
-  orientBtnText: {
-    color: '#ccc',
-    fontSize: 12,
-    fontFamily: 'monospace',
-    fontWeight: 'bold',
-  },
-  configBtn: {
-    justifyContent: 'center',
-    backgroundColor: '#0a2a0a',
-    borderColor: '#0c0',
-  },
-  configBtnText: {
-    color: '#0c0',
-    fontSize: 14,
-    fontFamily: 'monospace',
-    fontWeight: 'bold',
-  },
-  sectionLabel: {
-    color: '#666',
-    fontSize: 12,
-    fontFamily: 'monospace',
-    fontWeight: 'bold',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  gridSizeControls: {
-    flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-  },
-  gridSizeBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#333',
-  },
-  gridSizeBtnActive: {
-    backgroundColor: '#0a3a0a',
-    borderColor: '#0c0',
-  },
-  gridSizeBtnText: {
-    color: '#ccc',
-    fontSize: 12,
-    fontFamily: 'monospace',
-    fontWeight: 'bold',
   },
 });

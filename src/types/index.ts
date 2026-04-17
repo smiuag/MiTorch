@@ -4,6 +4,7 @@ export interface ServerProfile {
   host: string;
   port: number;
   encoding?: string;
+  layoutProfileId?: string;
 }
 
 export interface AnsiSpan {
@@ -31,7 +32,7 @@ export type RootStackParamList = {
   ServerList: undefined;
   Terminal: { server: ServerProfile };
   Settings: undefined;
-  LayoutEditor: undefined;
+  LayoutEditor: { profileId?: string } | undefined;
 };
 
 export type LayoutItemType = 'button' | 'vitalbars' | 'input' | 'chat' | 'terminal';

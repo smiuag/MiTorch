@@ -41,7 +41,6 @@ interface ChannelTabsProps {
   activeChannel: string | null;
   onSelectChannel: (channel: string | null) => void;
   onAliasChange: (channel: string, alias: string) => void;
-  onConfigPress: () => void;
   unreadCounts: Record<string, number>;
   allMessages: ChannelMessage[];
   fontSize?: number;
@@ -50,7 +49,7 @@ interface ChannelTabsProps {
 
 export function ChannelTabs({
   channels, aliases, activeChannel,
-  onSelectChannel, onAliasChange, onConfigPress,
+  onSelectChannel, onAliasChange,
   unreadCounts, allMessages, fontSize = 14,
   useCustomKeyboard = false,
 }: ChannelTabsProps) {
@@ -96,9 +95,6 @@ export function ChannelTabs({
             </TouchableOpacity>
           ))}
         </ScrollView>
-        <TouchableOpacity style={styles.configBtn} onPress={onConfigPress}>
-          <Text style={styles.configIcon}>⚙</Text>
-        </TouchableOpacity>
       </View>
 
       <Modal

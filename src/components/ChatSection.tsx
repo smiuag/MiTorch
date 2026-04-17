@@ -35,7 +35,6 @@ interface ChatSectionProps {
   onInputChange: (text: string) => void;
   onSend: () => void;
   onSendCommand: (command: string) => void;
-  onConfigPress: () => void;
   onScrollTerminalToBottom?: () => void;
   commandHistory?: string[];
   onHistoryNavigate?: (command: string) => void;
@@ -61,7 +60,6 @@ export function ChatSection({
   onInputChange,
   onSend,
   onSendCommand,
-  onConfigPress,
   onScrollTerminalToBottom,
   commandHistory = [],
   onHistoryNavigate,
@@ -158,7 +156,6 @@ export function ChatSection({
           activeChannel={activeChannel}
           onSelectChannel={onSelectChannel}
           onAliasChange={onAliasChange}
-          onConfigPress={onConfigPress}
           unreadCounts={unreadCounts}
           allMessages={channelMessages}
           fontSize={fontSize}
