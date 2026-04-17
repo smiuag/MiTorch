@@ -318,11 +318,31 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   const sendCommand = useCallback((command: string) => {
     if (!telnetRef.current) return;
+
+    // Intercept irsala command
+    const irsalaMatch = command.match(/^irsala\s+(.+)$/i);
+    if (irsalaMatch) {
+      const query = irsalaMatch[1];
+      const mapSvc = mapServiceRef.current;
+      if (mapSvc.isLoaded) {
+        const results = mapSvc.searchRooms(query);
+        if (results.length === 0) {
+          addSystemLine(`--- No se encontró ninguna sala con "${query}" ---`);
+        } else if (results.length === 1) {
+          walkTo(results[0]);
+        } else {
+          setSearchResults(results);
+          setSearchVisible(true);
+        }
+      }
+      return;
+    }
+
     const commands = command.split(';');
     for (const cmd of commands) {
       telnetRef.current.send(cmd.trim());
     }
-  }, []);
+  }, [addSystemLine, walkTo]);
 
   const handleMacroSave = useCallback(async (macro: Macro) => {
     if (editingTarget.type === 'fkey') {
