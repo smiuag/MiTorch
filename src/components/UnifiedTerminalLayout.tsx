@@ -82,6 +82,7 @@ export function UnifiedTerminalLayout({
   const availableHeight = height - insets.top - insets.bottom;
   const fixedHeight = availableHeight * FIXED_SECTION_PERCENT;
   const flexibleHeight = availableHeight * FLEXIBLE_SECTION_PERCENT;
+  const flexibleWidth = isLandscape ? width * FLEXIBLE_SECTION_PERCENT : width;
 
   const handleScrollTerminalToBottom = () => {
     terminalSectionRef.current?.scrollToBottom();
@@ -162,6 +163,8 @@ export function UnifiedTerminalLayout({
               buttons={orientationLayout.floatingButtons}
               orientation="landscape"
               onSendCommand={onSendCommand}
+              availableHeight={availableHeight}
+              availableWidth={flexibleWidth}
             />
           )}
         </View>
@@ -221,6 +224,8 @@ export function UnifiedTerminalLayout({
               buttons={orientationLayout.floatingButtons}
               orientation="portrait"
               onSendCommand={onSendCommand}
+              availableHeight={flexibleHeight}
+              availableWidth={width}
             />
           )}
         </View>

@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   View,
   StyleSheet,
   TouchableOpacity,
   Text,
-  ScrollView,
   Dimensions,
+  useSafeAreaFrame,
 } from 'react-native';
 import { FloatingButton } from '../types';
 
@@ -14,57 +14,69 @@ interface FloatingButtonsOverlayProps {
   orientation: 'portrait' | 'landscape';
   onSendCommand: (command: string) => void;
   disabled?: boolean;
+  availableHeight?: number;
+  availableWidth?: number;
 }
+
+const GRID_COLS = 11;
+const GRID_ROWS = 11;
+const GAP = 1;
 
 export function FloatingButtonsOverlay({
   buttons,
   orientation,
   onSendCommand,
   disabled = false,
+  availableHeight = 0,
+  availableWidth = 0,
 }: FloatingButtonsOverlayProps) {
   const { width, height } = Dimensions.get('window');
   const isPortrait = orientation === 'portrait';
 
-  // Grid configuration
-  const buttonSize = 60;
-  const padding = 8;
-  const cols = isPortrait ? Math.floor((width - padding * 2) / (buttonSize + padding)) : Math.floor((width * 0.6 - padding * 2) / (buttonSize + padding));
+  // Determine available space for buttons
+  let containerWidth = availableWidth || width;
+  let containerHeight = availableHeight || height;
 
-  const gridLayout = buttons.map((btn, idx) => {
-    const col = idx % cols;
-    const row = Math.floor(idx / cols);
-    return {
-      button: btn,
-      x: padding + col * (buttonSize + padding),
-      y: padding + row * (buttonSize + padding),
-    };
-  });
+  // In landscape, buttons occupy 60% of width
+  if (!isPortrait && !availableWidth) {
+    containerWidth = width * 0.6;
+  }
+
+  // Calculate cell size to fit 11x11 grid
+  const cellWidth = Math.floor((containerWidth - GAP * (GRID_COLS - 1)) / GRID_COLS);
+  const cellHeight = Math.floor((containerHeight - GAP * (GRID_ROWS - 1)) / GRID_ROWS);
+  const cellSize = Math.min(cellWidth, cellHeight);
 
   return (
     <View style={styles.container} pointerEvents={disabled ? 'none' : 'auto'}>
-      {gridLayout.map((item) => (
-        <TouchableOpacity
-          key={item.button.id}
-          style={[
-            styles.button,
-            {
-              width: buttonSize,
-              height: buttonSize,
-              left: item.x,
-              top: item.y,
-              backgroundColor: item.button.color,
-              opacity: disabled ? 0.5 : (item.button.opacity ?? 0.85),
-            },
-          ]}
-          onPress={() => onSendCommand(item.button.command)}
-          activeOpacity={0.7}
-          disabled={disabled}
-        >
-          <Text style={styles.buttonLabel} numberOfLines={2}>
-            {item.button.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
+      {buttons.map((btn) => {
+        const x = btn.gridX * (cellSize + GAP);
+        const y = btn.gridRow * (cellSize + GAP);
+
+        return (
+          <TouchableOpacity
+            key={btn.id}
+            style={[
+              styles.button,
+              {
+                width: cellSize,
+                height: cellSize,
+                left: x,
+                top: y,
+                backgroundColor: btn.color,
+                opacity: disabled ? 0.5 : (btn.opacity ?? 0.5),
+              },
+            ]}
+            onPress={() => onSendCommand(btn.command)}
+            activeOpacity={0.7}
+            disabled={disabled}
+          >
+            <Text style={styles.buttonLabel} numberOfLines={2}>
+              {btn.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
@@ -80,14 +92,14 @@ const styles = StyleSheet.create({
   },
   button: {
     position: 'absolute',
-    borderRadius: 4,
+    borderRadius: 2,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
   },
   buttonLabel: {
     color: '#fff',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 'bold',
     textAlign: 'center',
   },
