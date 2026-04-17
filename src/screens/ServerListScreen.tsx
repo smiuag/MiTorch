@@ -228,7 +228,7 @@ export function ServerListScreen({ navigation }: Props) {
                 </Text>
               </View>
             ) : (
-              <ScrollView style={styles.profileSelector} scrollEnabled={profiles.length > 5}>
+              <ScrollView style={styles.profileSelector} nestedScrollEnabled>
                 {profiles.map(profile => (
                   <TouchableOpacity
                     key={profile.id}

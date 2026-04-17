@@ -78,14 +78,14 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
 
     // 8 direcciones alrededor del centro
     const directions = [
-      { label: 'Noroeste', command: 'noroeste', offset: [-1, -1] },
-      { label: 'Norte', command: 'norte', offset: [0, -1] },
-      { label: 'Noreste', command: 'noreste', offset: [1, -1] },
-      { label: 'Oeste', command: 'oeste', offset: [-1, 0] },
-      { label: 'Este', command: 'este', offset: [1, 0] },
-      { label: 'Sudoeste', command: 'sudoeste', offset: [-1, 1] },
-      { label: 'Sur', command: 'sur', offset: [0, 1] },
-      { label: 'Sudeste', command: 'sudeste', offset: [1, 1] },
+      { label: 'NO', command: 'noroeste', offset: [-1, -1] },
+      { label: 'N', command: 'norte', offset: [0, -1] },
+      { label: 'NE', command: 'noreste', offset: [1, -1] },
+      { label: 'O', command: 'oeste', offset: [-1, 0] },
+      { label: 'E', command: 'este', offset: [1, 0] },
+      { label: 'SO', command: 'sudoeste', offset: [-1, 1] },
+      { label: 'S', command: 'sur', offset: [0, 1] },
+      { label: 'SE', command: 'sudeste', offset: [1, 1] },
     ];
 
     directions.forEach(dir => {

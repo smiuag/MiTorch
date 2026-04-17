@@ -63,55 +63,12 @@ export function SettingsScreen({ navigation }: Props) {
       </View>
 
       <ScrollView style={styles.section} contentContainerStyle={styles.sectionContent}>
-        {/* Profiles Section */}
+        {/* Font Size Section - FIRST */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Perfiles de botones</Text>
+          <Text style={styles.sectionTitle}>Configuración general</Text>
         </View>
 
-        <TouchableOpacity
-          style={[styles.row, styles.newProfileBtn]}
-          onPress={() => navigation.navigate('LayoutEditor')}
-        >
-          <Text style={styles.newProfileBtnText}>+ Nuevo perfil</Text>
-        </TouchableOpacity>
-
-        {profiles.length > 0 ? (
-          <FlatList
-            scrollEnabled={false}
-            data={profiles}
-            keyExtractor={item => item.id}
-            renderItem={({ item }) => {
-              const date = new Date(item.createdAt);
-              const dateStr = date.toLocaleDateString();
-
-              return (
-                <View style={[styles.row, styles.profileRow, styles.marginTop]}>
-                  <TouchableOpacity
-                    style={{ flex: 1 }}
-                    onPress={() => navigation.navigate('LayoutEditor', { profileId: item.id })}
-                  >
-                    <Text style={styles.profileName}>{item.name}</Text>
-                    <Text style={styles.profileDate}>{dateStr}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => handleDeleteProfile(item.id, item.name)}
-                  >
-                    <Text style={styles.deleteProfileBtn}>✕</Text>
-                  </TouchableOpacity>
-                </View>
-              );
-            }}
-          />
-        ) : (
-          <View style={[styles.row, styles.marginTop]}>
-            <Text style={styles.noProfilesText}>
-              No hay perfiles. Crea uno para comenzar.
-            </Text>
-          </View>
-        )}
-
-        {/* Font Size Section */}
-        <View style={[styles.row, styles.marginTop]}>
+        <View style={styles.row}>
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Tamaño de fuente</Text>
             <Text style={styles.rowDesc}>
@@ -134,6 +91,51 @@ export function SettingsScreen({ navigation }: Props) {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Profiles Section - SECOND */}
+        <View style={[styles.sectionHeader, styles.marginTop]}>
+          <Text style={styles.sectionTitle}>Perfiles de botones</Text>
+        </View>
+
+        {profiles.length > 0 ? (
+          <ScrollView style={styles.profilesList} nestedScrollEnabled>
+            {profiles.map((item, index) => {
+              const date = new Date(item.createdAt);
+              const dateStr = date.toLocaleDateString();
+
+              return (
+                <View key={item.id} style={[styles.row, styles.profileRow, index === 0 ? styles.marginTop : styles.profileListMargin]}>
+                  <TouchableOpacity
+                    style={{ flex: 1 }}
+                    onPress={() => navigation.navigate('LayoutEditor', { profileId: item.id })}
+                  >
+                    <Text style={styles.profileName}>{item.name}</Text>
+                    <Text style={styles.profileDate}>{dateStr}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => handleDeleteProfile(item.id, item.name)}
+                  >
+                    <Text style={styles.deleteProfileBtn}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </ScrollView>
+        ) : (
+          <View style={[styles.row, styles.marginTop]}>
+            <Text style={styles.noProfilesText}>
+              No hay perfiles. Crea uno para comenzar.
+            </Text>
+          </View>
+        )}
+
+        {/* Add Profile Button - LAST */}
+        <TouchableOpacity
+          style={[styles.row, styles.newProfileBtn, styles.marginTop]}
+          onPress={() => navigation.navigate('LayoutEditor')}
+        >
+          <Text style={styles.newProfileBtnText}>+ Nuevo perfil</Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -287,5 +289,13 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     minWidth: 30,
     textAlign: 'center',
+  },
+  profilesList: {
+    maxHeight: 250,
+    backgroundColor: '#0a0a0a',
+    borderRadius: 4,
+  },
+  profileListMargin: {
+    marginTop: 8,
   },
 });
