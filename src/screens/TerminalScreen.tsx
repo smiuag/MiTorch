@@ -334,6 +334,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
     // Intercept LOCATE command
     if (command.toLowerCase() === 'locate') {
+      setCommandHistory(prev => [...prev.slice(-49), command]);
       handleLocate();
       return;
     }
@@ -341,6 +342,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     // Intercept irsala command
     const irsalaMatch = command.match(/^irsala\s+(.+)$/i);
     if (irsalaMatch) {
+      setCommandHistory(prev => [...prev.slice(-49), command]);
       Keyboard.dismiss();
       const query = irsalaMatch[1];
       const mapSvc = mapServiceRef.current;
@@ -351,7 +353,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         } else if (results.length === 1) {
           walkTo(results[0]);
         } else {
-          setSearchResults(results);
+          setSearchResults(results.slice(0, 20));  // Limit to 20 results
           setSearchVisible(true);
         }
       }
