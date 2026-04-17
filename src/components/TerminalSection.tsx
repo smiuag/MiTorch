@@ -74,15 +74,12 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
 
   return (
     <View style={[styles.container, { height }]}>
-      {mapVisible && (
-        <View style={styles.mapContainer}>
-          <MiniMap
-            currentRoom={currentRoom}
-            nearbyRooms={nearbyRooms}
-            onToggle={onToggleMap}
-          />
-        </View>
-      )}
+      <MiniMap
+        currentRoom={currentRoom}
+        nearbyRooms={nearbyRooms}
+        visible={mapVisible}
+        onToggle={onToggleMap}
+      />
 
       <FlatList
         ref={flatListRef}
@@ -98,7 +95,6 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
         removeClippedSubviews={true}
         maxToRenderPerBatch={50}
         updateCellsBatchingPeriod={50}
-        contentContainerStyle={{ paddingTop: mapVisible ? 130 : 0 }}
       />
 
       {showScrollToBottom && (
@@ -116,21 +112,10 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
     backgroundColor: '#000',
     borderBottomWidth: 1,
     borderBottomColor: '#333',
-    position: 'relative',
-  },
-  mapContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 120,
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
-    zIndex: 5,
-    backgroundColor: '#000',
   },
   lineContainer: {
     paddingHorizontal: 8,
