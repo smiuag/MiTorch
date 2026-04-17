@@ -1,40 +1,55 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FloatingLayout, LayoutItem } from '../types';
 
-const LAYOUT_KEY = 'aljhtar_floating_layout';
+export interface LayoutButton {
+  id: string;
+  col: number;
+  row: number;
+  label: string;
+  command: string;
+  color: string;
+}
 
-const DEFAULT_LAYOUT: FloatingLayout = {
-  gridCols: 8,
-  gridRows: 8,
-  items: [],
+export interface ButtonLayout {
+  buttons: LayoutButton[];
+}
+
+const LAYOUT_KEY = 'aljhtar_button_layout';
+
+const DEFAULT_LAYOUT: ButtonLayout = {
+  buttons: [],
 };
 
-let itemIdCounter = 0;
+let buttonIdCounter = 0;
 function genId() {
-  return `item_${itemIdCounter++}`;
+  return `btn_${buttonIdCounter++}`;
 }
 
-export function createDefaultLayout(): FloatingLayout {
-  // Universal 8x8 grid layout that can be rotated for any orientation
-  const items: LayoutItem[] = [];
+export function createDefaultLayout(): ButtonLayout {
+  // 11x11 grid with LOC in center and directions around it
+  const buttons: LayoutButton[] = [
+    // Center column
+    { id: genId(), col: 5, row: 4, label: 'Noroeste', command: 'noroeste', color: '#666666' },
+    { id: genId(), col: 5, row: 5, label: 'Norte', command: 'norte', color: '#666666' },
+    { id: genId(), col: 5, row: 6, label: 'Noreste', command: 'noreste', color: '#666666' },
+    // Middle row
+    { id: genId(), col: 4, row: 5, label: 'Oeste', command: 'oeste', color: '#666666' },
+    { id: genId(), col: 5, row: 5, label: 'Localizar', command: 'ojear', color: '#3399cc' },
+    { id: genId(), col: 6, row: 5, label: 'Este', command: 'este', color: '#666666' },
+    // Bottom row
+    { id: genId(), col: 4, row: 6, label: 'Sudoeste', command: 'sudoeste', color: '#666666' },
+    { id: genId(), col: 5, row: 6, label: 'Sur', command: 'sur', color: '#666666' },
+    { id: genId(), col: 6, row: 6, label: 'Sudeste', command: 'sudeste', color: '#666666' },
+  ];
 
-  // Simple default: Terminal at top, Chat at bottom
-  items.push({ id: genId(), type: 'terminal', col: 0, row: 0, colSpan: 8, rowSpan: 5, opacity: 1 });
-  items.push({ id: genId(), type: 'chat', col: 0, row: 5, colSpan: 8, rowSpan: 3, opacity: 1 });
-
-  return {
-    gridCols: 8,
-    gridRows: 8,
-    items,
-  };
+  return { buttons };
 }
 
-export async function loadLayout(): Promise<FloatingLayout> {
+export async function loadLayout(): Promise<ButtonLayout> {
   const json = await AsyncStorage.getItem(LAYOUT_KEY);
   if (!json) return createDefaultLayout();
-  return { ...DEFAULT_LAYOUT, ...JSON.parse(json) };
+  return JSON.parse(json);
 }
 
-export async function saveLayout(layout: FloatingLayout): Promise<void> {
+export async function saveLayout(layout: ButtonLayout): Promise<void> {
   await AsyncStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
 }

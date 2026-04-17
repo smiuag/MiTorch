@@ -87,24 +87,20 @@ export function UnifiedTerminalLayout({
     terminalSectionRef.current?.scrollToBottom();
   };
 
-  // Load floating buttons layout and convert to OrientationLayout
+  // Load button layout
   useEffect(() => {
     (async () => {
-      const fullLayout = await loadLayout();
-      const floatingButtons = fullLayout.items
-        .filter(item => item.type === 'button')
-        .map(item => ({
-          id: item.id,
-          label: item.label || '',
-          command: item.command || '',
-          color: item.color || '#3399cc',
-          gridX: item.col,
-          gridRow: item.row,
-        }));
-
+      const buttonLayout = await loadLayout();
       setOrientationLayout({
         orientation: isLandscape ? 'landscape' : 'portrait',
-        floatingButtons,
+        floatingButtons: buttonLayout.buttons.map(btn => ({
+          id: btn.id,
+          label: btn.label,
+          command: btn.command,
+          color: btn.color,
+          gridX: btn.col,
+          gridRow: btn.row,
+        })),
       });
     })();
   }, [isLandscape]);
