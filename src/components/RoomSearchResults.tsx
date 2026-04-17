@@ -32,7 +32,6 @@ export function RoomSearchResults({ rooms, visible, onSelect, onClose }: RoomSea
             <View style={[styles.colorDot, { backgroundColor: item.c ?? '#0b0' }]} />
             <View style={styles.roomInfo}>
               <Text style={styles.roomName}>{item.n}</Text>
-              <Text style={styles.roomCoords}>[{item.x}, {item.y}, {item.z}]</Text>
             </View>
             <Text style={styles.goText}>Ir</Text>
           </TouchableOpacity>
@@ -101,11 +100,6 @@ const styles = StyleSheet.create({
   roomName: {
     color: '#ccc',
     fontSize: 13,
-    fontFamily: 'monospace',
-  },
-  roomCoords: {
-    color: '#555',
-    fontSize: 10,
     fontFamily: 'monospace',
   },
   goText: {
