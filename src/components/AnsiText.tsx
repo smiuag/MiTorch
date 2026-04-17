@@ -13,7 +13,7 @@ export function AnsiText({ line, spans, fontSize = 14, addNewline = true }: Ansi
   const spansToRender = spans || line?.spans || [];
 
   return (
-    <Text style={[styles.line, { fontSize }]}>
+    <Text style={[styles.line, { fontSize, lineHeight: fontSize * 1.2 }]}>
       {spansToRender.map((span, i) => (
         <Text
           key={i}
@@ -38,7 +38,6 @@ const styles = StyleSheet.create({
     color: '#cccccc',
     fontFamily: 'monospace',
     fontSize: 14,
-    lineHeight: 20,
   },
   bold: {
     fontWeight: 'bold',
