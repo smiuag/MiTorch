@@ -276,7 +276,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     addSystemLine(`--- Caminando a "${targetRoom.n}" (${path.length} pasos) ---`);
     setWalking(true);
     setSearchVisible(false);
-    const STEP_DELAY = 300;
+    const STEP_DELAY = 500;
     walkTimers.current = [];
     for (let i = 0; i < path.length; i++) {
       const t = setTimeout(() => {
@@ -595,6 +595,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         }}
         onToggleMap={() => setMapVisible(v => !v)}
         onConfigPress={() => setConfigModalVisible(true)}
+        onRoomSelect={walkTo}
       />
 
       {/* Old layouts kept for backwards compatibility - commented out */}

@@ -37,6 +37,7 @@ interface ChatSectionProps {
   onSendCommand: (command: string) => void;
   onConfigPress: () => void;
   onScrollTerminalToBottom?: () => void;
+  onRoomSelect?: (room: MapRoom) => void;
 }
 
 export function ChatSection({
@@ -61,6 +62,7 @@ export function ChatSection({
   onSendCommand,
   onConfigPress,
   onScrollTerminalToBottom,
+  onRoomSelect,
 }: ChatSectionProps) {
   const { width } = useWindowDimensions();
   const inputRef = useRef<TextInput>(null);
@@ -145,6 +147,7 @@ export function ChatSection({
             visible={true}
             onToggle={() => {}}
             inlineMode={true}
+            onRoomSelect={onRoomSelect}
           />
         ) : (
           <FlatList

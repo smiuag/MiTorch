@@ -39,6 +39,7 @@ interface UnifiedTerminalLayoutProps {
   onAliasChange: (ch: string, alias: string) => void;
   onToggleMap: () => void;
   onConfigPress: () => void;
+  onRoomSelect?: (room: MapRoom) => void;
 }
 
 export function UnifiedTerminalLayout({
@@ -65,6 +66,7 @@ export function UnifiedTerminalLayout({
   onAliasChange,
   onToggleMap,
   onConfigPress,
+  onRoomSelect,
 }: UnifiedTerminalLayoutProps) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -176,6 +178,7 @@ export function UnifiedTerminalLayout({
             onSendCommand={onSendCommand}
             onConfigPress={onConfigPress}
             onScrollTerminalToBottom={handleScrollTerminalToBottom}
+            onRoomSelect={onRoomSelect}
           />
         </View>
       </Animated.View>
