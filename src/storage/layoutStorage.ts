@@ -31,8 +31,8 @@ export function createDefaultLayout(orientation: 'portrait' | 'landscape' = 'por
     // Row 14: Input (fila 1 desde abajo)
     // Row 15: Empty (fila 0 desde abajo)
 
-    // Terminal - occupies all rows above Input (rows 0-12, 13 filas)
-    items.push({ id: genId(), type: 'terminal', col: 0, row: 0, colSpan: 12, rowSpan: 13, opacity: 1 });
+    // Terminal - occupies all rows above Input (rows 0-13, 14 filas)
+    items.push({ id: genId(), type: 'terminal', col: 0, row: 0, colSpan: 12, rowSpan: 14, opacity: 1 });
 
     // Direction buttons inside terminal - centered (col 4-6, rows 5-7)
     // 1x1 buttons in 3x3 grid, centered in the terminal
@@ -48,14 +48,14 @@ export function createDefaultLayout(orientation: 'portrait' | 'landscape' = 'por
       { id: genId(), type: 'button', col: 6, row: 7, colSpan: 1, rowSpan: 1, label: 'SE', command: 'sudeste', color: '#666666', opacity: 0.7 }
     );
 
-    // Input - justo encima de VitalBars = row 13
-    items.push({ id: genId(), type: 'input', col: 0, row: 13, colSpan: 12, rowSpan: 1, opacity: 1 });
+    // Input - row 14
+    items.push({ id: genId(), type: 'input', col: 0, row: 14, colSpan: 12, rowSpan: 1, opacity: 1 });
 
-    // VitalBars - row 14
-    items.push({ id: genId(), type: 'vitalbars', col: 0, row: 14, colSpan: 12, rowSpan: 1, opacity: 1 });
+    // VitalBars - row 15
+    items.push({ id: genId(), type: 'vitalbars', col: 0, row: 15, colSpan: 12, rowSpan: 1, opacity: 1 });
 
-    // Chat - rows 15-21 (7 filas)
-    items.push({ id: genId(), type: 'chat', col: 0, row: 15, colSpan: 12, rowSpan: 7, opacity: 1 });
+    // Chat - rows 16-21 (6 filas)
+    items.push({ id: genId(), type: 'chat', col: 0, row: 16, colSpan: 12, rowSpan: 6, opacity: 1 });
   } else {
     // Landscape layout (horizontal):
     // Grid: 24 columns × 10 rows
@@ -75,7 +75,7 @@ export function createDefaultLayout(orientation: 'portrait' | 'landscape' = 'por
 
   return {
     gridCols: orientation === 'portrait' ? 12 : 24,
-    gridRows: orientation === 'portrait' ? 24 : 10,
+    gridRows: orientation === 'portrait' ? 22 : 10,
     items,
   };
 }

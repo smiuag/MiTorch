@@ -11,7 +11,7 @@ import {
   Modal,
   ScrollView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, MudLine, Macro } from '../types';
@@ -42,7 +42,12 @@ let lineIdCounter = 0;
 
 export function TerminalScreen({ route, navigation }: Props) {
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const isLandscape = width > height;
+  const [customKeyboardActive, setCustomKeyboardActive] = useState(false);
+  const keyboardHeight = isLandscape ? 273 : 182;
+  const chatHeightCompressed = isLandscape ? 150 : 180;
+  const availableHeight = height - insets.top - insets.bottom - (customKeyboardActive ? Math.max(0, keyboardHeight - chatHeightCompressed) : 0);
   const { server } = route.params;
   const [lines, setLines] = useState<MudLine[]>([]);
   const [inputText, setInputText] = useState('');
@@ -75,6 +80,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [fontSize, setFontSize] = useState(14);
   const [useFloatingButtons, setUseFloatingButtons] = useState(false);
   const [floatingOrientation, setFloatingOrientation] = useState<'portrait' | 'landscape'>('portrait');
+  const [useCustomKeyboard, setUseCustomKeyboard] = useState(true);
   const [layoutVersion, setLayoutVersion] = useState(0);
   const useChannelsRef = useRef(true);
   const fontSizeRef = useRef(14);
@@ -87,7 +93,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const handleSelectChannel = useCallback((ch: string | null) => {
     setActiveChannel(ch);
     activeChannelRef.current = ch;
-    if (ch) {
+    if (ch && ch !== 'Todos') {
       setUnreadCounts(prev => ({ ...prev, [ch]: 0 }));
     }
   }, []);
@@ -224,6 +230,7 @@ export function TerminalScreen({ route, navigation }: Props) {
       useFloatingButtonsRef.current = s.useFloatingButtons;
       setFloatingOrientation(s.floatingOrientation);
       useFloatingButtonsOrientationRef.current = s.floatingOrientation;
+      setUseCustomKeyboard(s.useCustomKeyboard);
     });
 
     // Only load map for the default server (Reinos de Leyenda)
@@ -557,7 +564,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const keyExtractor = useCallback((item: MudLine) => String(item.id), []);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
       {/* Main content area */}
       <View style={isLandscape ? styles.landscapeBody : styles.portraitBody}>
 
@@ -595,6 +602,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         unreadCounts={unreadCounts}
         allMessages={channelMessages}
         fontSize={fontSize}
+        useCustomKeyboard={useCustomKeyboard}
       />}
       {!isLandscape && !useFloatingButtons && !activeChannel && (
         <View style={styles.inputContainer}>
@@ -628,7 +636,9 @@ export function TerminalScreen({ route, navigation }: Props) {
         <FloatingLayout
           key={layoutVersion}
           orientation={floatingOrientation}
+          availableHeight={availableHeight}
           layoutVersion={layoutVersion}
+          onInputActiveChange={setCustomKeyboardActive}
           hp={hp}
           hpMax={hpMax}
           energy={energy}
@@ -655,6 +665,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           onToggleMap={() => setMapVisible(v => !v)}
           currentRoom={currentRoom}
           nearbyRooms={nearbyRooms}
+          useCustomKeyboard={useCustomKeyboard}
         />
       )}
 
@@ -727,6 +738,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         unreadCounts={unreadCounts}
         allMessages={channelMessages}
         fontSize={fontSize}
+        useCustomKeyboard={useCustomKeyboard}
       />}
       {isLandscape && !useFloatingButtons && !activeChannel && (
         <View style={styles.inputContainer}>
@@ -771,6 +783,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           }}
           onClose={() => handleSelectChannel(null)}
           fontSize={fontSize}
+          useCustomKeyboard={useCustomKeyboard}
         />
       )}
 

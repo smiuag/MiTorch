@@ -45,12 +45,14 @@ interface ChannelTabsProps {
   unreadCounts: Record<string, number>;
   allMessages: ChannelMessage[];
   fontSize?: number;
+  useCustomKeyboard?: boolean;
 }
 
 export function ChannelTabs({
   channels, aliases, activeChannel,
   onSelectChannel, onAliasChange, onConfigPress,
   unreadCounts, allMessages, fontSize = 14,
+  useCustomKeyboard = false,
 }: ChannelTabsProps) {
   const [editingChannel, setEditingChannel] = useState<string | null>(null);
   const [editAlias, setEditAlias] = useState('');
@@ -118,6 +120,7 @@ export function ChannelTabs({
               autoCapitalize="none"
               autoCorrect={false}
               placeholderTextColor="#666"
+              showSoftInputOnFocus={!useCustomKeyboard}
             />
             <View style={styles.modalButtons}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditingChannel(null)}>
@@ -146,33 +149,22 @@ interface ChannelActivePanelProps {
   onSendMessage: (cmd: string) => void;
   onClose: () => void;
   fontSize?: number;
+  useCustomKeyboard?: boolean;
+  onInputFocus?: () => void;
+  onInputBlur?: () => void;
 }
 
 export function ChannelActivePanel({
   messages, channel, alias, visible, onSendMessage, onClose, fontSize = 14,
+  useCustomKeyboard = false,
+  onInputFocus,
+  onInputBlur,
 }: ChannelActivePanelProps) {
-  const [chatInput, setChatInput] = useState('');
   const flatListRef = useRef<FlatList>(null);
-  const chatInputRef = useRef<TextInput>(null);
 
   // If channel is "Todos", show all messages; otherwise filter by channel
   const filtered = channel ? (channel === 'Todos' ? messages : messages.filter(m => m.channel === channel)) : [];
   const reversed = useMemo(() => [...filtered].reverse(), [filtered]);
-
-  // Focus input when channel changes or becomes visible
-  useEffect(() => {
-    if (visible && channel) {
-      setTimeout(() => chatInputRef.current?.focus(), 100);
-    }
-  }, [channel, visible]);
-
-
-  const handleSend = () => {
-    const text = chatInput.trim();
-    if (!text || !channel || channel === 'Todos') return;
-    onSendMessage(`${alias} ${text}`);
-    setChatInput('');
-  };
 
   const renderMessage = useCallback(({ item }: { item: ChannelMessage }) => (
     <View style={styles.message}>
@@ -194,8 +186,6 @@ export function ChannelActivePanel({
 
   if (!visible || !channel) return null;
 
-  const isTodosChannel = channel === 'Todos';
-
   return (
     <View style={styles.activePanelContainer}>
       <FlatList
@@ -210,28 +200,6 @@ export function ChannelActivePanel({
           <Text style={styles.emptyText}>Sin mensajes</Text>
         }
       />
-      {!isTodosChannel && (
-        <View style={styles.chatInputContainer}>
-          <Text style={styles.chatChannelLabel}>{channel}</Text>
-          <TextInput
-            ref={chatInputRef}
-            style={styles.chatInput}
-            value={chatInput}
-            onChangeText={setChatInput}
-            onSubmitEditing={handleSend}
-            placeholder="Escribir..."
-            placeholderTextColor="#555"
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="send"
-            blurOnSubmit={false}
-            disableFullscreenUI={true}
-          />
-          <TouchableOpacity style={styles.chatSendBtn} onPress={handleSend}>
-            <Text style={styles.chatSendText}>Send</Text>
-          </TouchableOpacity>
-        </View>
-      )}
     </View>
   );
 }

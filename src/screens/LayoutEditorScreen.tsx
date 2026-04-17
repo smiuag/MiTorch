@@ -69,10 +69,10 @@ export function LayoutEditorScreen({ navigation }: Props) {
   const portraitWidth = Math.min(width, height);
 
   // Grid dimensions are FIXED based on preferred orientation
-  // Portrait: 12 columns × 24 rows
+  // Portrait: 12 columns × 22 rows
   // Landscape: 24 columns × 10 rows
   const targetGridCols = preferredOrientation === 'portrait' ? 12 : 24;
-  const targetGridRows = preferredOrientation === 'portrait' ? 24 : 10;
+  const targetGridRows = preferredOrientation === 'portrait' ? 22 : 10;
 
   // Calculate cellSize based on portrait width divided by target columns
   const cellSize = Math.max(30, Math.min(70, Math.floor(portraitWidth / targetGridCols)));

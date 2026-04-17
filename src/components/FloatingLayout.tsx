@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, TextInput, StyleSheet, useWindowDimensions } from 'react-native';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { View, Text, TouchableOpacity, TextInput, StyleSheet, useWindowDimensions, Keyboard, Pressable } from 'react-native';
 import { FloatingLayout as FloatingLayoutType, LayoutItem, MudLine } from '../types';
 import { loadLayout } from '../storage/layoutStorage';
 import { computeGridMetrics } from '../utils/gridUtils';
@@ -7,10 +7,13 @@ import { VitalBars } from './VitalBars';
 import { ChannelTabs, ChannelActivePanel } from './ChannelPanel';
 import { TerminalPanel } from './TerminalPanel';
 import { MapRoom } from '../services/mapService';
+import { CustomKeyboard } from './CustomKeyboard';
 
 interface FloatingLayoutProps {
   orientation: 'portrait' | 'landscape';
   layoutVersion: number;
+  availableHeight: number;
+  onInputActiveChange?: (active: boolean) => void;
   hp: number;
   hpMax: number;
   energy: number;
@@ -33,10 +36,13 @@ interface FloatingLayoutProps {
   onToggleMap: () => void;
   currentRoom: MapRoom | null;
   nearbyRooms: MapRoom[];
+  useCustomKeyboard: boolean;
 }
 
 export function FloatingLayout({
   orientation,
+  availableHeight,
+  onInputActiveChange,
   layoutVersion,
   hp,
   hpMax,
@@ -60,13 +66,50 @@ export function FloatingLayout({
   onToggleMap,
   currentRoom,
   nearbyRooms,
+  useCustomKeyboard,
 }: FloatingLayoutProps) {
   const [layout, setLayout] = useState<FloatingLayoutType | null>(null);
+  const [inputActive, setInputActive] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const { width, height } = useWindowDimensions();
+  const inputRef = useRef<TextInput>(null);
+  const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     loadLayout().then(setLayout);
   }, [layoutVersion]);
+
+  useEffect(() => {
+    onInputActiveChange?.(inputActive);
+  }, [inputActive, onInputActiveChange]);
+
+  // Handle input focus - cancel blur timeout if it exists
+  const handleInputFocus = useCallback(() => {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
+    setInputActive(true);
+  }, []);
+
+  // Handle input blur - delay closing to allow quick refocus when selecting channels
+  const handleInputBlur = useCallback(() => {
+    blurTimeoutRef.current = setTimeout(() => {
+      setInputActive(false);
+      blurTimeoutRef.current = null;
+    }, 300);
+  }, []);
+
+  // Activate keyboard when a channel is selected
+  useEffect(() => {
+    if (activeChannel && activeChannel !== 'Todos') {
+      setInputActive(true);
+      // Wait for CustomKeyboard to render and measure before focusing
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 150);
+    }
+  }, [activeChannel]);
 
   if (!layout) return null;
 
@@ -83,8 +126,26 @@ export function FloatingLayout({
   const sortedItems = [...terminalItems, ...otherItems];
 
   return (
-    <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
-      {sortedItems.map(item => {
+    <View style={[StyleSheet.absoluteFillObject]} pointerEvents="box-none">
+      {inputActive && useCustomKeyboard && (
+        <Pressable
+          style={StyleSheet.absoluteFillObject}
+          onPress={() => {
+            setInputActive(false);
+          }}
+          pointerEvents="auto"
+        />
+      )}
+      <View
+        style={[
+          StyleSheet.absoluteFillObject,
+          {
+            transform: inputActive ? [{ translateY: -(orientation === 'portrait' ? 182 : 273) * 0.6 }] : [{ translateY: 0 }],
+          },
+        ]}
+        pointerEvents="box-none"
+      >
+        {sortedItems.map(item => {
         const style = {
           position: 'absolute' as const,
           left: metrics.offsetX + item.col * metrics.cellSize,
@@ -120,6 +181,7 @@ export function FloatingLayout({
             <View key={item.id} style={[styles.inputWidget, style, { opacity: item.opacity || 1 }]}>
               <View style={styles.inputContainer}>
                 <TextInput
+                  ref={inputRef}
                   style={styles.input}
                   value={inputText}
                   onChangeText={onInputChange}
@@ -129,6 +191,11 @@ export function FloatingLayout({
                   autoCorrect={false}
                   returnKeyType="send"
                   onSubmitEditing={onSend}
+                  multiline={false}
+                  scrollEnabled={false}
+                  showSoftInputOnFocus={!useCustomKeyboard}
+                  onFocus={handleInputFocus}
+                  onBlur={handleInputBlur}
                 />
                 <TouchableOpacity style={styles.sendBtn} onPress={onSend}>
                   <Text style={styles.sendBtnText}>Send</Text>
@@ -152,6 +219,7 @@ export function FloatingLayout({
                     unreadCounts={unreadCounts}
                     allMessages={channelMessages}
                     fontSize={fontSize}
+                    useCustomKeyboard={useCustomKeyboard}
                   />
                   <ChannelActivePanel
                     messages={channelMessages}
@@ -161,6 +229,9 @@ export function FloatingLayout({
                     onSendMessage={onSendCommand}
                     onClose={() => onSelectChannel(null)}
                     fontSize={fontSize}
+                    useCustomKeyboard={useCustomKeyboard}
+                    onInputFocus={() => setInputActive(true)}
+                    onInputBlur={() => setInputActive(false)}
                   />
                 </>
               )}
@@ -185,11 +256,30 @@ export function FloatingLayout({
 
         return null;
       })}
+      </View>
+
+      {inputActive && useCustomKeyboard && (
+        <View style={[styles.keyboardContainer, { height: orientation === 'portrait' ? 182 : 273 }]}>
+          <CustomKeyboard
+            onKeyPress={(char) => onInputChange(inputText + char)}
+            onBackspace={() => onInputChange(inputText.slice(0, -1))}
+            onEnter={onSend}
+            compact={orientation === 'portrait'}
+          />
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1000,
+  },
   button: {
     borderRadius: 4,
     borderWidth: 1,

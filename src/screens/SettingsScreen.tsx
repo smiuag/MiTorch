@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Switch, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Switch, Alert, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { loadSettings, saveSettings, AppSettings } from '../storage/settingsStorage';
@@ -8,7 +9,7 @@ import { saveLayout, createDefaultLayout } from '../storage/layoutStorage';
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export function SettingsScreen({ navigation }: Props) {
-  const [settings, setSettings] = useState<AppSettings>({ useChannels: true, fontSize: 14, useFloatingButtons: false, floatingOrientation: 'portrait' });
+  const [settings, setSettings] = useState<AppSettings>({ useChannels: true, fontSize: 14, useFloatingButtons: false, floatingOrientation: 'portrait', useCustomKeyboard: true });
 
   useEffect(() => {
     loadSettings().then(setSettings);
@@ -21,7 +22,7 @@ export function SettingsScreen({ navigation }: Props) {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Text style={styles.backText}>{'< Volver'}</Text>
@@ -29,12 +30,12 @@ export function SettingsScreen({ navigation }: Props) {
         <Text style={styles.title}>Configuración</Text>
       </View>
 
-      <View style={styles.section}>
+      <ScrollView style={styles.section} contentContainerStyle={styles.sectionContent}>
         <View style={styles.row}>
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Gestionar canales</Text>
             <Text style={styles.rowDesc}>
-              Separar los canales (chat, bando...) en pestañas con panel propio. Si se desactiva, los mensajes aparecen en la pantalla principal.
+              Muestra los canales en pestañas separadas.
             </Text>
           </View>
           <Switch
@@ -49,7 +50,7 @@ export function SettingsScreen({ navigation }: Props) {
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Usar botones flotantes</Text>
             <Text style={styles.rowDesc}>
-              Modo alternativo de interfaz con botones flotantes en lugar de los controles tradicionales
+              Interfaz personalizable con botones flotantes.
             </Text>
           </View>
           <Switch
@@ -60,13 +61,28 @@ export function SettingsScreen({ navigation }: Props) {
           />
         </View>
 
+        <View style={[styles.row, styles.marginTop]}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Teclado personalizado</Text>
+            <Text style={styles.rowDesc}>
+              Usa el teclado personalizado en lugar del del teléfono.
+            </Text>
+          </View>
+          <Switch
+            value={settings.useCustomKeyboard}
+            onValueChange={(v) => updateSetting('useCustomKeyboard', v)}
+            trackColor={{ false: '#333', true: '#0a5a0a' }}
+            thumbColor={settings.useCustomKeyboard ? '#0c0' : '#666'}
+          />
+        </View>
+
         {settings.useFloatingButtons && (
           <>
             <View style={[styles.row, styles.marginTop, styles.orientationRow]}>
               <View style={[styles.rowInfo, styles.orientationRowInfo]}>
                 <Text style={styles.rowTitle}>Orientación preferida</Text>
                 <Text style={styles.rowDesc}>
-                  Orientación por defecto para configurar el layout (la pantalla se adapta al girar el dispositivo)
+                  Orientación por defecto del layout flotante.
                 </Text>
               </View>
               <View style={styles.orientationControls}>
@@ -121,7 +137,7 @@ export function SettingsScreen({ navigation }: Props) {
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Tamaño de fuente</Text>
             <Text style={styles.rowDesc}>
-              Ajusta el tamaño de letra en la terminal y canales
+              Tamaño de fuente del terminal y canales.
             </Text>
           </View>
           <View style={styles.fontSizeControls}>
@@ -140,8 +156,8 @@ export function SettingsScreen({ navigation }: Props) {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
-    </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -173,8 +189,12 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
   },
   section: {
+    flex: 1,
+  },
+  sectionContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
+    paddingBottom: 16,
   },
   row: {
     flexDirection: 'row',
@@ -264,6 +284,8 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     borderWidth: 1,
     borderColor: '#333',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   orientBtnFlex: {
     flex: 1,

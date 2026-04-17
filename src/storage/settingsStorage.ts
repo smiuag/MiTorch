@@ -7,6 +7,7 @@ export interface AppSettings {
   fontSize: number;
   useFloatingButtons: boolean;
   floatingOrientation: 'portrait' | 'landscape';
+  useCustomKeyboard: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -14,6 +15,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   fontSize: 14,
   useFloatingButtons: false,
   floatingOrientation: 'portrait',
+  useCustomKeyboard: true,
 };
 
 export async function loadSettings(): Promise<AppSettings> {
