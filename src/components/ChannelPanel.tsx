@@ -43,8 +43,6 @@ interface ChannelTabsProps {
   onAliasChange: (channel: string, alias: string) => void;
   onConfigPress: () => void;
   unreadCounts: Record<string, number>;
-  miniPanelVisible: boolean;
-  onToggleMiniPanel: () => void;
   allMessages: ChannelMessage[];
   fontSize?: number;
 }
@@ -52,11 +50,14 @@ interface ChannelTabsProps {
 export function ChannelTabs({
   channels, aliases, activeChannel,
   onSelectChannel, onAliasChange, onConfigPress,
-  unreadCounts, miniPanelVisible, onToggleMiniPanel, allMessages, fontSize = 14,
+  unreadCounts, allMessages, fontSize = 14,
 }: ChannelTabsProps) {
   const [editingChannel, setEditingChannel] = useState<string | null>(null);
   const [editAlias, setEditAlias] = useState('');
   const sortedChannels = sortChannels(channels);
+
+  // Add "Todos" as the first channel
+  const allChannels = ['Todos', ...sortedChannels];
 
   return (
     <>
@@ -68,18 +69,24 @@ export function ChannelTabs({
           contentContainerStyle={styles.tabBarContent}
           keyboardShouldPersistTaps="always"
         >
-          {sortedChannels.map(ch => (
+          {allChannels.map(ch => (
             <TouchableOpacity
               key={ch}
               style={[styles.tab, activeChannel === ch && styles.activeTab]}
               onPress={() => onSelectChannel(activeChannel === ch ? null : ch)}
-              onLongPress={() => { setEditingChannel(ch); setEditAlias(aliases[ch] || ch); }}
+              onLongPress={() => {
+                // Only allow alias editing for non-Todos channels
+                if (ch !== 'Todos') {
+                  setEditingChannel(ch);
+                  setEditAlias(aliases[ch] || ch);
+                }
+              }}
               activeOpacity={0.6}
             >
               <Text style={[styles.tabText, activeChannel === ch && styles.activeTabText]}>
                 {ch}
               </Text>
-              {(unreadCounts[ch] || 0) > 0 && (
+              {ch !== 'Todos' && (unreadCounts[ch] || 0) > 0 && (
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>{unreadCounts[ch]}</Text>
                 </View>
@@ -87,35 +94,10 @@ export function ChannelTabs({
             </TouchableOpacity>
           ))}
         </ScrollView>
-        <TouchableOpacity style={styles.miniPanelBtn} onPress={onToggleMiniPanel}>
-          <Text style={styles.miniPanelBtnText}>{miniPanelVisible ? '▼' : '▲'}</Text>
-        </TouchableOpacity>
         <TouchableOpacity style={styles.configBtn} onPress={onConfigPress}>
           <Text style={styles.configIcon}>⚙</Text>
         </TouchableOpacity>
       </View>
-
-      {/* Mini panel - last 3 messages from all channels */}
-      {miniPanelVisible && !activeChannel && allMessages.length > 0 && (
-        <View style={styles.miniPanel}>
-          {allMessages.slice(-3).map(msg => (
-            <Text key={msg.id} style={[styles.miniPanelLine, { fontSize }]} numberOfLines={3}>
-              <Text style={styles.miniPanelChannel}>[{msg.channel}] </Text>
-              {msg.spans.map((span, i) => (
-                <Text
-                  key={i}
-                  style={[
-                    span.fg ? { color: span.fg } : null,
-                    span.bold ? { fontWeight: 'bold' } : null,
-                  ]}
-                >
-                  {span.text}
-                </Text>
-              ))}
-            </Text>
-          ))}
-        </View>
-      )}
 
       <Modal
         visible={editingChannel !== null}
@@ -173,7 +155,8 @@ export function ChannelActivePanel({
   const flatListRef = useRef<FlatList>(null);
   const chatInputRef = useRef<TextInput>(null);
 
-  const filtered = channel ? messages.filter(m => m.channel === channel) : [];
+  // If channel is "Todos", show all messages; otherwise filter by channel
+  const filtered = channel ? (channel === 'Todos' ? messages : messages.filter(m => m.channel === channel)) : [];
   const reversed = useMemo(() => [...filtered].reverse(), [filtered]);
 
   // Focus input when channel changes or becomes visible
@@ -186,7 +169,7 @@ export function ChannelActivePanel({
 
   const handleSend = () => {
     const text = chatInput.trim();
-    if (!text || !channel) return;
+    if (!text || !channel || channel === 'Todos') return;
     onSendMessage(`${alias} ${text}`);
     setChatInput('');
   };
@@ -211,6 +194,8 @@ export function ChannelActivePanel({
 
   if (!visible || !channel) return null;
 
+  const isTodosChannel = channel === 'Todos';
+
   return (
     <View style={styles.activePanelContainer}>
       <FlatList
@@ -225,26 +210,28 @@ export function ChannelActivePanel({
           <Text style={styles.emptyText}>Sin mensajes</Text>
         }
       />
-      <View style={styles.chatInputContainer}>
-        <Text style={styles.chatChannelLabel}>{channel}</Text>
-        <TextInput
-          ref={chatInputRef}
-          style={styles.chatInput}
-          value={chatInput}
-          onChangeText={setChatInput}
-          onSubmitEditing={handleSend}
-          placeholder="Escribir..."
-          placeholderTextColor="#555"
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="send"
-          blurOnSubmit={false}
-          disableFullscreenUI={true}
-        />
-        <TouchableOpacity style={styles.chatSendBtn} onPress={handleSend}>
-          <Text style={styles.chatSendText}>Send</Text>
-        </TouchableOpacity>
-      </View>
+      {!isTodosChannel && (
+        <View style={styles.chatInputContainer}>
+          <Text style={styles.chatChannelLabel}>{channel}</Text>
+          <TextInput
+            ref={chatInputRef}
+            style={styles.chatInput}
+            value={chatInput}
+            onChangeText={setChatInput}
+            onSubmitEditing={handleSend}
+            placeholder="Escribir..."
+            placeholderTextColor="#555"
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="send"
+            blurOnSubmit={false}
+            disableFullscreenUI={true}
+          />
+          <TouchableOpacity style={styles.chatSendBtn} onPress={handleSend}>
+            <Text style={styles.chatSendText}>Send</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -301,17 +288,6 @@ const styles = StyleSheet.create({
     fontSize: 8,
     fontWeight: 'bold',
   },
-  miniPanelBtn: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 3,
-    backgroundColor: '#1a1a1a',
-    marginRight: 2,
-  },
-  miniPanelBtnText: {
-    fontSize: 10,
-    color: '#666',
-  },
   configBtn: {
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -322,26 +298,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
   },
-  miniPanel: {
-    backgroundColor: 'rgba(5, 5, 20, 0.9)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(100, 100, 255, 0.15)',
-  },
-  miniPanelLine: {
-    color: '#999',
-    fontSize: 10,
-    fontFamily: 'monospace',
-    lineHeight: 14,
-  },
-  miniPanelChannel: {
-    color: '#668',
-    fontSize: 10,
-    fontFamily: 'monospace',
-  },
   activePanelContainer: {
-    height: 160,
+    flex: 1,
     backgroundColor: 'rgba(5, 5, 20, 0.95)',
     borderTopWidth: 1,
     borderTopColor: 'rgba(100, 100, 255, 0.3)',

@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Switch } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Switch, Alert } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { loadSettings, saveSettings, AppSettings } from '../storage/settingsStorage';
+import { saveLayout, createDefaultLayout } from '../storage/layoutStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export function SettingsScreen({ navigation }: Props) {
-  const [settings, setSettings] = useState<AppSettings>({ useChannels: true, fontSize: 14 });
+  const [settings, setSettings] = useState<AppSettings>({ useChannels: true, fontSize: 14, useFloatingButtons: false, floatingOrientation: 'portrait' });
 
   useEffect(() => {
     loadSettings().then(setSettings);
@@ -43,6 +44,78 @@ export function SettingsScreen({ navigation }: Props) {
             thumbColor={settings.useChannels ? '#0c0' : '#666'}
           />
         </View>
+
+        <View style={[styles.row, styles.marginTop]}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Usar botones flotantes</Text>
+            <Text style={styles.rowDesc}>
+              Modo alternativo de interfaz con botones flotantes en lugar de los controles tradicionales
+            </Text>
+          </View>
+          <Switch
+            value={settings.useFloatingButtons}
+            onValueChange={(v) => updateSetting('useFloatingButtons', v)}
+            trackColor={{ false: '#333', true: '#0a5a0a' }}
+            thumbColor={settings.useFloatingButtons ? '#0c0' : '#666'}
+          />
+        </View>
+
+        {settings.useFloatingButtons && (
+          <>
+            <View style={[styles.row, styles.marginTop, styles.orientationRow]}>
+              <View style={[styles.rowInfo, styles.orientationRowInfo]}>
+                <Text style={styles.rowTitle}>Orientación preferida</Text>
+                <Text style={styles.rowDesc}>
+                  Orientación por defecto para configurar el layout (la pantalla se adapta al girar el dispositivo)
+                </Text>
+              </View>
+              <View style={styles.orientationControls}>
+                <TouchableOpacity
+                  style={[styles.orientBtn, styles.orientBtnFlex, settings.floatingOrientation === 'portrait' && styles.orientBtnActive]}
+                  onPress={() => updateSetting('floatingOrientation', 'portrait')}
+                >
+                  <Text style={styles.orientBtnText}>Vertical</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.orientBtn, styles.orientBtnFlex, settings.floatingOrientation === 'landscape' && styles.orientBtnActive]}
+                  onPress={() => updateSetting('floatingOrientation', 'landscape')}
+                >
+                  <Text style={styles.orientBtnText}>Horizontal</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.row, styles.marginTop, styles.defaultBtn]}
+              onPress={() => {
+                Alert.alert(
+                  'Cargar configuración por defecto',
+                  '¿Reemplazar la configuración actual con la configuración por defecto? Se perderá la configuración actual.',
+                  [
+                    { text: 'Cancelar', onPress: () => {}, style: 'cancel' },
+                    {
+                      text: 'Cargar',
+                      onPress: async () => {
+                        const defaultLayout = createDefaultLayout(settings.floatingOrientation);
+                        await saveLayout(defaultLayout);
+                      },
+                      style: 'destructive',
+                    },
+                  ]
+                );
+              }}
+            >
+              <Text style={styles.defaultBtnText}>Cargar configuración por defecto</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.row, styles.marginTop, styles.configBtn]}
+              onPress={() => navigation.navigate('LayoutEditor')}
+            >
+              <Text style={styles.configBtnText}>Configurar pantalla flotante →</Text>
+            </TouchableOpacity>
+          </>
+        )}
 
         <View style={[styles.row, styles.marginTop]}>
           <View style={styles.rowInfo}>
@@ -112,9 +185,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2a2a2a',
   },
+  orientationRow: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+  },
   rowInfo: {
     flex: 1,
     marginRight: 12,
+    marginBottom: 0,
+  },
+  orientationRowInfo: {
+    flex: 0,
+    marginRight: 0,
+    marginBottom: 12,
   },
   rowTitle: {
     color: '#ccc',
@@ -167,5 +250,54 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     minWidth: 30,
     textAlign: 'center',
+  },
+  orientationControls: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+    width: '100%',
+  },
+  orientBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  orientBtnFlex: {
+    flex: 1,
+  },
+  orientBtnActive: {
+    backgroundColor: '#0a3a0a',
+    borderColor: '#0c0',
+  },
+  orientBtnText: {
+    color: '#ccc',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
+  },
+  configBtn: {
+    justifyContent: 'center',
+    backgroundColor: '#0a2a0a',
+    borderColor: '#0c0',
+  },
+  configBtnText: {
+    color: '#0c0',
+    fontSize: 14,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
+  },
+  defaultBtn: {
+    justifyContent: 'center',
+    backgroundColor: '#2a1a0a',
+    borderColor: '#cc9933',
+  },
+  defaultBtnText: {
+    color: '#cc9933',
+    fontSize: 14,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
   },
 });

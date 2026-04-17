@@ -8,8 +8,11 @@ import {
   TouchableOpacity,
   Keyboard,
   useWindowDimensions,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, MudLine, Macro } from '../types';
 import { TelnetService } from '../services/telnetService';
@@ -29,6 +32,8 @@ import { ConfigProfileModal } from '../components/ConfigProfileModal';
 import { MapService, MapRoom } from '../services/mapService';
 import { loadFKeys, saveFKeys } from '../storage/fkeyStorage';
 import { loadExtraButtons, saveExtraButtons } from '../storage/extraButtonStorage';
+import { FloatingLayout } from '../components/FloatingLayout';
+import { TerminalPanel } from '../components/TerminalPanel';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Terminal'>;
 
@@ -66,14 +71,17 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [configModalVisible, setConfigModalVisible] = useState(false);
   const [currentProfile, setCurrentProfile] = useState('');
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
-  const [miniPanelVisible, setMiniPanelVisible] = useState(true);
   const [useChannels, setUseChannels] = useState(true);
   const [fontSize, setFontSize] = useState(14);
+  const [useFloatingButtons, setUseFloatingButtons] = useState(false);
+  const [floatingOrientation, setFloatingOrientation] = useState<'portrait' | 'landscape'>('portrait');
+  const [layoutVersion, setLayoutVersion] = useState(0);
   const useChannelsRef = useRef(true);
   const fontSizeRef = useRef(14);
+  const useFloatingButtonsRef = useRef(false);
+  const useFloatingButtonsOrientationRef = useRef<'portrait' | 'landscape'>('portrait');
   const walkTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const activeChannelRef = useRef<string | null>(null);
-  const miniPanelVisibleRef = useRef(true);
   const lastSentChannelTime = useRef(0);
 
   const handleSelectChannel = useCallback((ch: string | null) => {
@@ -157,8 +165,8 @@ export function TerminalScreen({ route, navigation }: Props) {
           channel: channelName,
           spans,
         });
-        // Still track unread count
-        const isReading = activeChannelRef.current === channelName || miniPanelVisibleRef.current;
+        // Still track unread count - also consider reading if in "Todos" channel
+        const isReading = activeChannelRef.current === channelName || activeChannelRef.current === 'Todos';
         if (!isReading) {
           setUnreadCounts(prev => ({ ...prev, [channelName]: (prev[channelName] || 0) + 1 }));
         }
@@ -212,9 +220,25 @@ export function TerminalScreen({ route, navigation }: Props) {
       useChannelsRef.current = s.useChannels;
       setFontSize(s.fontSize);
       fontSizeRef.current = s.fontSize;
+      setUseFloatingButtons(s.useFloatingButtons);
+      useFloatingButtonsRef.current = s.useFloatingButtons;
+      setFloatingOrientation(s.floatingOrientation);
+      useFloatingButtonsOrientationRef.current = s.floatingOrientation;
     });
-    mapServiceRef.current.load();
-  }, [server.id]);
+
+    // Only load map for the default server (Reinos de Leyenda)
+    const isDefaultServer = server.name === 'Reinos de Leyenda';
+    if (isDefaultServer) {
+      mapServiceRef.current.load();
+      setMapVisible(true);
+    } else {
+      setMapVisible(false);
+    }
+  }, [server.id, server.name]);
+
+  useFocusEffect(useCallback(() => {
+    setLayoutVersion(v => v + 1);
+  }, []));
 
   const updateMapPosition = useCallback((room: MapRoom) => {
     setCurrentRoom(room);
@@ -420,7 +444,7 @@ export function TerminalScreen({ route, navigation }: Props) {
               return updated.length > 500 ? updated.slice(-500) : updated;
             });
             const isOwnEcho = Date.now() - lastSentChannelTime.current < 1000;
-            const isReading = activeChannelRef.current === data.canal || miniPanelVisibleRef.current;
+            const isReading = activeChannelRef.current === data.canal || activeChannelRef.current === 'Todos';
             if (!isOwnEcho && !isReading) {
               setUnreadCounts(prev => ({ ...prev, [data.canal]: (prev[data.canal] || 0) + 1 }));
             }
@@ -534,138 +558,30 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      {/* Status bar */}
-      <View style={styles.statusBar}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>{'<'}</Text>
-        </TouchableOpacity>
-        <View style={[styles.statusDot, connected ? styles.connected : styles.disconnected]} />
-        <Text style={styles.statusName} numberOfLines={1}>{server.name}</Text>
-        <Text style={styles.statusHost}>{server.host}:{server.port}</Text>
-        {!connected && (
-          <TouchableOpacity
-            style={styles.reconnectBtn}
-            onPress={() => {
-              telnetRef.current?.disconnect();
-              const telnet = new TelnetService(server, {
-                onData: (text: string) => {
-                  if (!text || text.length === 0) return;
-                  pendingText.current += text;
-                  // Normalize line endings like in the main handler
-                  const normalized = pendingText.current.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-                  const parts = normalized.split('\n');
-                  pendingText.current = parts.pop() ?? '';
-                  for (const part of parts) {
-                    if (part.length > 0) addLine(part);
-                  }
-                },
-                onConnect: () => {
-                  setConnected(true);
-                  addSystemLine(`--- Reconnected to ${server.name} ---`);
-                },
-                onClose: () => {
-                  if (pendingText.current) {
-                    addLine(pendingText.current);
-                    pendingText.current = '';
-                  }
-                  setConnected(false);
-                  addSystemLine('--- Connection closed ---');
-                },
-                onError: (error: string) => addSystemLine(`--- Error: ${error} ---`),
-                onGMCP: (module: string, data: any) => {
-                  if (module === 'Comm.Canales' && data && typeof data === 'object') {
-                    setChannels(Object.keys(data));
-                  } else if (module === 'Comm.EnciendeCanal' && data?.canal) {
-                    setChannels(prev => prev.includes(data.canal) ? prev : [...prev, data.canal]);
-                  } else if (module === 'Comm.ApagaCanal' && data?.canal) {
-                    setChannels(prev => prev.filter(ch => ch !== data.canal));
-                    if (activeChannelRef.current === data.canal) handleSelectChannel(null);
-                  } else if ((module === 'Comm.MensajeCanal' || module === 'Comm.MensajeCanalHistorico') && data?.canal && data?.mensaje) {
-                    if (!useChannelsRef.current) {
-                      addLine(data.mensaje);
-                    } else {
-                      const spans = parseAnsi(data.mensaje);
-                      setChannelMessages(prev => {
-                        const updated = [...prev, { id: nextMsgId(), channel: data.canal, spans }];
-                        return updated.length > 500 ? updated.slice(-500) : updated;
-                      });
-                    }
-                  }
-                  if (module === 'Char.Status' && data && typeof data === 'object') {
-                    if (data.pvs) {
-                      if (data.pvs.min !== undefined) setHp(data.pvs.min);
-                      if (data.pvs.max !== undefined) setHpMax(data.pvs.max);
-                    }
-                    if (data.pe) {
-                      if (data.pe.min !== undefined) setEnergy(data.pe.min);
-                      if (data.pe.max !== undefined) setEnergyMax(data.pe.max);
-                    }
-                  }
-                  const mapSvc = mapServiceRef.current;
-                  if (!mapSvc.isLoaded) return;
-                  if (module === 'Room.Actual') {
-                    const room = mapSvc.findRoom(typeof data === 'string' ? data : String(data));
-                    if (room) updateMapPosition(room);
-                  } else if (module === 'Room.Movimiento') {
-                    const room = mapSvc.moveByDirection(typeof data === 'string' ? data : String(data));
-                    if (room) updateMapPosition(room);
-                  }
-                },
-              });
-              telnetRef.current = telnet;
-              telnet.connect();
-            }}
-          >
-            <Text style={styles.reconnectText}>Reconnect</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
       {/* Main content area */}
       <View style={isLandscape ? styles.landscapeBody : styles.portraitBody}>
 
       {/* Left side: output only (landscape) or output+input (portrait) */}
       <View style={isLandscape ? styles.landscapeLeft : styles.portraitLeft}>
-      <View style={styles.outputWrapper} onTouchStart={() => {
-        if (activeChannel) {
-          handleSelectChannel(null);
-        }
-        Keyboard.dismiss();
-      }}>
-      <MiniMap
-        currentRoom={currentRoom}
-        nearbyRooms={nearbyRooms}
-        visible={mapVisible}
-        onToggle={() => setMapVisible(v => !v)}
-      />
-      <FlatList
-        ref={flatListRef}
-        data={lines}
-        renderItem={renderLine}
-        keyExtractor={keyExtractor}
-        style={styles.output}
-        contentContainerStyle={styles.outputContent}
-        onContentSizeChange={() => {
-          if (isAtBottomRef.current) {
-            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
-          }
-        }}
-        onScroll={(e) => {
-          const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-          const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
-          isAtBottomRef.current = distanceFromBottom < 50;
-        }}
-        scrollEventThrottle={100}
-        removeClippedSubviews={false}
-        maxToRenderPerBatch={30}
-        windowSize={21}
-        keyboardShouldPersistTaps="always"
-      />
-      </View>
+      {/* Only show terminal panel when NOT in floating mode - floating mode renders it in FloatingLayout if configured */}
+      {!useFloatingButtons && (
+        <TerminalPanel
+          lines={lines}
+          fontSize={fontSize}
+          mapVisible={mapVisible}
+          onToggleMap={() => setMapVisible(v => !v)}
+          currentRoom={currentRoom}
+          nearbyRooms={nearbyRooms}
+          activeChannel={activeChannel}
+          onSelectChannel={handleSelectChannel}
+          flatListRef={flatListRef}
+          isAtBottomRef={isAtBottomRef}
+        />
+      )}
 
-      {/* In portrait: vital bars + input below output */}
-      {!isLandscape && <VitalBars hp={hp} hpMax={hpMax} energy={energy} energyMax={energyMax} />}
-      {!isLandscape && useChannels && channels.length > 0 && <ChannelTabs
+      {/* In portrait: vital bars + input below output - hidden when using floating buttons */}
+      {!isLandscape && !useFloatingButtons && <VitalBars hp={hp} hpMax={hpMax} energy={energy} energyMax={energyMax} />}
+      {!isLandscape && !useFloatingButtons && useChannels && channels.length > 0 && <ChannelTabs
         channels={channels}
         aliases={channelAliases}
         activeChannel={activeChannel}
@@ -677,12 +593,10 @@ export function TerminalScreen({ route, navigation }: Props) {
         }}
         onConfigPress={() => setConfigModalVisible(true)}
         unreadCounts={unreadCounts}
-        miniPanelVisible={miniPanelVisible}
-        onToggleMiniPanel={() => { setMiniPanelVisible(v => { miniPanelVisibleRef.current = !v; return !v; }); }}
         allMessages={channelMessages}
         fontSize={fontSize}
       />}
-      {!isLandscape && !activeChannel && (
+      {!isLandscape && !useFloatingButtons && !activeChannel && (
         <View style={styles.inputContainer}>
           <TextInput
             ref={inputRef}
@@ -709,8 +623,43 @@ export function TerminalScreen({ route, navigation }: Props) {
       )}
       </View>
 
-      {/* Right side (landscape) or bottom (portrait): buttons - hidden when channel active */}
-      {(!keyboardVisible || isLandscape) && !activeChannel && <View style={isLandscape ? styles.landscapeRight : styles.portraitBottom}>
+      {/* Floating layout overlay when enabled */}
+      {useFloatingButtons && (
+        <FloatingLayout
+          key={layoutVersion}
+          orientation={floatingOrientation}
+          layoutVersion={layoutVersion}
+          hp={hp}
+          hpMax={hpMax}
+          energy={energy}
+          energyMax={energyMax}
+          inputText={inputText}
+          onInputChange={setInputText}
+          onSend={handleSend}
+          onSendCommand={sendCommand}
+          channels={channels}
+          channelMessages={channelMessages}
+          channelAliases={channelAliases}
+          activeChannel={activeChannel}
+          onSelectChannel={handleSelectChannel}
+          unreadCounts={unreadCounts}
+          onAliasChange={(ch, alias) => {
+            const updated = { ...channelAliases, [ch]: alias };
+            setChannelAliases(updated);
+            saveChannelAliases(updated);
+          }}
+          fontSize={fontSize}
+          onConfigPress={() => setConfigModalVisible(true)}
+          lines={lines}
+          mapVisible={mapVisible}
+          onToggleMap={() => setMapVisible(v => !v)}
+          currentRoom={currentRoom}
+          nearbyRooms={nearbyRooms}
+        />
+      )}
+
+      {/* Right side (landscape) or bottom (portrait): buttons - hidden when channel active or floating buttons mode */}
+      {(!keyboardVisible || isLandscape) && !activeChannel && !useFloatingButtons && <View style={isLandscape ? styles.landscapeRight : styles.portraitBottom}>
 
       {isLandscape ? (
         <LandscapeButtons
@@ -762,9 +711,9 @@ export function TerminalScreen({ route, navigation }: Props) {
         </>
       )}
 
-      {/* In landscape: vital bars + input below buttons */}
-      {isLandscape && <VitalBars hp={hp} hpMax={hpMax} energy={energy} energyMax={energyMax} />}
-      {isLandscape && useChannels && channels.length > 0 && <ChannelTabs
+      {/* In landscape: vital bars + input below buttons - hidden when using floating buttons */}
+      {isLandscape && !useFloatingButtons && <VitalBars hp={hp} hpMax={hpMax} energy={energy} energyMax={energyMax} />}
+      {isLandscape && !useFloatingButtons && useChannels && channels.length > 0 && <ChannelTabs
         channels={channels}
         aliases={channelAliases}
         activeChannel={activeChannel}
@@ -776,12 +725,10 @@ export function TerminalScreen({ route, navigation }: Props) {
         }}
         onConfigPress={() => setConfigModalVisible(true)}
         unreadCounts={unreadCounts}
-        miniPanelVisible={miniPanelVisible}
-        onToggleMiniPanel={() => { setMiniPanelVisible(v => { miniPanelVisibleRef.current = !v; return !v; }); }}
         allMessages={channelMessages}
         fontSize={fontSize}
       />}
-      {isLandscape && !activeChannel && (
+      {isLandscape && !useFloatingButtons && !activeChannel && (
         <View style={styles.inputContainer}>
           <TextInput
             ref={inputRef}
@@ -811,18 +758,21 @@ export function TerminalScreen({ route, navigation }: Props) {
       </View>
 
       {/* Active channel panel - replaces buttons when a channel is selected */}
-      <ChannelActivePanel
-        messages={channelMessages}
-        channel={activeChannel}
-        alias={activeChannel ? (channelAliases[activeChannel] || activeChannel) : ''}
-        visible={useChannels && activeChannel !== null}
-        onSendMessage={(cmd) => {
-          if (telnetRef.current) telnetRef.current.send(cmd);
-          lastSentChannelTime.current = Date.now();
-        }}
-        onClose={() => handleSelectChannel(null)}
-        fontSize={fontSize}
-      />
+      {/* Only show when NOT in floating mode - floating mode handles this in FloatingLayout */}
+      {!useFloatingButtons && (
+        <ChannelActivePanel
+          messages={channelMessages}
+          channel={activeChannel}
+          alias={activeChannel ? (channelAliases[activeChannel] || activeChannel) : ''}
+          visible={useChannels && activeChannel !== null}
+          onSendMessage={(cmd) => {
+            if (telnetRef.current) telnetRef.current.send(cmd);
+            lastSentChannelTime.current = Date.now();
+          }}
+          onClose={() => handleSelectChannel(null)}
+          fontSize={fontSize}
+        />
+      )}
 
       {!keyboardVisible && !isLandscape && !activeChannel && <SafeAreaView edges={['bottom']} style={styles.safeBottom} />}
 

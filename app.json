@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "aljhtar-store",
-    "slug": "aljhtar-store",
+    "name": "TorchZhyla",
+    "slug": "torch-zhyla",
     "version": "2.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -22,7 +22,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.smiaug.aljhtarstore"
+      "package": "com.smiaug.torchzhyla"
     },
     "web": {
       "favicon": "./assets/favicon.png"

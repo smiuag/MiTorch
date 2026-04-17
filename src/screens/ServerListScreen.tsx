@@ -7,6 +7,7 @@ import {
   StyleSheet,
   TextInput,
   Modal,
+  ScrollView,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -26,6 +27,7 @@ export function ServerListScreen({ navigation }: Props) {
   const [formName, setFormName] = useState('');
   const [formHost, setFormHost] = useState('');
   const [formPort, setFormPort] = useState('');
+  const [helpModalVisible, setHelpModalVisible] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -114,31 +116,43 @@ export function ServerListScreen({ navigation }: Props) {
       <View style={styles.header}>
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.title}>Al'jhtar Store</Text>
+            <Text style={styles.title}>TorchZhyla</Text>
             <Text style={styles.subtitle}>MUD Client</Text>
           </View>
-          <TouchableOpacity
-            style={styles.settingsBtn}
-            onPress={() => navigation.navigate('Settings')}
-          >
-            <Text style={styles.settingsIcon}>⚙</Text>
-          </TouchableOpacity>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity
+              style={styles.helpBtn}
+              onPress={() => setHelpModalVisible(true)}
+            >
+              <Text style={styles.helpIcon}>?</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.settingsBtn}
+              onPress={() => navigation.navigate('Settings')}
+            >
+              <Text style={styles.settingsIcon}>⚙</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
-      <FlatList
-        data={servers}
-        renderItem={renderServer}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>No servers configured. Tap + to add one.</Text>
-        }
-      />
+      <View style={styles.contentContainer}>
+        <FlatList
+          data={servers}
+          renderItem={renderServer}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.list}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>No servers configured. Tap + to add one.</Text>
+          }
+        />
+      </View>
 
-      <TouchableOpacity style={styles.addBtn} onPress={openAdd}>
-        <Text style={styles.addText}>+</Text>
-      </TouchableOpacity>
+      <View style={styles.addButtonContainer}>
+        <TouchableOpacity style={styles.addBtn} onPress={openAdd}>
+          <Text style={styles.addText}>+</Text>
+        </TouchableOpacity>
+      </View>
 
       <Modal
         visible={modalVisible}
@@ -193,6 +207,95 @@ export function ServerListScreen({ navigation }: Props) {
                 <Text style={styles.saveText}>Save</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={helpModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setHelpModalVisible(false)}
+      >
+        <View style={styles.helpModalOverlay}>
+          <TouchableOpacity
+            style={styles.helpModalBackdrop}
+            onPress={() => setHelpModalVisible(false)}
+            activeOpacity={1}
+          />
+          <View style={styles.helpModalContent}>
+            <Text style={styles.helpModalTitle}>Ayuda</Text>
+            <ScrollView
+              showsVerticalScrollIndicator={true}
+              scrollEnabled={true}
+              onStartShouldSetResponder={() => true}
+              onMoveShouldSetResponder={() => true}
+            >
+              <Text style={styles.helpModalSectionTitle}>Conectar a un servidor</Text>
+              <Text style={styles.helpModalText}>
+                Pulsa el botón + para añadir un nuevo servidor. Introduce el nombre, dirección de host y puerto. Luego selecciona el servidor de la lista para conectar.
+              </Text>
+
+              <Text style={styles.helpModalSectionTitle}>Durante la partida</Text>
+              <Text style={styles.helpModalText}>
+                • Usa el input de comandos para enviar órdenes al MUD
+                • Los canales (chat, grupo, bando) agrupan mensajes por tipo
+                • La barra de vitalidad (HP y energía) se actualiza en tiempo real
+                • Usa el mapa para visualizar el mundo
+              </Text>
+
+              <Text style={styles.helpModalSectionTitle}>Configuración</Text>
+              <Text style={styles.helpModalText}>
+                • Ajusta el tamaño de fuente del terminal
+                • Activa los botones flotantes para una interfaz personalizable
+                • En el editor de pantalla flotante, organiza botones, vitales y chat a tu gusto
+                • Elige orientación vertical u horizontal para bloquear la rotación
+              </Text>
+
+              <Text style={styles.helpModalSectionTitle}>Macros y atajos</Text>
+              <Text style={styles.helpModalText}>
+                • Los botones F1-F10 permiten guardar comandos frecuentes
+                • Pulsa largo en un botón para editar su comando
+                • En modo flotante, crea botones personalizados con cualquier comando
+              </Text>
+
+              <Text style={styles.helpModalSectionTitle}>Canales</Text>
+              <Text style={styles.helpModalText}>
+                • Cada canal agrupa mensajes de un tipo específico
+                • El canal "Todos" muestra mensajes de todos los canales
+                • Activa "Gestionar canales" en configuración para usar pestañas
+                • Pulsa largo en el nombre del canal para cambiar el alias que usas (ej: "ch" para "chat")
+              </Text>
+
+              <Text style={styles.helpModalSectionTitle}>Características ocultas y trucos</Text>
+              <Text style={styles.helpModalText}>
+                • Escribe "irsala" para ir a la sala de espera (útil para resetear)
+                • En modo flotante, si pones "locate" en un botón, te localizará automáticamente en el mapa al pulsarlo
+                • Pulsa en tu posición en el mapa para ver información de la sala
+              </Text>
+
+              <Text style={styles.helpModalSectionTitle}>Optimizaciones para el gameplay</Text>
+              <Text style={styles.helpModalText}>
+                • Usa botones F con comandos frecuentes para jugar más rápido
+                • En modo flotante, crea botones para "ojear" y "irsala" para acceso rápido
+                • Los alias de canales (ch, g, b) ahorran caracteres al escribir
+                • Usa el input de comandos para cadenas largas, los botones para comandos cortos
+              </Text>
+
+              <Text style={styles.helpModalSectionTitle}>Solución de problemas</Text>
+              <Text style={styles.helpModalText}>
+                • Si el mapa no aparece, estás conectado a un servidor diferente (solo funciona en Reinos de Leyenda)
+                • Si pierdes la conexión, reconecta desde la pantalla principal
+                • El tamaño de fuente se aplica al terminal y los canales
+                • Limpia la cache si hay problemas de visualización (desinstal y reinstala la app)
+              </Text>
+            <TouchableOpacity
+              style={styles.helpModalCloseBtn}
+              onPress={() => setHelpModalVisible(false)}
+            >
+              <Text style={styles.helpModalCloseBtnText}>Cerrar</Text>
+            </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -296,10 +399,15 @@ const styles = StyleSheet.create({
     marginTop: 40,
     fontFamily: 'monospace',
   },
+  contentContainer: {
+    flex: 1,
+  },
+  addButtonContainer: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    backgroundColor: '#0a0a0a',
+  },
   addBtn: {
-    position: 'absolute',
-    right: 20,
-    bottom: 30,
     width: 56,
     height: 56,
     borderRadius: 28,
@@ -381,5 +489,80 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  helpBtn: {
+    padding: 8,
+  },
+  helpIcon: {
+    fontSize: 24,
+    color: '#666',
+    fontWeight: 'bold',
+  },
+  helpModalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  helpModalBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+  },
+  helpModalContent: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    maxHeight: '80%',
+    width: '100%',
+    maxWidth: 500,
+    borderWidth: 1,
+    borderColor: '#333',
+    padding: 24,
+  },
+  helpModalScroll: {
+    flex: 1,
+  },
+  helpModalTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 16,
+    fontFamily: 'monospace',
+  },
+  helpModalSectionTitle: {
+    color: '#0c0',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginTop: 12,
+    marginBottom: 6,
+    fontFamily: 'monospace',
+  },
+  helpModalText: {
+    color: '#ccc',
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 8,
+    fontFamily: 'monospace',
+  },
+  helpModalCloseBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 6,
+    backgroundColor: '#0c0',
+    alignSelf: 'flex-end',
+  },
+  helpModalCloseBtnText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
   },
 });

@@ -7,6 +7,7 @@ import { RootStackParamList } from './src/types';
 import { ServerListScreen } from './src/screens/ServerListScreen';
 import { TerminalScreen } from './src/screens/TerminalScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { LayoutEditorScreen } from './src/screens/LayoutEditorScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -35,6 +36,11 @@ export default function App() {
         <Stack.Screen
           name="Settings"
           component={SettingsScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="LayoutEditor"
+          component={LayoutEditorScreen}
           options={{ headerShown: false }}
         />
       </Stack.Navigator>

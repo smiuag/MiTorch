@@ -31,4 +31,28 @@ export type RootStackParamList = {
   ServerList: undefined;
   Terminal: { server: ServerProfile };
   Settings: undefined;
+  LayoutEditor: undefined;
 };
+
+export type LayoutItemType = 'button' | 'vitalbars' | 'input' | 'chat' | 'terminal';
+export type FloatingOrientation = 'portrait' | 'landscape';
+
+export interface LayoutItem {
+  id: string;
+  type: LayoutItemType;
+  col: number;
+  row: number;
+  colSpan: number;
+  rowSpan: number;
+  // Only for type === 'button':
+  label?: string;
+  command?: string;
+  color?: string;
+  opacity?: number;
+}
+
+export interface FloatingLayout {
+  gridCols: number;
+  gridRows: number;
+  items: LayoutItem[];
+}

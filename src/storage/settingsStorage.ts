@@ -5,11 +5,15 @@ const SETTINGS_KEY = 'aljhtar_settings';
 export interface AppSettings {
   useChannels: boolean;
   fontSize: number;
+  useFloatingButtons: boolean;
+  floatingOrientation: 'portrait' | 'landscape';
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   useChannels: true,
   fontSize: 14,
+  useFloatingButtons: false,
+  floatingOrientation: 'portrait',
 };
 
 export async function loadSettings(): Promise<AppSettings> {
