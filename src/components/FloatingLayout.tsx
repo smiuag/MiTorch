@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, TouchableOpacity, TextInput, StyleSheet, useWindowDimensions, Keyboard, Pressable } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FloatingLayout as FloatingLayoutType, LayoutItem, MudLine } from '../types';
 import { loadLayout } from '../storage/layoutStorage';
 import { computeGridMetrics } from '../utils/gridUtils';
@@ -72,6 +73,7 @@ export function FloatingLayout({
   const [inputActive, setInputActive] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);
   const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -100,6 +102,15 @@ export function FloatingLayout({
     }, 300);
   }, []);
 
+  // Handle channel selection - set input to channel alias + space
+  const handleSelectChannelWithPrefix = useCallback((ch: string | null) => {
+    onSelectChannel(ch);
+    if (ch && ch !== 'Todos') {
+      const alias = channelAliases[ch] || ch;
+      onInputChange(`${alias} `);
+    }
+  }, [channelAliases, onSelectChannel, onInputChange]);
+
   // Activate keyboard when a channel is selected
   useEffect(() => {
     if (activeChannel && activeChannel !== 'Todos') {
@@ -117,8 +128,10 @@ export function FloatingLayout({
   const actualOrientation = width > height ? 'landscape' : 'portrait';
 
   // Use the gridCols from the saved layout to calculate metrics
-  // This ensures the grid size matches what was configured in the editor
-  const metrics = computeGridMetrics(width, height, actualOrientation, layout.gridCols);
+  // Adjust dimensions to account for safe area insets so grid fits within the safe area
+  const safeWidth = width - insets.left - insets.right;
+  const safeHeight = height - insets.top - insets.bottom;
+  const metrics = computeGridMetrics(safeWidth, safeHeight, actualOrientation, layout.gridCols);
 
   // Render terminal items first (at bottom), then other items on top
   const terminalItems = layout.items.filter(item => item.type === 'terminal');
@@ -127,11 +140,12 @@ export function FloatingLayout({
 
   return (
     <View style={[StyleSheet.absoluteFillObject]} pointerEvents="box-none">
-      {inputActive && useCustomKeyboard && (
+      {inputActive && useCustomKeyboard && !activeChannel && (
         <Pressable
-          style={StyleSheet.absoluteFillObject}
+          style={[StyleSheet.absoluteFillObject, { zIndex: 999 }]}
           onPress={() => {
             setInputActive(false);
+            onInputChange('');
           }}
           pointerEvents="auto"
         />
@@ -213,7 +227,7 @@ export function FloatingLayout({
                     channels={channels}
                     aliases={channelAliases}
                     activeChannel={activeChannel}
-                    onSelectChannel={onSelectChannel}
+                    onSelectChannel={handleSelectChannelWithPrefix}
                     onAliasChange={onAliasChange}
                     onConfigPress={onConfigPress}
                     unreadCounts={unreadCounts}
@@ -248,7 +262,7 @@ export function FloatingLayout({
                 currentRoom={currentRoom}
                 nearbyRooms={nearbyRooms}
                 activeChannel={activeChannel}
-                onSelectChannel={onSelectChannel}
+                onSelectChannel={handleSelectChannelWithPrefix}
               />
             </View>
           );
