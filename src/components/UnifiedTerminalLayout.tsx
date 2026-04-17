@@ -7,11 +7,13 @@ import {
   Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MudLine } from '../types';
+import { MudLine, OrientationLayout } from '../types';
 import { ChannelMessage } from './ChannelPanel';
 import { MapRoom } from '../services/mapService';
 import { TerminalSection, TerminalSectionHandle } from './TerminalSection';
 import { ChatSection } from './ChatSection';
+import { FloatingButtonsOverlay } from './FloatingButtonsOverlay';
+import { loadOrientationLayout } from '../storage/orientationLayoutStorage';
 
 interface UnifiedTerminalLayoutProps {
   lines: MudLine[];
@@ -68,6 +70,7 @@ export function UnifiedTerminalLayout({
   const insets = useSafeAreaInsets();
   const isLandscape = width > height;
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [orientationLayout, setOrientationLayout] = useState<OrientationLayout | null>(null);
   const translateYRef = useRef(new Animated.Value(0));
   const terminalSectionRef = useRef<TerminalSectionHandle>(null);
 
@@ -82,6 +85,15 @@ export function UnifiedTerminalLayout({
     terminalSectionRef.current?.scrollToBottom();
   };
 
+  // Load floating buttons layout for current orientation
+  useEffect(() => {
+    (async () => {
+      const layout = await loadOrientationLayout(isLandscape ? 'landscape' : 'portrait');
+      setOrientationLayout(layout);
+    })();
+  }, [isLandscape]);
+
+  // Keyboard handling
   useEffect(() => {
     const keyboardShowListener = Keyboard.addListener('keyboardDidShow', (e) => {
       const kbHeight = e.endCoordinates.height;
@@ -132,6 +144,13 @@ export function UnifiedTerminalLayout({
             nearbyRooms={nearbyRooms}
             height={availableHeight}
           />
+          {orientationLayout && orientationLayout.floatingButtons.length > 0 && (
+            <FloatingButtonsOverlay
+              buttons={orientationLayout.floatingButtons}
+              orientation="landscape"
+              onSendCommand={onSendCommand}
+            />
+          )}
         </View>
 
         <View style={[styles.fixedSection, { width: `${FIXED_SECTION_PERCENT * 100}%` }]}>
@@ -181,6 +200,13 @@ export function UnifiedTerminalLayout({
             nearbyRooms={nearbyRooms}
             height={flexibleHeight}
           />
+          {orientationLayout && orientationLayout.floatingButtons.length > 0 && (
+            <FloatingButtonsOverlay
+              buttons={orientationLayout.floatingButtons}
+              orientation="portrait"
+              onSendCommand={onSendCommand}
+            />
+          )}
         </View>
 
         <View style={[styles.fixedSection, { height: fixedHeight }]}>
