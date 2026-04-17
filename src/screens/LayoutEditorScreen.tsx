@@ -7,7 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { LayoutButton, ButtonLayout } from '../storage/layoutStorage';
-import { loadLayoutProfile, saveLayoutProfile, updateLayoutProfile } from '../storage/layoutProfileStorage';
+import { loadLayoutProfile, saveLayoutProfile, updateLayoutProfile, listLayoutProfiles } from '../storage/layoutProfileStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'LayoutEditor'>;
 
@@ -34,7 +34,10 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [showGridSizeModal, setShowGridSizeModal] = useState(false);
   const [showNameModal, setShowNameModal] = useState(false);
+  const [showEditNameModal, setShowEditNameModal] = useState(false);
   const [profileName, setProfileName] = useState('');
+  const [currentProfileName, setCurrentProfileName] = useState('');
+  const [editingProfileName, setEditingProfileName] = useState('');
   const [isNewProfile, setIsNewProfile] = useState(true);
   const [saveAsNew, setSaveAsNew] = useState(false);
   const hasChanges = useRef(false);
@@ -46,17 +49,26 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
   useEffect(() => {
     const profileId = route.params?.profileId;
     if (profileId) {
-      loadLayoutProfile(profileId).then(loaded => {
+      Promise.all([
+        loadLayoutProfile(profileId),
+        listLayoutProfiles()
+      ]).then(([loaded, profiles]) => {
         if (loaded) {
           setLayout(loaded);
           setOriginalLayout(JSON.parse(JSON.stringify(loaded)));
           setEditingProfileId(profileId);
+          const profile = profiles.find(p => p.id === profileId);
+          if (profile) {
+            setCurrentProfileName(profile.name);
+            setEditingProfileName(profile.name);
+          }
         }
       });
     } else {
       // New profile - show grid size selection modal
       setShowGridSizeModal(true);
       setEditingProfileId(null);
+      setCurrentProfileName('');
     }
     hasChanges.current = false;
   }, [route.params?.profileId]);
@@ -289,13 +301,47 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
     }
   };
 
+  const handleSaveEditingProfileName = async () => {
+    if (!editingProfileName.trim()) {
+      Alert.alert('Error', 'El nombre del perfil es requerido');
+      return;
+    }
+
+    if (editingProfileName === currentProfileName) {
+      setShowEditNameModal(false);
+      return;
+    }
+
+    try {
+      if (editingProfileId) {
+        await updateLayoutProfile(editingProfileId, editingProfileName, layout);
+        setCurrentProfileName(editingProfileName);
+      }
+      setShowEditNameModal(false);
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo actualizar el nombre');
+      console.error(error);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.headerBtn}>{'< Volver'}</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Editor de botones</Text>
+        <TouchableOpacity
+          onPress={() => {
+            if (editingProfileId) {
+              setShowEditNameModal(true);
+            }
+          }}
+          disabled={!editingProfileId}
+        >
+          <Text style={styles.headerTitle}>
+            {currentProfileName || 'Nuevo perfil'}
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={handleSave}>
           <Text style={styles.headerBtn}>Guardar</Text>
         </TouchableOpacity>
@@ -371,6 +417,42 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleSaveProfileName}
+                style={styles.nameModalSaveBtn}
+              >
+                <Text style={styles.nameModalSaveBtnText}>Guardar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit Profile Name Modal */}
+      <Modal
+        visible={showEditNameModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowEditNameModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.nameModal}>
+            <Text style={styles.nameModalTitle}>Editar nombre del perfil</Text>
+            <TextInput
+              style={styles.nameModalInput}
+              placeholder="Nombre del perfil"
+              placeholderTextColor="#666"
+              value={editingProfileName}
+              onChangeText={setEditingProfileName}
+              autoFocus
+            />
+            <View style={styles.nameModalButtons}>
+              <TouchableOpacity
+                onPress={() => setShowEditNameModal(false)}
+                style={styles.nameModalCancelBtn}
+              >
+                <Text style={styles.nameModalCancelBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSaveEditingProfileName}
                 style={styles.nameModalSaveBtn}
               >
                 <Text style={styles.nameModalSaveBtnText}>Guardar</Text>
