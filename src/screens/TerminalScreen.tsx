@@ -34,6 +34,7 @@ import { loadFKeys, saveFKeys } from '../storage/fkeyStorage';
 import { loadExtraButtons, saveExtraButtons } from '../storage/extraButtonStorage';
 import { FloatingLayout } from '../components/FloatingLayout';
 import { TerminalPanel } from '../components/TerminalPanel';
+import { UnifiedTerminalLayout } from '../components/UnifiedTerminalLayout';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Terminal'>;
 
@@ -565,74 +566,39 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
-      {/* Main content area */}
-      <View style={isLandscape ? styles.landscapeBody : styles.portraitBody}>
-
-      {/* Left side: output only (landscape) or output+input (portrait) */}
-      <View style={isLandscape ? styles.landscapeLeft : styles.portraitLeft}>
-      {/* Only show terminal panel when NOT in floating mode - floating mode renders it in FloatingLayout if configured */}
-      {!useFloatingButtons && (
-        <TerminalPanel
-          lines={lines}
-          fontSize={fontSize}
-          mapVisible={mapVisible}
-          onToggleMap={() => setMapVisible(v => !v)}
-          currentRoom={currentRoom}
-          nearbyRooms={nearbyRooms}
-          activeChannel={activeChannel}
-          onSelectChannel={handleSelectChannel}
-          flatListRef={flatListRef}
-          isAtBottomRef={isAtBottomRef}
-        />
-      )}
-
-      {/* In portrait: vital bars + input below output - hidden when using floating buttons */}
-      {!isLandscape && !useFloatingButtons && <VitalBars hp={hp} hpMax={hpMax} energy={energy} energyMax={energyMax} />}
-      {!isLandscape && !useFloatingButtons && useChannels && channels.length > 0 && <ChannelTabs
+      {/* New unified layout */}
+      <UnifiedTerminalLayout
+        lines={lines}
+        inputText={inputText}
+        connected={connected}
         channels={channels}
-        aliases={channelAliases}
+        channelMessages={channelMessages}
+        channelAliases={channelAliases}
         activeChannel={activeChannel}
+        unreadCounts={unreadCounts}
+        hp={hp}
+        hpMax={hpMax}
+        energy={energy}
+        energyMax={energyMax}
+        fontSize={fontSize}
+        currentRoom={currentRoom}
+        nearbyRooms={nearbyRooms}
+        mapVisible={mapVisible}
+        onInputChange={setInputText}
+        onSend={handleSend}
+        onSendCommand={sendCommand}
         onSelectChannel={handleSelectChannel}
         onAliasChange={(ch, alias) => {
           const updated = { ...channelAliases, [ch]: alias };
           setChannelAliases(updated);
           saveChannelAliases(updated);
         }}
+        onToggleMap={() => setMapVisible(v => !v)}
         onConfigPress={() => setConfigModalVisible(true)}
-        unreadCounts={unreadCounts}
-        allMessages={channelMessages}
-        fontSize={fontSize}
-        useCustomKeyboard={useCustomKeyboard}
-      />}
-      {!isLandscape && !useFloatingButtons && !activeChannel && (
-        <View style={styles.inputContainer}>
-          <TextInput
-            ref={inputRef}
-            style={styles.input}
-            value={inputText}
-            onChangeText={setInputText}
-            onSubmitEditing={handleSend}
-            placeholder="Enter command..."
-            placeholderTextColor="#666"
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoComplete="off"
-            returnKeyType="send"
-            blurOnSubmit={false}
-            disableFullscreenUI={true}
-            keyboardAppearance="dark"
-            onFocus={() => setKeyboardVisible(true)}
-            onBlur={() => setKeyboardVisible(false)}
-          />
-          <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
-            <Text style={styles.sendText}>Send</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-      </View>
+      />
 
-      {/* Floating layout overlay when enabled */}
-      {useFloatingButtons && (
+      {/* Old layouts kept for backwards compatibility - commented out */}
+      {false && useFloatingButtons && (
         <FloatingLayout
           key={layoutVersion}
           orientation={floatingOrientation}
@@ -669,123 +635,11 @@ export function TerminalScreen({ route, navigation }: Props) {
         />
       )}
 
-      {/* Right side (landscape) or bottom (portrait): buttons - hidden when channel active or floating buttons mode */}
-      {(!keyboardVisible || isLandscape) && !activeChannel && !useFloatingButtons && <View style={isLandscape ? styles.landscapeRight : styles.portraitBottom}>
-
-      {isLandscape ? (
-        <LandscapeButtons
-          fkeys={fkeys}
-          extraButtons={extraButtons}
-          onFKeyPress={(macro) => sendCommand(macro.command)}
-          onFKeyLongPress={(index) => {
-            setEditingTarget({ type: 'fkey', index });
-            setEditingMacro(fkeys[index]);
-            setMacroEditorVisible(true);
-          }}
-          onExtraPress={(macro) => sendCommand(macro.command)}
-          onExtraLongPress={(index) => {
-            setEditingTarget({ type: 'extra', index });
-            setEditingMacro(extraButtons[index]);
-            setMacroEditorVisible(true);
-          }}
-          onDirection={sendCommand}
-          onLocate={handleLocate}
-        />
-      ) : (
-        <>
-          <FKeyBar
-            macros={fkeys}
-            onPress={(macro) => macro && sendCommand(macro.command)}
-            onLongPress={(_macro, index) => {
-              setEditingTarget({ type: 'fkey', index });
-              setEditingMacro(fkeys[index]);
-              setMacroEditorVisible(true);
-            }}
-          />
-          <DirectionPad
-            onDirection={sendCommand}
-            extraButtons={extraButtons}
-            onExtraLongPress={(index) => {
-              setEditingTarget({ type: 'extra', index });
-              setEditingMacro(extraButtons[index]);
-              setMacroEditorVisible(true);
-            }}
-            fkeys={fkeys}
-            onFKeyPress={(macro) => sendCommand(macro.command)}
-            onLocate={handleLocate}
-            onFKeyLongPress={(index) => {
-              setEditingTarget({ type: 'fkey', index });
-              setEditingMacro(fkeys[index]);
-              setMacroEditorVisible(true);
-            }}
-          />
-        </>
-      )}
-
-      {/* In landscape: vital bars + input below buttons - hidden when using floating buttons */}
-      {isLandscape && !useFloatingButtons && <VitalBars hp={hp} hpMax={hpMax} energy={energy} energyMax={energyMax} />}
-      {isLandscape && !useFloatingButtons && useChannels && channels.length > 0 && <ChannelTabs
-        channels={channels}
-        aliases={channelAliases}
-        activeChannel={activeChannel}
-        onSelectChannel={handleSelectChannel}
-        onAliasChange={(ch: string, alias: string) => {
-          const updated = { ...channelAliases, [ch]: alias };
-          setChannelAliases(updated);
-          saveChannelAliases(updated);
-        }}
-        onConfigPress={() => setConfigModalVisible(true)}
-        unreadCounts={unreadCounts}
-        allMessages={channelMessages}
-        fontSize={fontSize}
-        useCustomKeyboard={useCustomKeyboard}
-      />}
-      {isLandscape && !useFloatingButtons && !activeChannel && (
-        <View style={styles.inputContainer}>
-          <TextInput
-            ref={inputRef}
-            style={styles.input}
-            value={inputText}
-            onChangeText={setInputText}
-            onSubmitEditing={handleSend}
-            placeholder="Enter command..."
-            placeholderTextColor="#666"
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoComplete="off"
-            returnKeyType="send"
-            blurOnSubmit={false}
-            disableFullscreenUI={true}
-            keyboardAppearance="dark"
-            onFocus={() => setKeyboardVisible(true)}
-            onBlur={() => setKeyboardVisible(false)}
-          />
-          <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
-            <Text style={styles.sendText}>Send</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-      </View>}
+      {/* Old UI commented out - using UnifiedTerminalLayout instead */}
 
       </View>
 
-      {/* Active channel panel - replaces buttons when a channel is selected */}
-      {/* Only show when NOT in floating mode - floating mode handles this in FloatingLayout */}
-      {!useFloatingButtons && (
-        <ChannelActivePanel
-          messages={channelMessages}
-          channel={activeChannel}
-          alias={activeChannel ? (channelAliases[activeChannel] || activeChannel) : ''}
-          visible={useChannels && activeChannel !== null}
-          onSendMessage={(cmd) => {
-            if (telnetRef.current) telnetRef.current.send(cmd);
-            lastSentChannelTime.current = Date.now();
-          }}
-          onClose={() => handleSelectChannel(null)}
-          fontSize={fontSize}
-          useCustomKeyboard={useCustomKeyboard}
-        />
-      )}
+      {/* Active channel panel handled by UnifiedTerminalLayout now */}
 
       {!keyboardVisible && !isLandscape && !activeChannel && <SafeAreaView edges={['bottom']} style={styles.safeBottom} />}
 
