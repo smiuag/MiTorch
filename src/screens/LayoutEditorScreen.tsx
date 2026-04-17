@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, Modal, TextInput, StyleSheet, useWindowDimensions, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { loadLayout, saveLayout, LayoutButton, ButtonLayout } from '../storage/layoutStorage';
@@ -25,16 +26,53 @@ function genId(): string {
 export function LayoutEditorScreen({ navigation }: Props) {
   const { width, height } = useWindowDimensions();
   const [layout, setLayout] = useState<ButtonLayout>({ buttons: [] });
+  const [originalLayout, setOriginalLayout] = useState<ButtonLayout>({ buttons: [] });
   const [modalState, setModalState] = useState<ModalState>(null);
   const [editLabel, setEditLabel] = useState('');
   const [editCommand, setEditCommand] = useState('');
   const [editColor, setEditColor] = useState('#666666');
   const [editOpacity, setEditOpacity] = useState(0.5);
+  const hasChanges = useRef(false);
 
   // Load layout on mount
   useEffect(() => {
-    loadLayout().then(setLayout);
+    loadLayout().then(loaded => {
+      setLayout(loaded);
+      setOriginalLayout(JSON.parse(JSON.stringify(loaded)));
+      hasChanges.current = false;
+    });
   }, []);
+
+  // Detect changes
+  useEffect(() => {
+    hasChanges.current = JSON.stringify(layout) !== JSON.stringify(originalLayout);
+  }, [layout, originalLayout]);
+
+  // Handle back navigation with unsaved changes check
+  useFocusEffect(
+    useCallback(() => {
+      const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+        if (!hasChanges.current) return;
+
+        e.preventDefault();
+
+        Alert.alert(
+          'Cambios sin guardar',
+          '¿Salir sin guardar los cambios?',
+          [
+            { text: 'Cancelar', onPress: () => {} },
+            {
+              text: 'Salir',
+              onPress: () => navigation.dispatch(e.data.action),
+              style: 'destructive',
+            },
+          ]
+        );
+      });
+
+      return unsubscribe;
+    }, [navigation])
+  );
 
   // Calculate grid dimensions
   const portraitWidth = Math.min(width, height);
@@ -115,6 +153,8 @@ export function LayoutEditorScreen({ navigation }: Props) {
 
   const handleSave = async () => {
     await saveLayout(layout);
+    setOriginalLayout(JSON.parse(JSON.stringify(layout)));
+    hasChanges.current = false;
     navigation.goBack();
   };
 
