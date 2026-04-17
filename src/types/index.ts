@@ -56,3 +56,25 @@ export interface FloatingLayout {
   gridRows: number;
   items: LayoutItem[];
 }
+
+// New unified layout types
+export type Orientation = 'portrait' | 'landscape';
+
+export interface FloatingButton {
+  id: string;
+  label: string;
+  command: string;
+  color: string;
+  gridX: number;
+  gridRow: number;
+}
+
+export interface OrientationLayout {
+  orientation: Orientation;
+  floatingButtons: FloatingButton[];
+}
+
+export interface UnifiedLayoutConfig {
+  portrait: OrientationLayout;
+  landscape: OrientationLayout;
+}

@@ -6,9 +6,10 @@ interface VitalBarsProps {
   hpMax: number;
   energy: number;
   energyMax: number;
+  orientation?: 'horizontal' | 'vertical';
 }
 
-export function VitalBars({ hp, hpMax, energy, energyMax }: VitalBarsProps) {
+export function VitalBars({ hp, hpMax, energy, energyMax, orientation = 'horizontal' }: VitalBarsProps) {
   if (hpMax <= 0 && energyMax <= 0) return null;
 
   const hpPct = hpMax > 0 ? Math.max(0, Math.min(1, hp / hpMax)) : 0;
