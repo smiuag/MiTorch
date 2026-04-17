@@ -353,7 +353,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         } else if (results.length === 1) {
           walkTo(results[0]);
         } else {
-          setSearchResults(results.slice(0, 20));  // Limit to 20 results
+          setSearchResults(results.slice(0, 50));  // Limit to 50 results
           setSearchVisible(true);
         }
       }
