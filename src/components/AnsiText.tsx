@@ -3,14 +3,17 @@ import { Text, StyleSheet } from 'react-native';
 import { AnsiSpan, MudLine } from '../types';
 
 interface AnsiTextProps {
-  line: MudLine;
+  line?: MudLine;
+  spans?: AnsiSpan[];
   fontSize?: number;
 }
 
-export function AnsiText({ line, fontSize = 14 }: AnsiTextProps) {
+export function AnsiText({ line, spans, fontSize = 14 }: AnsiTextProps) {
+  const spansToRender = spans || line?.spans || [];
+
   return (
     <Text style={[styles.line, { fontSize }]}>
-      {line.spans.map((span, i) => (
+      {spansToRender.map((span, i) => (
         <Text
           key={i}
           style={[
