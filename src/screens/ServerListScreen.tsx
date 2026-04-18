@@ -79,8 +79,7 @@ export function ServerListScreen({ navigation }: Props) {
               name: formName.trim(),
               host: formHost.trim(),
               port,
-              // Keep existing layoutProfileId if updating, use formProfileId if it changed
-              layoutProfileId: formProfileId || s.layoutProfileId
+              layoutProfileId: formProfileId
             }
           : s
       );
@@ -246,6 +245,25 @@ export function ServerListScreen({ navigation }: Props) {
                       >
                         <Text style={styles.profileEditBtnText}>✎</Text>
                       </TouchableOpacity>
+                      {formProfileId === profile.id && (
+                        <TouchableOpacity
+                          style={[styles.profileEditBtn, { marginLeft: 8 }]}
+                          onPress={async () => {
+                            setFormProfileId(undefined);
+                            // Save immediately
+                            if (editingServer) {
+                              const allServers = await loadServers();
+                              const updated = allServers.map(s =>
+                                s.id === editingServer.id ? { ...s, layoutProfileId: undefined } : s
+                              );
+                              await saveServers(updated);
+                              setEditingServer({ ...editingServer, layoutProfileId: undefined });
+                            }
+                          }}
+                        >
+                          <Text style={styles.profileEditBtnText}>✕</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   ))}
                 </ScrollView>

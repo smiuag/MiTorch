@@ -52,8 +52,22 @@ export function AliasWizardModal({
   const [editColor, setEditColor] = useState('#cc3333');
   const [editOpacity, setEditOpacity] = useState(0.5);
   const [showingGridSize, setShowingGridSize] = useState(visible && aliases.length > 0);
+  const [autoPlacedDirections, setAutoPlacedDirections] = useState<Set<string>>(new Set());
 
   const currentAlias = aliases[currentIndex];
+
+  // Relative positions for directions (col offset, row offset) based on North
+  // Forms a 3x3 square: NO N NE / O _ E / SO S SE
+  const DIRECTION_OFFSETS: Record<string, [number, number]> = {
+    'n': [0, 0],
+    'ne': [1, 0],
+    'e': [1, 1],
+    'se': [1, 2],
+    's': [0, 2],
+    'so': [-1, 2],
+    'o': [-1, 1],
+    'no': [-1, 0],
+  };
 
   // Reset when modal opens
   useEffect(() => {
@@ -64,12 +78,23 @@ export function AliasWizardModal({
       setPendingButtons([]);
       setPendingAliases({});
       setShowingGridSize(true);
+      setAutoPlacedDirections(new Set());
     }
   }, [visible, aliases]);
 
-  const moveToNext = () => {
-    if (currentIndex < aliases.length - 1) {
-      setCurrentIndex(currentIndex + 1);
+  const moveToNext = (placed?: Set<string>) => {
+    let nextIndex = currentIndex + 1;
+    const toCheck = placed || autoPlacedDirections;
+    // Skip directions that were auto-placed
+    while (
+      nextIndex < aliases.length &&
+      toCheck.has(aliases[nextIndex].name.toLowerCase())
+    ) {
+      nextIndex++;
+    }
+
+    if (nextIndex < aliases.length) {
+      setCurrentIndex(nextIndex);
       setSubStep('main');
       setSelectedCol(null);
       setSelectedRow(null);
@@ -127,8 +152,59 @@ export function AliasWizardModal({
         color: editColor,
         opacity: editOpacity,
       };
-      setPendingButtons([...pendingButtons, newButton]);
-      moveToNext();
+
+      // Special handling for Nord (N): auto-place other 7 directions
+      if (currentAlias.name.toLowerCase() === 'n') {
+        const newButtons = [newButton];
+        const occupied = new Set(pendingButtons.map(b => `${b.col},${b.row}`));
+        occupied.add(`${selectedCol},${selectedRow}`); // Add north position
+
+        let canPlaceAll = true;
+        const directionsToPlace = ['ne', 'e', 'se', 's', 'so', 'o', 'no'];
+
+        // Validate all positions fit
+        for (const dir of directionsToPlace) {
+          const [colOffset, rowOffset] = DIRECTION_OFFSETS[dir];
+          const newCol = selectedCol + colOffset;
+          const newRow = selectedRow + rowOffset;
+
+          if (newCol < 0 || newRow < 0 || newCol >= gridSize || newRow >= gridSize) {
+            canPlaceAll = false;
+            break;
+          }
+          if (occupied.has(`${newCol},${newRow}`)) {
+            canPlaceAll = false;
+            break;
+          }
+        }
+
+        if (!canPlaceAll) {
+          Alert.alert('Espacio insuficiente', 'No hay suficiente espacio para colocar todas las direcciones respecto al Norte');
+          return;
+        }
+
+        // Place all directions
+        for (const dir of directionsToPlace) {
+          const [colOffset, rowOffset] = DIRECTION_OFFSETS[dir];
+          newButtons.push({
+            id: genId(),
+            col: selectedCol + colOffset,
+            row: selectedRow + rowOffset,
+            label: dir,
+            command: dir,
+            color: editColor,
+            opacity: editOpacity,
+          });
+        }
+
+        const updatedPlaced = new Set([...autoPlacedDirections, 'n', 'ne', 'e', 'se', 's', 'so', 'o', 'no']);
+        setPendingButtons([...pendingButtons, ...newButtons]);
+        setAutoPlacedDirections(updatedPlaced);
+        moveToNext(updatedPlaced);
+      } else {
+        setPendingButtons([...pendingButtons, newButton]);
+        moveToNext();
+      }
     }
   };
 
@@ -143,6 +219,47 @@ export function AliasWizardModal({
     }
   };
 
+  // ===== LOADING STATE (show only for first 1.5 seconds) =====
+  if (visible && aliases.length === 0 && !showingGridSize) {
+    return (
+      <Modal visible={visible} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <Text style={styles.title}>Cargando alias...</Text>
+            <Text style={styles.subtitle}>Esperando respuesta del servidor</Text>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onDiscard}>
+              <Text style={styles.cancelText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  // ===== CHOOSE TYPE (Button or Channel) =====
+  if (subStep === 'choose-type') {
+    return (
+      <Modal visible={visible} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <Text style={styles.title}>¿Asignar a...?</Text>
+            <View style={styles.buttonRow}>
+              <TouchableOpacity style={styles.configBtn} onPress={() => setSubStep('pick-grid')}>
+                <Text style={styles.configText}>Botón en grilla</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.configBtn} onPress={() => setSubStep('pick-channel')}>
+                <Text style={styles.configText}>Canal</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={styles.omitBtn} onPress={() => moveToNext()}>
+              <Text style={styles.omitText}>Atrás</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
   // ===== GRID SIZE SELECTION =====
   if (showingGridSize) {
     return (
@@ -153,7 +270,7 @@ export function AliasWizardModal({
             <Text style={styles.subtitle}>Selecciona el tamaño de la grilla de botones</Text>
 
             <View style={styles.gridSizeGrid}>
-              {[7, 9, 11, 13].map(size => (
+              {[8, 9, 10, 11].map(size => (
                 <TouchableOpacity
                   key={size}
                   style={[styles.gridSizeBtn, gridSize === size && styles.gridSizeBtnSelected]}
@@ -325,11 +442,28 @@ export function AliasWizardModal({
             {currentAlias.command}
           </Text>
 
+          {currentAlias.description && (
+            <Text style={styles.aliasDescription}>{currentAlias.description}</Text>
+          )}
+
           <View style={styles.buttonRow}>
             <TouchableOpacity style={styles.omitBtn} onPress={() => moveToNext()}>
               <Text style={styles.omitText}>Omitir</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.configBtn} onPress={() => setSubStep('choose-type')}>
+            <TouchableOpacity
+              style={styles.configBtn}
+              onPress={() => {
+                // Directions and locate always go to grid, skip choose-type
+                if (
+                  currentAlias.type === 'direction' ||
+                  currentAlias.type === 'locate'
+                ) {
+                  setSubStep('pick-grid');
+                } else {
+                  setSubStep('choose-type');
+                }
+              }}
+            >
               <Text style={styles.configText}>Configurar</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.omitRestBtn} onPress={handleOmitRest}>
@@ -390,8 +524,15 @@ const styles = StyleSheet.create({
   aliasCommand: {
     color: '#999',
     fontSize: 12,
-    marginBottom: 16,
+    marginBottom: 12,
     fontFamily: 'monospace',
+  },
+  aliasDescription: {
+    color: '#666',
+    fontSize: 11,
+    marginBottom: 16,
+    fontStyle: 'italic',
+    lineHeight: 16,
   },
   buttonRow: {
     flexDirection: 'row',
@@ -516,8 +657,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   gridCellOccupied: {
-    backgroundColor: '#1a1a1a',
-    opacity: 0.5,
+    backgroundColor: '#333',
+    opacity: 0.8,
+    borderColor: '#555',
+    borderWidth: 1,
   },
   gridCellSelected: {
     backgroundColor: '#0c0',

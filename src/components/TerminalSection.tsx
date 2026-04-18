@@ -24,6 +24,8 @@ interface TerminalSectionProps {
   nearbyRooms: MapRoom[];
   height: number;
   onScrollToBottom?: () => void;
+  onConfigureButtons: () => void;
+  showConfigureButton: boolean;
 }
 
 export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSectionProps>(
@@ -36,6 +38,8 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
       currentRoom,
       nearbyRooms,
       height,
+      onConfigureButtons,
+      showConfigureButton,
     },
     ref
   ) {
@@ -82,6 +86,16 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
         visible={mapVisible}
         onToggle={onToggleMap}
       />
+
+      {showConfigureButton && (
+        <TouchableOpacity
+          style={styles.configureButton}
+          onPress={onConfigureButtons}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.configureButtonText}>⚙</Text>
+        </TouchableOpacity>
+      )}
 
       <FlatList
         ref={flatListRef}
@@ -137,5 +151,25 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  configureButton: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(51, 102, 204, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(51, 153, 255, 0.5)',
+    zIndex: 20,
+  },
+  configureButtonText: {
+    color: '#3399ff',
+    fontWeight: 'bold',
+    fontSize: 14,
+    fontFamily: 'monospace',
   },
 });

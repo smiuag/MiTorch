@@ -10,6 +10,7 @@ import {
   useWindowDimensions,
   Modal,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -53,7 +54,8 @@ export function TerminalScreen({ route, navigation }: Props) {
   const keyboardHeight = isLandscape ? 273 : 182;
   const chatHeightCompressed = isLandscape ? 150 : 180;
   const availableHeight = height - insets.top - insets.bottom - (customKeyboardActive ? Math.max(0, keyboardHeight - chatHeightCompressed) : 0);
-  const { server } = route.params;
+  const { server: initialServer } = route.params;
+  const [server, setServer] = useState(initialServer);
   const [lines, setLines] = useState<MudLine[]>([]);
   const [inputText, setInputText] = useState('');
   const [connected, setConnected] = useState(false);
@@ -84,6 +86,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [aliasWizardVisible, setAliasWizardVisible] = useState(false);
   const [capturedAliases, setCapturedAliases] = useState<ParsedAlias[]>([]);
   const fontSizeRef = useRef(14);
+  const linesRef = useRef<MudLine[]>([]);
   const isCapturingAliasRef = useRef(false);
   const aliasBufferRef = useRef<string[]>([]);
   const aliasTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -136,16 +139,39 @@ export function TerminalScreen({ route, navigation }: Props) {
     // Capture alias output if in progress
     if (isCapturingAliasRef.current) {
       aliasBufferRef.current.push(...texts);
-      // Reset timer: wait 1.5s with no new lines before parsing
+      // Reset timer: wait 3s with no new lines before parsing
       if (aliasTimerRef.current) clearTimeout(aliasTimerRef.current);
       aliasTimerRef.current = setTimeout(() => {
         isCapturingAliasRef.current = false;
         const parsed = parseAliasOutput(aliasBufferRef.current);
-        if (parsed.length > 0) {
-          setCapturedAliases(parsed);
-          setAliasWizardVisible(true);
-        }
-      }, 1500);
+        // Add predefined directions first, then parsed aliases (locate + user aliases)
+        const DIRECTIONS = ['n', 's', 'e', 'o', 'ne', 'no', 'se', 'so', 'de', 'fu', 'ar', 'ab'];
+        const DIRECTION_NAMES: Record<string, string> = {
+          'n': 'norte', 's': 'sur', 'e': 'este', 'o': 'oeste',
+          'ne': 'noreste', 'no': 'noroeste', 'se': 'sureste', 'so': 'suroeste',
+          'de': 'dentro', 'fu': 'fuera', 'ar': 'arriba', 'ab': 'abajo'
+        };
+        const withDirections: ParsedAlias[] = [
+          ...DIRECTIONS.map(d => ({
+            name: d.toUpperCase(),
+            command: DIRECTION_NAMES[d],
+            type: 'direction' as const,
+            description: d === 'n'
+              ? 'Coloca donde irá el Norte, el resto de direcciones se configurarán respecto a esta'
+              : undefined
+          })),
+          {
+            name: 'LOC',
+            command: 'locate',
+            type: 'locate' as const,
+            description: 'Este botón se utilizará para localizarte en el mapa, como el "buscarsala"'
+          },
+          ...parsed
+        ];
+        setCapturedAliases(withDirections);
+        setAliasWizardVisible(true);
+      }, 3000);
+      // IMPORTANTE: continuar mostrando las líneas normalmente
     }
 
     const newLines: MudLine[] = [];
@@ -379,6 +405,13 @@ export function TerminalScreen({ route, navigation }: Props) {
   const sendCommand = useCallback((command: string) => {
     if (!telnetRef.current) return;
 
+    // Intercept "alias" command to capture output
+    if (command.trim().toLowerCase() === 'alias') {
+      isCapturingAliasRef.current = true;
+      aliasBufferRef.current = [];
+      if (aliasTimerRef.current) clearTimeout(aliasTimerRef.current);
+    }
+
     // Intercept "parar" or "stop" to stop walking (with or without channel prefix)
     const stopMatch = command.match(/^(?:\w+\s+)?(parar|stop)$/i);
     if (stopMatch && walking) {
@@ -477,6 +510,9 @@ export function TerminalScreen({ route, navigation }: Props) {
         );
         await saveServers(updated);
 
+        // Update local server state
+        setServer(prev => ({ ...prev, layoutProfileId: profileId }));
+
         // Update channelAliases
         const newAliases = { ...channelAliases, ...result.channelAliasUpdates };
         setChannelAliases(newAliases);
@@ -494,6 +530,10 @@ export function TerminalScreen({ route, navigation }: Props) {
     },
     [server.id, server.name, channelAliases, addSystemLine]
   );
+
+  useEffect(() => {
+    linesRef.current = lines;
+  }, [lines]);
 
   useEffect(() => {
     navigation.setOptions({ title: server.name });
@@ -631,44 +671,49 @@ export function TerminalScreen({ route, navigation }: Props) {
       return;
     }
 
+    // Capture alias output if user writes "alias" and no profile assigned
+    if (text.toLowerCase() === 'alias' && !server.layoutProfileId) {
+      setAliasWizardVisible(true);
+      setCapturedAliases([]);
+
+      // After 2 seconds, try to populate from visible lines
+      setTimeout(() => {
+        const recentLines = linesRef.current.slice(-100);
+        const recentText = recentLines.map(l => l.spans.map(s => s.text).join('')).join('\n');
+        const parsed = parseAliasOutput(recentText.split('\n'));
+        if (parsed.length > 0) {
+          const DIRECTIONS = ['n', 's', 'e', 'o', 'ne', 'no', 'se', 'so', 'de', 'fu', 'ar', 'ab'];
+          const DIRECTION_NAMES: Record<string, string> = {
+            'n': 'norte', 's': 'sur', 'e': 'este', 'o': 'oeste',
+            'ne': 'noreste', 'no': 'noroeste', 'se': 'sureste', 'so': 'suroeste',
+            'de': 'dentro', 'fu': 'fuera', 'ar': 'arriba', 'ab': 'abajo'
+          };
+          const withDirections: ParsedAlias[] = [
+            ...DIRECTIONS.map(d => ({
+              name: d.toUpperCase(),
+              command: DIRECTION_NAMES[d],
+              type: 'direction' as const,
+              description: d === 'n'
+                ? 'Coloca donde irá el Norte, el resto de direcciones se configurarán respecto a esta'
+                : undefined
+            })),
+            {
+              name: 'LOC',
+              command: 'locate',
+              type: 'locate' as const,
+              description: 'Este botón se utilizará para localizarte en el mapa, como el "buscarsala"'
+            },
+            ...parsed
+          ];
+          setCapturedAliases(withDirections);
+        }
+      }, 2000);
+    }
+
     // Cancel walk if any command is sent
     if (walking) {
       stopWalk();
       addSystemLine('--- Movimiento cancelado ---');
-    }
-
-    // Intercept alias command for wizard if no profile
-    if (text.toLowerCase() === 'alias' && !server.layoutProfileId) {
-      isCapturingAliasRef.current = true;
-      aliasBufferRef.current = [];
-      setInputText('');
-      if (telnetRef.current) {
-        telnetRef.current.send(text);
-      }
-      setCommandHistory(prev => [...prev.slice(-49), text]);
-      isAtBottomRef.current = true;
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
-      return;
-    }
-
-    // Intercept irsala command
-    const irsalaMatch = text.match(/^irsala\s+(.+)$/i);
-    if (irsalaMatch) {
-      const query = irsalaMatch[1];
-      const mapSvc = mapServiceRef.current;
-      if (mapSvc.isLoaded) {
-        const results = mapSvc.searchRooms(query);
-        if (results.length === 0) {
-          addSystemLine(`--- No se encontró ninguna sala con "${query}" ---`);
-        } else if (results.length === 1) {
-          walkTo(results[0]);
-        } else {
-          setSearchResults(results);
-          setSearchVisible(true);
-        }
-      }
-      setInputText('');
-      return;
     }
 
     if (telnetRef.current) {
@@ -730,6 +775,45 @@ export function TerminalScreen({ route, navigation }: Props) {
         }}
         onToggleMap={() => setMapVisible(v => !v)}
         onStop={stopWalk}
+        onConfigureButtons={() => {
+          if (server.layoutProfileId) {
+            // Already configured - ask to reconfigure
+            Alert.alert(
+              'Configuración existente',
+              '¿Ya existe una configuración, estás seguro que quieres borrarla y volver a hacerla?',
+              [
+                { text: 'No, cancelar', style: 'cancel' },
+                {
+                  text: 'Sí, borrar y reconfigurar',
+                  style: 'destructive',
+                  onPress: async () => {
+                    // Delete profile
+                    const servers = await loadServers();
+                    const updated = servers.map(s =>
+                      s.id === server.id ? { ...s, layoutProfileId: undefined } : s
+                    );
+                    await saveServers(updated);
+                    setServer(prev => ({ ...prev, layoutProfileId: undefined }));
+                    setButtonLayout(null);
+
+                    // Open wizard
+                    setAliasWizardVisible(true);
+                    if (capturedAliases.length === 0) {
+                      sendCommand('alias');
+                    }
+                  },
+                },
+              ]
+            );
+          } else {
+            // Not configured - open wizard
+            setAliasWizardVisible(true);
+            if (capturedAliases.length === 0) {
+              sendCommand('alias');
+            }
+          }
+        }}
+        showConfigureButton={!server.layoutProfileId}
       />
 
 

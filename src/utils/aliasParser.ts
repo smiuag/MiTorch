@@ -2,6 +2,7 @@ export interface ParsedAlias {
   name: string;
   command: string;
   type: 'direction' | 'locate' | 'alias';
+  description?: string;
 }
 
 const DIRECTIONS = ['n', 's', 'e', 'o', 'ne', 'no', 'se', 'so', 'de', 'fu', 'ar', 'ab'];
@@ -18,39 +19,39 @@ function isLocateAlias(command: string): boolean {
 }
 
 export function parseAliasOutput(rawLines: string[]): ParsedAlias[] {
-  const cleanedText = rawLines.map(cleanAnsi).join('\n');
-
   const aliases: ParsedAlias[] = [];
   const seen = new Set<string>();
 
-  const regex = /([a-zA-Z0-9_]+):\s*(.+?)(?=\s{2,}[a-zA-Z0-9_]+:|[\r\n]|$)/g;
-  let match;
+  for (const line of rawLines) {
+    const cleaned = cleanAnsi(line);
+    if (!cleaned.trim()) continue;
 
-  while ((match = regex.exec(cleanedText)) !== null) {
-    const name = match[1].trim();
-    const command = match[2].trim();
+    // Split by 2+ spaces to find individual alias:command pairs
+    const parts = cleaned.split(/\s{2,}/);
 
-    if (!name || !command || seen.has(name)) continue;
-    seen.add(name);
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (!trimmed.includes(':')) continue;
 
-    let type: 'direction' | 'locate' | 'alias' = 'alias';
+      const colonIdx = trimmed.indexOf(':');
+      const name = trimmed.substring(0, colonIdx).trim();
+      const command = trimmed.substring(colonIdx + 1).trim();
 
-    if (DIRECTIONS.includes(name.toLowerCase())) {
-      type = 'direction';
-    } else if (isLocateAlias(command)) {
-      type = 'locate';
+      if (!name || !command || seen.has(name)) continue;
+      if (!/^[a-zA-Z0-9_]+$/.test(name)) continue;
+
+      // Skip predefined directions - they'll be added separately
+      if (DIRECTIONS.includes(name.toLowerCase())) continue;
+
+      seen.add(name);
+
+      // Don't detect locate - we'll add it as a predefined option
+      aliases.push({ name, command, type: 'alias' });
     }
-
-    aliases.push({ name, command, type });
   }
 
-  const directions = aliases.filter(a => a.type === 'direction')
-    .sort((a, b) => DIRECTIONS.indexOf(a.name.toLowerCase()) - DIRECTIONS.indexOf(b.name.toLowerCase()));
-
-  const locate = aliases.filter(a => a.type === 'locate');
-
-  const userAliases = aliases.filter(a => a.type === 'alias')
+  const userAliases = aliases
     .sort((a, b) => a.name.length - b.name.length);
 
-  return [...directions, ...locate, ...userAliases];
+  return userAliases;
 }

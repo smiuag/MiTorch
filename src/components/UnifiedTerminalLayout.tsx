@@ -42,6 +42,8 @@ interface UnifiedTerminalLayoutProps {
   onAliasChange: (ch: string, alias: string) => void;
   onToggleMap: () => void;
   onStop?: () => void;
+  onConfigureButtons: () => void;
+  showConfigureButton: boolean;
 }
 
 export function UnifiedTerminalLayout({
@@ -71,6 +73,8 @@ export function UnifiedTerminalLayout({
   onAliasChange,
   onToggleMap,
   onStop,
+  onConfigureButtons,
+  showConfigureButton,
 }: UnifiedTerminalLayoutProps) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -161,6 +165,8 @@ export function UnifiedTerminalLayout({
             currentRoom={currentRoom}
             nearbyRooms={nearbyRooms}
             height={availableHeight}
+            onConfigureButtons={onConfigureButtons}
+            showConfigureButton={showConfigureButton}
           />
           {orientationLayout && orientationLayout.floatingButtons.length > 0 && buttonLayout && (
             <FloatingButtonsOverlay
@@ -224,6 +230,8 @@ export function UnifiedTerminalLayout({
             currentRoom={currentRoom}
             nearbyRooms={nearbyRooms}
             height={flexibleHeight}
+            onConfigureButtons={onConfigureButtons}
+            showConfigureButton={showConfigureButton}
           />
           {orientationLayout && orientationLayout.floatingButtons.length > 0 && buttonLayout && (
             <FloatingButtonsOverlay
