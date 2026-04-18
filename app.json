@@ -3,7 +3,7 @@
     "name": "TorchZhyla",
     "slug": "torch-zhyla",
     "version": "3.0.0",
-    "orientation": "portrait",
+    "orientation": "sensor",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,

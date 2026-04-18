@@ -447,7 +447,18 @@ export function AliasWizardModal({
           )}
 
           <View style={styles.buttonRow}>
-            <TouchableOpacity style={styles.omitBtn} onPress={() => moveToNext()}>
+            <TouchableOpacity
+              style={styles.omitBtn}
+              onPress={() => {
+                // If omitting Norte, skip all directions
+                if (currentAlias.name.toLowerCase() === 'n' && currentAlias.type === 'direction') {
+                  const allDirections = new Set(['n', 'ne', 'e', 'se', 's', 'so', 'o', 'no']);
+                  moveToNext(allDirections);
+                } else {
+                  moveToNext();
+                }
+              }}
+            >
               <Text style={styles.omitText}>Omitir</Text>
             </TouchableOpacity>
             <TouchableOpacity
