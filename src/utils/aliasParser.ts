@@ -18,6 +18,11 @@ function isLocateAlias(command: string): boolean {
   return /\blocate\b|\bmirar\b/.test(command.toLowerCase());
 }
 
+function hasVariableParameters(command: string): boolean {
+  // Omit aliases with $*$ or $digit+$ pattern
+  return /\$[\*\d]+\$/.test(command);
+}
+
 export function parseAliasOutput(rawLines: string[]): ParsedAlias[] {
   const aliases: ParsedAlias[] = [];
   const seen = new Set<string>();
@@ -42,6 +47,9 @@ export function parseAliasOutput(rawLines: string[]): ParsedAlias[] {
 
       // Skip predefined directions - they'll be added separately
       if (DIRECTIONS.includes(name.toLowerCase())) continue;
+
+      // Skip aliases with variable parameters ($*$ or $digit+$)
+      if (hasVariableParameters(command)) continue;
 
       seen.add(name);
 

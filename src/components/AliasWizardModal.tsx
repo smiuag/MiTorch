@@ -460,7 +460,16 @@ export function AliasWizardModal({
                 ) {
                   setSubStep('pick-grid');
                 } else {
-                  setSubStep('choose-type');
+                  // Check if all channels are configured
+                  const assignedChannels = new Set(Object.keys(pendingAliases));
+                  const availableChannels = channels.filter(ch => !assignedChannels.has(ch));
+
+                  // If no channels available, default to button (skip choose-type)
+                  if (availableChannels.length === 0) {
+                    setSubStep('pick-grid');
+                  } else {
+                    setSubStep('choose-type');
+                  }
                 }
               }}
             >
