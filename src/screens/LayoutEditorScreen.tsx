@@ -306,9 +306,44 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.headerBtn}>{'< Volver'}</Text>
-        </TouchableOpacity>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Text style={styles.headerBtn}>{'< Volver'}</Text>
+          </TouchableOpacity>
+          {editingServerId && (
+            <TouchableOpacity
+              onPress={() => {
+                Alert.alert(
+                  'Borrar configuración',
+                  '¿Estás seguro de que quieres borrar la configuración de este servidor?',
+                  [
+                    { text: 'Cancelar', style: 'cancel' },
+                    {
+                      text: 'Borrar',
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          const servers = await loadServers();
+                          const updated = servers.map(s =>
+                            s.id === editingServerId ? { ...s, buttonLayout: undefined, channelAliases: undefined } : s
+                          );
+                          await saveServers(updated);
+                          navigation.goBack();
+                        } catch (error) {
+                          Alert.alert('Error', 'No se pudo borrar la configuración');
+                          console.error(error);
+                        }
+                      },
+                    },
+                  ]
+                );
+              }}
+              style={styles.deleteHeaderBtn}
+            >
+              <Text style={styles.deleteHeaderBtnText}>Borrar</Text>
+            </TouchableOpacity>
+          )}
+        </View>
         <Text style={styles.headerTitle}>
           {currentProfileName || 'Nuevo perfil'}
         </Text>
@@ -556,6 +591,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'monospace',
     fontWeight: 'bold',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  deleteHeaderBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#331111',
+    borderRadius: 4,
+  },
+  deleteHeaderBtnText: {
+    color: '#cc0000',
+    fontSize: 12,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
   },
   headerTitle: {
     color: '#fff',
