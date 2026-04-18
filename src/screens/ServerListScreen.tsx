@@ -99,15 +99,18 @@ export function ServerListScreen({ navigation }: Props) {
         onLongPress={() => openEdit(item)}
       >
         <View style={styles.serverInfo}>
-          <View style={styles.serverNameRow}>
-            <Text style={styles.serverName}>{item.name}</Text>
-            <View style={[styles.configBadge, isConfigured && styles.configuredBadge]}>
-              <Text style={styles.configBadgeText}>{isConfigured ? '✓ Configurado' : '⚠ Sin configurar'}</Text>
-            </View>
-          </View>
+          <Text style={styles.serverName}>{item.name}</Text>
           <Text style={styles.serverHost}>{item.host}:{item.port}</Text>
         </View>
         <View style={styles.serverActions}>
+          {isConfigured && (
+            <TouchableOpacity
+              style={styles.configBtn}
+              onPress={() => navigation.navigate('LayoutEditor', { serverId: item.id })}
+            >
+              <Text style={styles.configBtnText}>⚙</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.editBtn}
             onPress={() => openEdit(item)}
@@ -373,29 +376,9 @@ const styles = StyleSheet.create({
   serverInfo: {
     flex: 1,
   },
-  serverNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   serverName: {
     color: '#ffffff',
     fontSize: 18,
-    fontWeight: 'bold',
-    fontFamily: 'monospace',
-  },
-  configBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: '#332222',
-    borderRadius: 4,
-  },
-  configuredBadge: {
-    backgroundColor: '#223322',
-  },
-  configBadgeText: {
-    color: '#999',
-    fontSize: 10,
     fontWeight: 'bold',
     fontFamily: 'monospace',
   },
@@ -427,6 +410,17 @@ const styles = StyleSheet.create({
   },
   deleteText: {
     color: '#cc0000',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  configBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#2a3a2a',
+    borderRadius: 4,
+  },
+  configBtnText: {
+    color: '#3399ff',
     fontSize: 12,
     fontWeight: 'bold',
   },

@@ -8,6 +8,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { LayoutButton, ButtonLayout } from '../storage/layoutStorage';
 import { loadLayoutProfile, saveLayoutProfile, updateLayoutProfile, listLayoutProfiles } from '../storage/layoutProfileStorage';
+import { loadServers, saveServers } from '../storage/serverStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'LayoutEditor'>;
 
@@ -32,6 +33,7 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
   const [editColor, setEditColor] = useState('#666666');
   const [editOpacity, setEditOpacity] = useState(0.5);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
+  const [editingServerId, setEditingServerId] = useState<string | null>(null);
   const [showGridSizeModal, setShowGridSizeModal] = useState(false);
   const [showNameModal, setShowNameModal] = useState(false);
   const [currentProfileName, setCurrentProfileName] = useState('');
@@ -43,7 +45,20 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
   // Load layout on mount
   useEffect(() => {
     const profileId = route.params?.profileId;
-    if (profileId) {
+    const serverId = route.params?.serverId;
+
+    if (serverId) {
+      // Load from server
+      loadServers().then(servers => {
+        const server = servers.find(s => s.id === serverId);
+        if (server && server.buttonLayout) {
+          setLayout(server.buttonLayout);
+          setOriginalLayout(JSON.parse(JSON.stringify(server.buttonLayout)));
+          setEditingServerId(serverId);
+          setCurrentProfileName(server.name);
+        }
+      });
+    } else if (profileId) {
       Promise.all([
         loadLayoutProfile(profileId),
         listLayoutProfiles()
@@ -65,7 +80,7 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
       setCurrentProfileName('');
     }
     hasChanges.current = false;
-  }, [route.params?.profileId]);
+  }, [route.params?.profileId, route.params?.serverId]);
 
   const createDefaultButtons = (gridSize: number): LayoutButton[] => {
     const center = Math.floor(gridSize / 2);
@@ -236,7 +251,22 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
   };
 
   const handleSave = async () => {
-    if (editingProfileId) {
+    if (editingServerId) {
+      // Editing server configuration - update server
+      try {
+        const servers = await loadServers();
+        const updated = servers.map(s =>
+          s.id === editingServerId ? { ...s, buttonLayout: layout } : s
+        );
+        await saveServers(updated);
+        setOriginalLayout(JSON.parse(JSON.stringify(layout)));
+        hasChanges.current = false;
+        navigation.goBack();
+      } catch (error) {
+        Alert.alert('Error', 'No se pudo guardar la configuración');
+        console.error(error);
+      }
+    } else if (editingProfileId) {
       // Editing existing profile - just update and go back
       try {
         await updateLayoutProfile(editingProfileId, currentProfileName, layout);

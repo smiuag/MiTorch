@@ -44,7 +44,7 @@ export type RootStackParamList = {
   ServerList: undefined;
   Terminal: { server: ServerProfile };
   Settings: undefined;
-  LayoutEditor: { profileId?: string } | undefined;
+  LayoutEditor: { profileId?: string; serverId?: string } | undefined;
 };
 
 export type LayoutItemType = 'button' | 'vitalbars' | 'input' | 'chat' | 'terminal';
