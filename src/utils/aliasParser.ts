@@ -33,18 +33,22 @@ export function parseAliasOutput(rawLines: string[]): ParsedAlias[] {
   const aliases: ParsedAlias[] = [];
   const seen = new Set<string>();
 
-  // Join all lines and clean
-  const fullText = rawLines.join(' ');
+  // Join all lines preserving structure, then clean ANSI codes
+  const fullText = rawLines.join('\n');
   const cleaned = cleanAnsi(fullText);
 
-  // Match pattern: word: anything up to next word: or end
-  // This regex captures: name: command pairs separated by significant whitespace
-  const aliasRegex = /(\w+):\s*([^:]*?)(?=\s{2,}\w+:|$)/g;
+  // Match pattern: word: anything up to 2+ spaces followed by word: or end
+  // Use 's' flag to allow . to match newlines
+  // Capture: name: command pairs, allowing line breaks in commands
+  const aliasRegex = /(\w+):\s*([\s\S]*?)(?=\s{2,}\w+:|$)/g;
   let match;
 
   while ((match = aliasRegex.exec(cleaned)) !== null) {
     const name = match[1].trim();
-    const command = match[2].trim();
+    let command = match[2].trim();
+
+    // Normalize whitespace: replace multiple spaces/newlines with single space
+    command = command.replace(/\s+/g, ' ');
 
     if (!name || !command || seen.has(name)) continue;
     if (!/^[a-zA-Z0-9_]+$/.test(name)) continue;
