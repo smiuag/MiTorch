@@ -23,6 +23,12 @@ function hasVariableParameters(command: string): boolean {
   return /\$[\*\d]+\$/.test(command);
 }
 
+function isChannelAlias(command: string): boolean {
+  // Check if command contains channel-related keywords
+  const keywords = ['chat', 'bando', 'grupo', 'gremio', 'ciudadania', 'familia', 'rol', 'trivial', 'consulta', 'novato', 'clan'];
+  return keywords.some(keyword => command.toLowerCase().includes(keyword));
+}
+
 export function parseAliasOutput(rawLines: string[]): ParsedAlias[] {
   const aliases: ParsedAlias[] = [];
   const seen = new Set<string>();
@@ -55,8 +61,18 @@ export function parseAliasOutput(rawLines: string[]): ParsedAlias[] {
     aliases.push({ name, command, type: 'alias' });
   }
 
-  const userAliases = aliases
-    .sort((a, b) => a.name.length - b.name.length);
+  // Sort: channel aliases first, then rest
+  const userAliases = aliases.sort((a, b) => {
+    const aIsChannel = isChannelAlias(a.command);
+    const bIsChannel = isChannelAlias(b.command);
+
+    // Channel aliases come first
+    if (aIsChannel && !bIsChannel) return -1;
+    if (!aIsChannel && bIsChannel) return 1;
+
+    // Within same category, sort by name length
+    return a.name.length - b.name.length;
+  });
 
   return userAliases;
 }
