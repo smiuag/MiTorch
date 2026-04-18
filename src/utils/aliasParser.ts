@@ -27,35 +27,32 @@ export function parseAliasOutput(rawLines: string[]): ParsedAlias[] {
   const aliases: ParsedAlias[] = [];
   const seen = new Set<string>();
 
-  for (const line of rawLines) {
-    const cleaned = cleanAnsi(line);
-    if (!cleaned.trim()) continue;
+  // Join all lines and clean
+  const fullText = rawLines.join(' ');
+  const cleaned = cleanAnsi(fullText);
 
-    // Split by 2+ spaces to find individual alias:command pairs
-    const parts = cleaned.split(/\s{2,}/);
+  // Match pattern: word: anything up to next word: or end
+  // This regex captures: name: command pairs separated by significant whitespace
+  const aliasRegex = /(\w+):\s*([^:]*?)(?=\s{2,}\w+:|$)/g;
+  let match;
 
-    for (const part of parts) {
-      const trimmed = part.trim();
-      if (!trimmed.includes(':')) continue;
+  while ((match = aliasRegex.exec(cleaned)) !== null) {
+    const name = match[1].trim();
+    const command = match[2].trim();
 
-      const colonIdx = trimmed.indexOf(':');
-      const name = trimmed.substring(0, colonIdx).trim();
-      const command = trimmed.substring(colonIdx + 1).trim();
+    if (!name || !command || seen.has(name)) continue;
+    if (!/^[a-zA-Z0-9_]+$/.test(name)) continue;
 
-      if (!name || !command || seen.has(name)) continue;
-      if (!/^[a-zA-Z0-9_]+$/.test(name)) continue;
+    // Skip predefined directions - they'll be added separately
+    if (DIRECTIONS.includes(name.toLowerCase())) continue;
 
-      // Skip predefined directions - they'll be added separately
-      if (DIRECTIONS.includes(name.toLowerCase())) continue;
+    // Skip aliases with variable parameters ($*$ or $digit+$)
+    if (hasVariableParameters(command)) continue;
 
-      // Skip aliases with variable parameters ($*$ or $digit+$)
-      if (hasVariableParameters(command)) continue;
+    seen.add(name);
 
-      seen.add(name);
-
-      // Don't detect locate - we'll add it as a predefined option
-      aliases.push({ name, command, type: 'alias' });
-    }
+    // Don't detect locate - we'll add it as a predefined option
+    aliases.push({ name, command, type: 'alias' });
   }
 
   const userAliases = aliases
