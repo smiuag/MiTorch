@@ -14,7 +14,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, ServerProfile } from '../types';
 import { loadServers, saveServers } from '../storage/serverStorage';
-import { listLayoutProfiles, LayoutProfileMeta } from '../storage/layoutProfileStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ServerList'>;
 
@@ -24,32 +23,24 @@ function generateId(): string {
 
 export function ServerListScreen({ navigation }: Props) {
   const [servers, setServers] = useState<ServerProfile[]>([]);
-  const [profiles, setProfiles] = useState<LayoutProfileMeta[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingServer, setEditingServer] = useState<ServerProfile | null>(null);
   const [formName, setFormName] = useState('');
   const [formHost, setFormHost] = useState('');
   const [formPort, setFormPort] = useState('');
-  const [formProfileId, setFormProfileId] = useState<string | undefined>(undefined);
   const [helpModalVisible, setHelpModalVisible] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       loadServers().then(setServers);
-      loadProfiles().then(setProfiles);
     }, [])
   );
-
-  const loadProfiles = async () => {
-    return await listLayoutProfiles();
-  };
 
   const openAdd = () => {
     setEditingServer(null);
     setFormName('');
     setFormHost('rlmud.org');
     setFormPort('5001');
-    setFormProfileId(profiles.length > 0 ? profiles[0].id : undefined);
     setModalVisible(true);
   };
 
@@ -58,15 +49,11 @@ export function ServerListScreen({ navigation }: Props) {
     setFormName(server.name);
     setFormHost(server.host);
     setFormPort(String(server.port));
-    setFormProfileId(server.layoutProfileId);
     setModalVisible(true);
   };
 
   const handleSave = async () => {
     if (!formName.trim() || !formHost.trim()) return;
-
-    // For new servers, require a profile
-    if (!editingServer && !formProfileId) return;
 
     const port = parseInt(formPort) || 5001;
     let updated: ServerProfile[];
@@ -79,7 +66,6 @@ export function ServerListScreen({ navigation }: Props) {
               name: formName.trim(),
               host: formHost.trim(),
               port,
-              layoutProfileId: formProfileId
             }
           : s
       );
@@ -89,7 +75,6 @@ export function ServerListScreen({ navigation }: Props) {
         name: formName.trim(),
         host: formHost.trim(),
         port,
-        layoutProfileId: formProfileId,
       };
       updated = [...servers, newServer];
     }
@@ -105,32 +90,40 @@ export function ServerListScreen({ navigation }: Props) {
     await saveServers(updated);
   };
 
-  const renderServer = ({ item }: { item: ServerProfile }) => (
-    <TouchableOpacity
-      style={styles.serverCard}
-      onPress={() => navigation.navigate('Terminal', { server: item })}
-      onLongPress={() => openEdit(item)}
-    >
-      <View style={styles.serverInfo}>
-        <Text style={styles.serverName}>{item.name}</Text>
-        <Text style={styles.serverHost}>{item.host}:{item.port}</Text>
-      </View>
-      <View style={styles.serverActions}>
-        <TouchableOpacity
-          style={styles.editBtn}
-          onPress={() => openEdit(item)}
-        >
-          <Text style={styles.editText}>Edit</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.deleteBtn}
-          onPress={() => handleDelete(item)}
-        >
-          <Text style={styles.deleteText}>X</Text>
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
-  );
+  const renderServer = ({ item }: { item: ServerProfile }) => {
+    const isConfigured = !!item.buttonLayout;
+    return (
+      <TouchableOpacity
+        style={styles.serverCard}
+        onPress={() => navigation.navigate('Terminal', { server: item })}
+        onLongPress={() => openEdit(item)}
+      >
+        <View style={styles.serverInfo}>
+          <View style={styles.serverNameRow}>
+            <Text style={styles.serverName}>{item.name}</Text>
+            <View style={[styles.configBadge, isConfigured && styles.configuredBadge]}>
+              <Text style={styles.configBadgeText}>{isConfigured ? '✓ Configurado' : '⚠ Sin configurar'}</Text>
+            </View>
+          </View>
+          <Text style={styles.serverHost}>{item.host}:{item.port}</Text>
+        </View>
+        <View style={styles.serverActions}>
+          <TouchableOpacity
+            style={styles.editBtn}
+            onPress={() => openEdit(item)}
+          >
+            <Text style={styles.editText}>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.deleteBtn}
+            onPress={() => handleDelete(item)}
+          >
+            <Text style={styles.deleteText}>X</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
@@ -217,65 +210,6 @@ export function ServerListScreen({ navigation }: Props) {
               keyboardType="number-pad"
             />
 
-            <Text style={styles.label}>Perfil de botones{editingServer ? ' (opcional)' : ' (requerido)'}</Text>
-            {profiles.length === 0 ? (
-              <View style={styles.noProfilesContainer}>
-                <Text style={styles.noProfilesText}>
-                  {editingServer
-                    ? 'Sin perfiles disponibles. Crea uno en Ajustes para asignar.'
-                    : 'Crea primero una configuración de botones en Ajustes'}
-                </Text>
-              </View>
-            ) : (
-              <>
-                <ScrollView style={styles.profileSelector} nestedScrollEnabled>
-                  {profiles.map(profile => (
-                    <View key={profile.id} style={styles.profileOptionRow}>
-                      <TouchableOpacity
-                        style={[styles.profileOption, formProfileId === profile.id && styles.profileOptionSelected, { flex: 1 }]}
-                        onPress={() => setFormProfileId(profile.id)}
-                      >
-                        <Text style={[styles.profileOptionText, formProfileId === profile.id && styles.profileOptionTextSelected]}>
-                          {profile.name}
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.profileEditBtn}
-                        onPress={() => navigation.navigate('LayoutEditor', { profileId: profile.id })}
-                      >
-                        <Text style={styles.profileEditBtnText}>✎</Text>
-                      </TouchableOpacity>
-                      {formProfileId === profile.id && (
-                        <TouchableOpacity
-                          style={[styles.profileEditBtn, { marginLeft: 8 }]}
-                          onPress={async () => {
-                            setFormProfileId(undefined);
-                            // Save immediately
-                            if (editingServer) {
-                              const allServers = await loadServers();
-                              const updated = allServers.map(s =>
-                                s.id === editingServer.id ? { ...s, layoutProfileId: undefined } : s
-                              );
-                              await saveServers(updated);
-                              setEditingServer({ ...editingServer, layoutProfileId: undefined });
-                            }
-                          }}
-                        >
-                          <Text style={styles.profileEditBtnText}>✕</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  ))}
-                </ScrollView>
-                <TouchableOpacity
-                  style={styles.newProfileBtn}
-                  onPress={() => navigation.navigate('LayoutEditor')}
-                >
-                  <Text style={styles.newProfileBtnText}>+ Nuevo perfil</Text>
-                </TouchableOpacity>
-              </>
-            )}
-
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={styles.cancelBtn}
@@ -284,13 +218,10 @@ export function ServerListScreen({ navigation }: Props) {
                 <Text style={styles.cancelText}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.saveBtn, (!editingServer && profiles.length === 0) && styles.saveBtnDisabled]}
+                style={styles.saveBtn}
                 onPress={handleSave}
-                disabled={!editingServer && profiles.length === 0}
               >
-                <Text style={[styles.saveText, (!editingServer && profiles.length === 0) && styles.saveTextDisabled]}>
-                  Guardar
-                </Text>
+                <Text style={styles.saveText}>Guardar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -319,7 +250,7 @@ export function ServerListScreen({ navigation }: Props) {
             >
               <Text style={styles.helpModalSectionTitle}>Conectar a un personaje</Text>
               <Text style={styles.helpModalText}>
-                Pulsa el botón + para crear un nuevo personaje. Introduce el nombre del personaje, host y puerto. Selecciona un perfil de botones guardado. Luego pulsa en el personaje para conectar.
+                Pulsa el botón + para crear un nuevo personaje. Introduce el nombre del personaje, host y puerto. Luego pulsa en el personaje para conectar. Una vez conectado, pulsa el botón ⚙ para configurar los botones de la grilla.
               </Text>
 
               <Text style={styles.helpModalSectionTitle}>Durante la partida</Text>
@@ -442,9 +373,29 @@ const styles = StyleSheet.create({
   serverInfo: {
     flex: 1,
   },
+  serverNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   serverName: {
     color: '#ffffff',
     fontSize: 18,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+  },
+  configBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#332222',
+    borderRadius: 4,
+  },
+  configuredBadge: {
+    backgroundColor: '#223322',
+  },
+  configBadgeText: {
+    color: '#999',
+    fontSize: 10,
     fontWeight: 'bold',
     fontFamily: 'monospace',
   },

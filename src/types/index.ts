@@ -4,7 +4,19 @@ export interface ServerProfile {
   host: string;
   port: number;
   encoding?: string;
-  layoutProfileId?: string;
+  buttonLayout?: {
+    buttons: Array<{
+      id: string;
+      col: number;
+      row: number;
+      label: string;
+      command: string;
+      color: string;
+      opacity: number;
+    }>;
+    gridSize: number;
+  };
+  channelAliases?: Record<string, string>;
 }
 
 export interface AnsiSpan {

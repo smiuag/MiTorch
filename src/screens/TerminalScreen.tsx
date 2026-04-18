@@ -27,10 +27,8 @@ import { MiniMap } from '../components/MiniMap';
 import { VitalBars } from '../components/VitalBars';
 import { RoomSearchResults } from '../components/RoomSearchResults';
 import { ChannelTabs, ChannelActivePanel, ChannelMessage, nextMsgId } from '../components/ChannelPanel';
-import { loadChannelAliases, saveChannelAliases } from '../storage/channelStorage';
 import { loadSettings } from '../storage/settingsStorage';
 import { MapService, MapRoom } from '../services/mapService';
-import { loadLayoutProfile } from '../storage/layoutProfileStorage';
 import { ButtonLayout } from '../storage/layoutStorage';
 import { loadFKeys, saveFKeys } from '../storage/fkeyStorage';
 import { loadExtraButtons, saveExtraButtons } from '../storage/extraButtonStorage';
@@ -39,7 +37,6 @@ import { UnifiedTerminalLayout } from '../components/UnifiedTerminalLayout';
 import { AliasWizardModal, WizardResult } from '../components/AliasWizardModal';
 import { parseAliasOutput, ParsedAlias } from '../utils/aliasParser';
 import { loadServers, saveServers } from '../storage/serverStorage';
-import { saveLayoutProfile } from '../storage/layoutProfileStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Terminal'>;
 
@@ -287,23 +284,28 @@ export function TerminalScreen({ route, navigation }: Props) {
   useEffect(() => {
     loadFKeys(server.id).then(setFkeys);
     loadExtraButtons(server.id).then(setExtraButtons);
-    loadChannelAliases(server.id).then(setChannelAliases);
     loadSettings().then(s => {
       setFontSize(s.fontSize);
       fontSizeRef.current = s.fontSize;
     });
 
-    // Load layout profile if assigned
-    if (server.layoutProfileId) {
-      loadLayoutProfile(server.layoutProfileId).then(setButtonLayout);
+    // Load button layout and channel aliases from server
+    if (server.buttonLayout) {
+      setButtonLayout(server.buttonLayout);
     } else {
       setButtonLayout(null);
+    }
+
+    if (server.channelAliases) {
+      setChannelAliases(server.channelAliases);
+    } else {
+      setChannelAliases({});
     }
 
     // Load map (works with Reinos de Leyenda)
     mapServiceRef.current.load();
     setMapVisible(true);
-  }, [server.id, server.name, server.layoutProfileId]);
+  }, [server.id, server.name, server.buttonLayout, server.channelAliases]);
 
 
   const updateMapPosition = useCallback((room: MapRoom) => {
@@ -496,29 +498,23 @@ export function TerminalScreen({ route, navigation }: Props) {
   const handleWizardSave = useCallback(
     async (result: WizardResult) => {
       try {
-        // Create layout profile
+        // Save layout and aliases directly to server
         const layout: ButtonLayout = {
           buttons: result.buttons,
           gridSize: result.gridSize,
         };
-        const profileId = await saveLayoutProfile(`Perfil de ${server.name}`, layout);
+        const newAliases = { ...channelAliases, ...result.channelAliasUpdates };
 
-        // Update server with profileId
+        // Update server with configuration
         const servers = await loadServers();
         const updated = servers.map(s =>
-          s.id === server.id ? { ...s, layoutProfileId: profileId } : s
+          s.id === server.id ? { ...s, buttonLayout: layout, channelAliases: newAliases } : s
         );
         await saveServers(updated);
 
-        // Update local server state
-        setServer(prev => ({ ...prev, layoutProfileId: profileId }));
-
-        // Update channelAliases
-        const newAliases = { ...channelAliases, ...result.channelAliasUpdates };
+        // Update local state
+        setServer(prev => ({ ...prev, buttonLayout: layout, channelAliases: newAliases }));
         setChannelAliases(newAliases);
-        await saveChannelAliases(server.id, newAliases);
-
-        // Activate buttons in current session
         setButtonLayout(layout);
         setAliasWizardVisible(false);
 
@@ -671,8 +667,8 @@ export function TerminalScreen({ route, navigation }: Props) {
       return;
     }
 
-    // Capture alias output if user writes "alias" and no profile assigned
-    if (text.toLowerCase() === 'alias' && !server.layoutProfileId) {
+    // Capture alias output if user writes "alias" and not configured yet
+    if (text.toLowerCase() === 'alias' && !server.buttonLayout) {
       setAliasWizardVisible(true);
       setCapturedAliases([]);
 
@@ -776,7 +772,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         onToggleMap={() => setMapVisible(v => !v)}
         onStop={stopWalk}
         onConfigureButtons={() => {
-          if (server.layoutProfileId) {
+          if (server.buttonLayout) {
             // Already configured - ask to reconfigure
             Alert.alert(
               'Configuración existente',
@@ -787,14 +783,15 @@ export function TerminalScreen({ route, navigation }: Props) {
                   text: 'Sí, borrar y reconfigurar',
                   style: 'destructive',
                   onPress: async () => {
-                    // Delete profile
+                    // Delete configuration
                     const servers = await loadServers();
                     const updated = servers.map(s =>
-                      s.id === server.id ? { ...s, layoutProfileId: undefined } : s
+                      s.id === server.id ? { ...s, buttonLayout: undefined, channelAliases: undefined } : s
                     );
                     await saveServers(updated);
-                    setServer(prev => ({ ...prev, layoutProfileId: undefined }));
+                    setServer(prev => ({ ...prev, buttonLayout: undefined, channelAliases: undefined }));
                     setButtonLayout(null);
+                    setChannelAliases({});
 
                     // Open wizard
                     setAliasWizardVisible(true);
@@ -813,7 +810,7 @@ export function TerminalScreen({ route, navigation }: Props) {
             }
           }
         }}
-        showConfigureButton={!server.layoutProfileId}
+        showConfigureButton={!server.buttonLayout}
       />
 
 

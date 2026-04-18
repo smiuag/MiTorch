@@ -194,6 +194,7 @@ export function ChatSection({
             updateCellsBatchingPeriod={50}
           />
         )}
+
       </View>
 
       {/* Vital Bars */}
