@@ -767,7 +767,15 @@ export function TerminalScreen({ route, navigation }: Props) {
         onAliasChange={(ch, alias) => {
           const updated = { ...channelAliases, [ch]: alias };
           setChannelAliases(updated);
-          saveChannelAliases(server.id, updated);
+          // Update both local state and server
+          (async () => {
+            const servers = await loadServers();
+            const serverUpdated = servers.map(s =>
+              s.id === server.id ? { ...s, channelAliases: updated } : s
+            );
+            await saveServers(serverUpdated);
+            setServer(prev => ({ ...prev, channelAliases: updated }));
+          })();
         }}
         onToggleMap={() => setMapVisible(v => !v)}
         onStop={stopWalk}
