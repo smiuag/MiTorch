@@ -576,6 +576,10 @@ export function TerminalScreen({ route, navigation }: Props) {
       onConnect: () => {
         setConnected(true);
         addSystemLine(`--- Connected to ${server.name} (${server.host}:${server.port}) ---`);
+        // Auto-send character name after brief delay
+        setTimeout(() => {
+          telnetRef.current?.send(server.name);
+        }, 300);
       },
       onClose: () => {
         if (pendingText.current && pendingText.current.trim().length > 0) {
