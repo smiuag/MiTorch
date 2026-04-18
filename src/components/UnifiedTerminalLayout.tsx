@@ -43,6 +43,7 @@ interface UnifiedTerminalLayoutProps {
   onToggleMap: () => void;
   onStop?: () => void;
   onConfigureButtons: () => void;
+  onCloseKeyboard?: () => void;
   showConfigureButton: boolean;
 }
 
@@ -74,6 +75,7 @@ export function UnifiedTerminalLayout({
   onToggleMap,
   onStop,
   onConfigureButtons,
+  onCloseKeyboard,
   showConfigureButton,
 }: UnifiedTerminalLayoutProps) {
   const { width, height } = useWindowDimensions();
@@ -84,13 +86,20 @@ export function UnifiedTerminalLayout({
   const translateYRef = useRef(new Animated.Value(0));
   const terminalSectionRef = useRef<TerminalSectionHandle>(null);
 
-  const FIXED_SECTION_PERCENT = 0.4;
-  const FLEXIBLE_SECTION_PERCENT = 0.6;
+  // Fixed sizes for ChatSection components
+  const TABS_HEIGHT = 40;
+  const MESSAGES_MAX_HEIGHT = 150;
+  const VITALS_HEIGHT = 40;
+  const INPUT_HEIGHT = 60;
+  const KEYBOARD_HEIGHT_PORTRAIT = 180;
+  const KEYBOARD_HEIGHT_LANDSCAPE = 110;
+  const KEYBOARD_HEIGHT = isLandscape ? KEYBOARD_HEIGHT_LANDSCAPE : KEYBOARD_HEIGHT_PORTRAIT;
+  const CHAT_WIDTH_LANDSCAPE = 320;
 
   const availableHeight = height - insets.top - insets.bottom;
-  const fixedHeight = availableHeight * FIXED_SECTION_PERCENT;
-  const flexibleHeight = availableHeight * FLEXIBLE_SECTION_PERCENT;
-  const flexibleWidth = isLandscape ? width * FLEXIBLE_SECTION_PERCENT : width;
+  const chatSectionHeight = TABS_HEIGHT + MESSAGES_MAX_HEIGHT + VITALS_HEIGHT + INPUT_HEIGHT + KEYBOARD_HEIGHT;
+  const terminalSectionHeight = availableHeight - chatSectionHeight;
+  const flexibleWidth = isLandscape ? width - CHAT_WIDTH_LANDSCAPE : width;
 
   const handleScrollTerminalToBottom = () => {
     terminalSectionRef.current?.scrollToBottom();
@@ -155,7 +164,7 @@ export function UnifiedTerminalLayout({
           },
         ]}
       >
-        <View style={[styles.flexibleSection, { width: `${FLEXIBLE_SECTION_PERCENT * 100}%` }]}>
+        <View style={[styles.flexibleSection, { flex: 1 }]}>
           <TerminalSection
             ref={terminalSectionRef}
             lines={lines}
@@ -167,6 +176,7 @@ export function UnifiedTerminalLayout({
             height={availableHeight}
             onConfigureButtons={onConfigureButtons}
             showConfigureButton={showConfigureButton}
+            onPress={onCloseKeyboard}
           />
           {orientationLayout && orientationLayout.floatingButtons.length > 0 && buttonLayout && (
             <FloatingButtonsOverlay
@@ -180,7 +190,7 @@ export function UnifiedTerminalLayout({
           )}
         </View>
 
-        <View style={[styles.fixedSection, { width: `${FIXED_SECTION_PERCENT * 100}%` }]}>
+        <View style={[styles.fixedSection, { width: CHAT_WIDTH_LANDSCAPE }]}>
           <ChatSection
             height={availableHeight}
             channels={channels}
@@ -196,6 +206,8 @@ export function UnifiedTerminalLayout({
             energyMax={energyMax}
             currentRoom={currentRoom}
             nearbyRooms={nearbyRooms}
+            panelButtons={buttonLayout?.panelButtons}
+            gridSize={buttonLayout?.gridSize}
             onSelectChannel={onSelectChannel}
             onAliasChange={onAliasChange}
             onInputChange={onInputChange}
@@ -205,6 +217,8 @@ export function UnifiedTerminalLayout({
             commandHistory={commandHistory}
             walking={walking}
             onStop={onStop}
+            useCustomKeyboard={true}
+            onCloseKeyboard={onCloseKeyboard}
           />
         </View>
       </Animated.View>
@@ -220,7 +234,7 @@ export function UnifiedTerminalLayout({
           },
         ]}
       >
-        <View style={[styles.flexibleSection, { height: flexibleHeight }]}>
+        <View style={[styles.flexibleSection, { flex: 1 }]}>
           <TerminalSection
             ref={terminalSectionRef}
             lines={lines}
@@ -229,25 +243,26 @@ export function UnifiedTerminalLayout({
             onToggleMap={onToggleMap}
             currentRoom={currentRoom}
             nearbyRooms={nearbyRooms}
-            height={flexibleHeight}
+            height={terminalSectionHeight}
             onConfigureButtons={onConfigureButtons}
             showConfigureButton={showConfigureButton}
+            onPress={onCloseKeyboard}
           />
           {orientationLayout && orientationLayout.floatingButtons.length > 0 && buttonLayout && (
             <FloatingButtonsOverlay
               buttons={orientationLayout.floatingButtons}
               orientation="portrait"
               onSendCommand={onSendCommand}
-              availableHeight={flexibleHeight}
+              availableHeight={terminalSectionHeight}
               availableWidth={width}
               gridSize={buttonLayout.gridSize}
             />
           )}
         </View>
 
-        <View style={[styles.fixedSection, { height: fixedHeight }]}>
+        <View style={[styles.fixedSection, { height: chatSectionHeight }]}>
           <ChatSection
-            height={fixedHeight}
+            height={chatSectionHeight}
             channels={channels}
             channelMessages={channelMessages}
             channelAliases={channelAliases}
@@ -261,6 +276,8 @@ export function UnifiedTerminalLayout({
             energyMax={energyMax}
             currentRoom={currentRoom}
             nearbyRooms={nearbyRooms}
+            panelButtons={buttonLayout?.panelButtons}
+            gridSize={buttonLayout?.gridSize}
             onSelectChannel={onSelectChannel}
             onAliasChange={onAliasChange}
             onInputChange={onInputChange}
@@ -270,6 +287,7 @@ export function UnifiedTerminalLayout({
             commandHistory={commandHistory}
             walking={walking}
             onStop={onStop}
+            useCustomKeyboard={true}
           />
         </View>
       </Animated.View>

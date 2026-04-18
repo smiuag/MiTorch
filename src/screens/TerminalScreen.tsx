@@ -15,6 +15,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useTerminal } from '../contexts/TerminalContext';
 import { RootStackParamList, MudLine, Macro } from '../types';
 import { TelnetService } from '../services/telnetService';
 import { parseAnsi } from '../utils/ansiParser';
@@ -53,7 +54,6 @@ export function TerminalScreen({ route, navigation }: Props) {
   const availableHeight = height - insets.top - insets.bottom - (customKeyboardActive ? Math.max(0, keyboardHeight - chatHeightCompressed) : 0);
   const { server: initialServer } = route.params;
   const [server, setServer] = useState(initialServer);
-  const [lines, setLines] = useState<MudLine[]>([]);
   const [inputText, setInputText] = useState('');
   const [connected, setConnected] = useState(false);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
@@ -65,19 +65,13 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [mapVisible, setMapVisible] = useState(true);
   const [currentRoom, setCurrentRoom] = useState<MapRoom | null>(null);
   const [nearbyRooms, setNearbyRooms] = useState<MapRoom[]>([]);
-  const [hp, setHp] = useState(0);
-  const [hpMax, setHpMax] = useState(0);
-  const [energy, setEnergy] = useState(0);
-  const [energyMax, setEnergyMax] = useState(0);
   const [searchResults, setSearchResults] = useState<MapRoom[]>([]);
   const [searchVisible, setSearchVisible] = useState(false);
   const [walking, setWalking] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [channelMessages, setChannelMessages] = useState<ChannelMessage[]>([]);
-  const [channels, setChannels] = useState<string[]>([]);
-  const [activeChannel, setActiveChannel] = useState<string | null>(null);
-  const [channelAliases, setChannelAliases] = useState<Record<string, string>>({});
-  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+
+  // Use context for persistent terminal state
+  const { lines, setLines, addLine, channels, setChannels, channelMessages, setChannelMessages, activeChannel, setActiveChannel, unreadCounts, setUnreadCounts, channelAliases, setChannelAliases, hp, setHp, hpMax, setHpMax, energy, setEnergy, energyMax, setEnergyMax, telnetRef } = useTerminal();
   const [fontSize, setFontSize] = useState(14);
   const [buttonLayout, setButtonLayout] = useState<ButtonLayout | null>(null);
   const [aliasWizardVisible, setAliasWizardVisible] = useState(false);
@@ -102,7 +96,6 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
   }, []);
   const flatListRef = useRef<FlatList>(null);
-  const telnetRef = useRef<TelnetService | null>(null);
   const inputRef = useRef<TextInput>(null);
   const pendingText = useRef('');
   const mapServiceRef = useRef(new MapService());
@@ -112,25 +105,19 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   const lastLineBlankRef = useRef(false);
 
-  const addLine = useCallback((text: string) => {
+  // Wrapper around context addLine to handle blank line deduplication
+  const addLineWithDedup = useCallback((text: string) => {
     const isBlank = text.trim().length === 0;
     if (isBlank) {
-      if (lastLineBlankRef.current) return; // skip consecutive blanks
+      if (lastLineBlankRef.current) return;
       lastLineBlankRef.current = true;
     } else {
       lastLineBlankRef.current = false;
     }
-
     const spans = parseAnsi(text);
     const newLine: MudLine = { id: lineIdCounter++, spans };
-    setLines(prev => {
-      const updated = [...prev, newLine];
-      if (updated.length > MAX_LINES) {
-        return updated.slice(updated.length - MAX_LINES);
-      }
-      return updated;
-    });
-  }, []);
+    addLine(newLine);
+  }, [addLine]);
 
   const addMultipleLines = useCallback((texts: string[]) => {
     // Capture alias output if in progress
@@ -501,6 +488,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         // Save layout and aliases directly to server
         const layout: ButtonLayout = {
           buttons: result.buttons,
+          panelButtons: result.panelButtons,
           gridSize: result.gridSize,
         };
         const newAliases = { ...channelAliases, ...result.channelAliasUpdates };
@@ -527,12 +515,37 @@ export function TerminalScreen({ route, navigation }: Props) {
     [server.id, server.name, channelAliases, addSystemLine]
   );
 
+  // Scroll to bottom when screen focuses
+  useFocusEffect(
+    useCallback(() => {
+      // Wait for FlatList to render before scrolling
+      const timer = setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      }, 500);
+
+      return () => {
+        clearTimeout(timer);
+      };
+    }, [])
+  );
+
   useEffect(() => {
     linesRef.current = lines;
+    // Also scroll when lines update
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: false });
+    }, 50);
   }, [lines]);
 
   useEffect(() => {
     navigation.setOptions({ title: server.name });
+
+    // Only create new connection if not already connected to this server
+    if (telnetRef.current && telnetRef.current.isConnected) {
+      return () => {
+        // Don't disconnect on unmount - component stays in memory with detachInactiveScreens: false
+      };
+    }
 
     const telnet = new TelnetService(server, {
       onData: (text: string) => {
@@ -583,7 +596,7 @@ export function TerminalScreen({ route, navigation }: Props) {
       },
       onClose: () => {
         if (pendingText.current && pendingText.current.trim().length > 0) {
-          addLine(pendingText.current.trim());
+          addLineWithDedup(pendingText.current.trim());
         }
         pendingText.current = '';
         setConnected(false);
@@ -660,7 +673,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     telnet.connect();
 
     return () => {
-      telnet.disconnect();
+      // Don't disconnect - component stays in memory, connection persists
     };
   }, [server]);
 
@@ -783,6 +796,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         }}
         onToggleMap={() => setMapVisible(v => !v)}
         onStop={stopWalk}
+        onCloseKeyboard={() => setKeyboardVisible(false)}
         onConfigureButtons={() => {
           if (server.buttonLayout) {
             // Already configured - ask to reconfigure

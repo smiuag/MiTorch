@@ -10,21 +10,19 @@ interface VitalBarsProps {
 }
 
 export function VitalBars({ hp, hpMax, energy, energyMax, orientation = 'horizontal' }: VitalBarsProps) {
-  if (hpMax <= 0 && energyMax <= 0) return null;
-
   const hpPct = hpMax > 0 ? Math.max(0, Math.min(1, hp / hpMax)) : 0;
   const energyPct = energyMax > 0 ? Math.max(0, Math.min(1, energy / energyMax)) : 0;
 
   return (
     <View style={styles.container}>
       {/* HP bar */}
-      <View style={styles.barBg}>
+      <View style={[styles.barBg, { backgroundColor: 'rgba(180, 0, 0, 0.2)' }]}>
         <View style={[styles.barFill, styles.hpFill, { width: `${hpPct * 100}%` }]} />
         <Text style={styles.label}>{hp}/{hpMax}</Text>
       </View>
 
       {/* Energy bar */}
-      <View style={styles.barBg}>
+      <View style={[styles.barBg, { backgroundColor: 'rgba(0, 60, 180, 0.2)' }]}>
         <View style={[styles.barFill, styles.energyFill, { width: `${energyPct * 100}%` }]} />
         <Text style={styles.label}>{energy}/{energyMax}</Text>
       </View>

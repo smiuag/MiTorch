@@ -48,7 +48,7 @@ export function FloatingButtonsOverlay({
   const cellSize = Math.min(cellWidth, cellHeight);
 
   return (
-    <View style={styles.container} pointerEvents={disabled ? 'none' : 'auto'}>
+    <View style={styles.container} pointerEvents="box-none">
       {buttons.map((btn) => {
         const x = btn.gridX * (cellSize + GAP);
         const y = btn.gridRow * (cellSize + GAP);

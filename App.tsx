@@ -8,12 +8,14 @@ import { ServerListScreen } from './src/screens/ServerListScreen';
 import { TerminalScreen } from './src/screens/TerminalScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { LayoutEditorScreen } from './src/screens/LayoutEditorScreen';
+import { TerminalProvider } from './src/contexts/TerminalContext';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
   return (
-    <NavigationContainer theme={DarkTheme}>
+    <TerminalProvider>
+      <NavigationContainer theme={DarkTheme}>
       <StatusBar style="light" />
       <Stack.Navigator
         screenOptions={{
@@ -21,6 +23,7 @@ export default function App() {
           headerTintColor: '#00cc00',
           headerTitleStyle: { fontFamily: 'monospace' },
           contentStyle: { backgroundColor: '#000' },
+          detachInactiveScreens: false,
         }}
       >
         <Stack.Screen
@@ -31,7 +34,7 @@ export default function App() {
         <Stack.Screen
           name="Terminal"
           component={TerminalScreen}
-          options={{ headerShown: false }}
+          options={{ headerShown: false, unmountOnBlur: false }}
         />
         <Stack.Screen
           name="Settings"
@@ -44,6 +47,7 @@ export default function App() {
           options={{ headerShown: false }}
         />
       </Stack.Navigator>
-    </NavigationContainer>
+      </NavigationContainer>
+    </TerminalProvider>
   );
 }

@@ -5,6 +5,7 @@ import {
   FlatList,
   TouchableOpacity,
   Text,
+  Pressable,
 } from 'react-native';
 import { MudLine } from '../types';
 import { AnsiText } from './AnsiText';
@@ -26,6 +27,7 @@ interface TerminalSectionProps {
   onScrollToBottom?: () => void;
   onConfigureButtons: () => void;
   showConfigureButton: boolean;
+  onPress?: () => void;
 }
 
 export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSectionProps>(
@@ -40,6 +42,7 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
       height,
       onConfigureButtons,
       showConfigureButton,
+      onPress,
     },
     ref
   ) {
@@ -111,6 +114,8 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
         removeClippedSubviews={true}
         maxToRenderPerBatch={50}
         updateCellsBatchingPeriod={50}
+        contentContainerStyle={styles.flatListContent}
+        style={styles.flatListContainer}
       />
 
       {showScrollToBottom && (
@@ -133,9 +138,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#333',
   },
+  flatListContainer: {
+    flex: 1,
+  },
   lineContainer: {
     paddingHorizontal: 8,
     paddingVertical: 2,
+  },
+  flatListContent: {
+    paddingBottom: 20,
   },
   scrollToBottomButton: {
     position: 'absolute',

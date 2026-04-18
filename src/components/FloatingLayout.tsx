@@ -8,7 +8,7 @@ import { VitalBars } from './VitalBars';
 import { ChannelTabs, ChannelActivePanel } from './ChannelPanel';
 import { TerminalPanel } from './TerminalPanel';
 import { MapRoom } from '../services/mapService';
-import { CustomKeyboard } from './CustomKeyboard';
+import { FloatingKeyboard } from './FloatingKeyboard';
 
 interface FloatingLayoutProps {
   orientation: 'portrait' | 'landscape';
@@ -152,7 +152,7 @@ export function FloatingLayout({
         style={[
           StyleSheet.absoluteFillObject,
           {
-            transform: inputActive ? [{ translateY: -(orientation === 'portrait' ? 182 : 273) * 0.6 }] : [{ translateY: 0 }],
+            transform: inputActive ? [{ translateY: -(orientation === 'portrait' ? 220 : 40) * 0.7 }] : [{ translateY: 0 }],
           },
         ]}
         pointerEvents="box-none"
@@ -270,12 +270,11 @@ export function FloatingLayout({
       </View>
 
       {inputActive && useCustomKeyboard && (
-        <View style={[styles.keyboardContainer, { height: orientation === 'portrait' ? 182 : 273 }]}>
-          <CustomKeyboard
+        <View style={styles.keyboardContainer}>
+          <FloatingKeyboard
             onKeyPress={(char) => onInputChange(inputText + char)}
             onBackspace={() => onInputChange(inputText.slice(0, -1))}
             onEnter={onSend}
-            compact={orientation === 'portrait'}
           />
         </View>
       )}
@@ -290,6 +289,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 1000,
+    backgroundColor: '#1a1a1a',
   },
   button: {
     borderRadius: 4,

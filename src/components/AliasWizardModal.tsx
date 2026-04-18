@@ -14,6 +14,7 @@ import { LayoutButton, ButtonLayout } from '../storage/layoutStorage';
 
 export interface WizardResult {
   buttons: LayoutButton[];
+  panelButtons: LayoutButton[];
   channelAliasUpdates: Record<string, string>;
   gridSize: number;
 }
@@ -26,9 +27,25 @@ interface AliasWizardModalProps {
   onDiscard: () => void;
 }
 
-type SubStep = 'main' | 'choose-type' | 'pick-grid' | 'pick-channel';
+type SubStep = 'main' | 'choose-type' | 'pick-grid' | 'pick-panel' | 'pick-channel';
 
 const COLORS = ['#cc3333', '#3399cc', '#33cc33', '#cc9933', '#9933cc', '#cc3399', '#333333', '#666666'];
+
+const GRID_SIZE_OPTIONS = [
+  { label: 'Pequeños', value: 7 },
+  { label: 'Medianos', value: 9 },
+  { label: 'Grandes', value: 11 },
+];
+
+// Panel dimensions based on grid size
+function getPanelDimensions(size: number): { cols: number; rows: number } {
+  switch (size) {
+    case 7: return { cols: 10, rows: 5 };
+    case 9: return { cols: 8, rows: 4 };
+    case 11: return { cols: 6, rows: 3 };
+    default: return { cols: 8, rows: 4 };
+  }
+}
 
 function genId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -44,8 +61,9 @@ export function AliasWizardModal({
   const { width, height } = useWindowDimensions();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [subStep, setSubStep] = useState<SubStep>('main');
-  const [gridSize, setGridSize] = useState(11);
+  const [gridSize, setGridSize] = useState(9);
   const [pendingButtons, setPendingButtons] = useState<LayoutButton[]>([]);
+  const [pendingPanelButtons, setPendingPanelButtons] = useState<LayoutButton[]>([]);
   const [pendingAliases, setPendingAliases] = useState<Record<string, string>>({});
   const [selectedCol, setSelectedCol] = useState<number | null>(null);
   const [selectedRow, setSelectedRow] = useState<number | null>(null);
@@ -74,8 +92,9 @@ export function AliasWizardModal({
     if (visible && aliases.length > 0) {
       setCurrentIndex(0);
       setSubStep('main');
-      setGridSize(11);
+      setGridSize(9);
       setPendingButtons([]);
+      setPendingPanelButtons([]);
       setPendingAliases({});
       setShowingGridSize(true);
       setAutoPlacedDirections(new Set());
@@ -111,7 +130,7 @@ export function AliasWizardModal({
   const showSaveConfirmation = () => {
     Alert.alert(
       'Guardar configuración',
-      `Se han configurado ${pendingButtons.length} botones y ${Object.keys(pendingAliases).length} alias de canal.`,
+      `Se han configurado ${pendingButtons.length} botones, ${pendingPanelButtons.length} botones de panel y ${Object.keys(pendingAliases).length} alias de canal.`,
       [
         {
           text: 'Descartar',
@@ -123,6 +142,7 @@ export function AliasWizardModal({
           onPress: () => {
             onSave({
               buttons: pendingButtons,
+              panelButtons: pendingPanelButtons,
               channelAliasUpdates: pendingAliases,
               gridSize,
             });
@@ -243,9 +263,12 @@ export function AliasWizardModal({
         <View style={styles.overlay}>
           <View style={styles.modal}>
             <Text style={styles.title}>¿Asignar a...?</Text>
-            <View style={styles.buttonRow}>
+            <View style={[styles.buttonRow, { flexDirection: 'column' }]}>
               <TouchableOpacity style={styles.configBtn} onPress={() => setSubStep('pick-grid')}>
                 <Text style={styles.configText}>Botón en grilla</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.configBtn} onPress={() => setSubStep('pick-panel')}>
+                <Text style={styles.configText}>Botón en panel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.configBtn} onPress={() => setSubStep('pick-channel')}>
                 <Text style={styles.configText}>Canal</Text>
@@ -266,18 +289,21 @@ export function AliasWizardModal({
       <Modal visible={visible} transparent animationType="fade">
         <View style={styles.overlay}>
           <View style={styles.modal}>
-            <Text style={styles.title}>Tamaño de grilla</Text>
+            <Text style={styles.title}>Tamaño de botones</Text>
             <Text style={styles.subtitle}>Selecciona el tamaño de la grilla de botones</Text>
 
             <View style={styles.gridSizeGrid}>
-              {[8, 9, 10, 11].map(size => (
+              {GRID_SIZE_OPTIONS.map(option => (
                 <TouchableOpacity
-                  key={size}
-                  style={[styles.gridSizeBtn, gridSize === size && styles.gridSizeBtnSelected]}
-                  onPress={() => setGridSize(size)}
+                  key={option.value}
+                  style={[styles.gridSizeBtn, gridSize === option.value && styles.gridSizeBtnSelected]}
+                  onPress={() => setGridSize(option.value)}
                 >
-                  <Text style={[styles.gridSizeText, gridSize === size && styles.gridSizeTextSelected]}>
-                    {size}×{size}
+                  <Text style={[styles.gridSizeText, gridSize === option.value && styles.gridSizeTextSelected]}>
+                    {option.label}
+                  </Text>
+                  <Text style={[styles.gridSizeSubtext, gridSize === option.value && styles.gridSizeTextSelected]}>
+                    {option.value}×{option.value}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -392,6 +418,163 @@ export function AliasWizardModal({
     );
   }
 
+  // ===== PICK PANEL SUBSCREEN =====
+  if (subStep === 'pick-panel') {
+    const panelDim = getPanelDimensions(gridSize);
+    const panelWidth = width - 40;
+    const cellSize = Math.floor((panelWidth - (panelDim.cols - 1)) / panelDim.cols);
+    const occupiedPanelCells = new Set(pendingPanelButtons.map(b => `${b.col},${b.row}`));
+
+    return (
+      <Modal visible={visible} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={[styles.modal, { maxHeight: height * 0.9 }]}>
+            <Text style={styles.title}>Selecciona posición en panel</Text>
+            <Text style={styles.subtitle}>
+              {currentAlias.name} → {currentAlias.command}
+            </Text>
+
+            <ScrollView style={styles.gridContainer} showsVerticalScrollIndicator={false}>
+              <View style={{ marginBottom: 12 }}>
+                {Array.from({ length: panelDim.rows }, (_, row) => (
+                  <View key={row} style={styles.gridRow}>
+                    {Array.from({ length: panelDim.cols }, (_, col) => {
+                      const occupied = occupiedPanelCells.has(`${col},${row}`);
+                      const selected = selectedCol === col && selectedRow === row;
+                      return (
+                        <TouchableOpacity
+                          key={`${col},${row}`}
+                          style={[
+                            styles.gridCell,
+                            { width: cellSize - 2, height: cellSize - 2 },
+                            occupied && styles.gridCellOccupied,
+                            selected && styles.gridCellSelected,
+                          ]}
+                          onPress={() => !occupied && handleGridCellPress(col, row)}
+                          disabled={occupied}
+                        >
+                          {selected && <Text style={styles.gridCellText}>✓</Text>}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+
+            <View style={styles.colorPickerRow}>
+              <Text style={styles.colorLabel}>Color</Text>
+              <View style={styles.colors}>
+                {COLORS.map(color => (
+                  <TouchableOpacity
+                    key={color}
+                    style={[styles.colorOption, { backgroundColor: color }, editColor === color && styles.colorOptionSelected]}
+                    onPress={() => setEditColor(color)}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.opacityRow}>
+              <Text style={styles.opacityLabel}>Opacidad</Text>
+              <View style={styles.opacityOptions}>
+                {[0.3, 0.5, 0.7, 1].map(op => (
+                  <TouchableOpacity
+                    key={op}
+                    style={[styles.opacityBtn, editOpacity === op && styles.opacityBtnSelected]}
+                    onPress={() => setEditOpacity(op)}
+                  >
+                    <Text style={[styles.opacityText, editOpacity === op && styles.opacityTextSelected]}>
+                      {Math.round(op * 100)}%
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.buttonRow}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setSubStep('main')}>
+                <Text style={styles.cancelText}>Atrás</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.nextBtn, selectedCol === null && styles.nextBtnDisabled]}
+                onPress={() => {
+                  if (selectedCol !== null && selectedRow !== null && currentAlias) {
+                    const panelDim = getPanelDimensions(gridSize);
+                    const newButton: LayoutButton = {
+                      id: genId(),
+                      col: selectedCol,
+                      row: selectedRow,
+                      label: currentAlias.name,
+                      command: currentAlias.command,
+                      color: editColor,
+                      opacity: editOpacity,
+                    };
+
+                    if (currentAlias.name.toLowerCase() === 'n') {
+                      const newButtons = [newButton];
+                      const occupied = new Set(pendingPanelButtons.map(b => `${b.col},${b.row}`));
+                      occupied.add(`${selectedCol},${selectedRow}`);
+
+                      let canPlaceAll = true;
+                      const directionsToPlace = ['ne', 'e', 'se', 's', 'so', 'o', 'no'];
+
+                      for (const dir of directionsToPlace) {
+                        const [colOffset, rowOffset] = DIRECTION_OFFSETS[dir];
+                        const newCol = selectedCol + colOffset;
+                        const newRow = selectedRow + rowOffset;
+
+                        if (newCol < 0 || newRow < 0 || newCol >= panelDim.cols || newRow >= panelDim.rows) {
+                          canPlaceAll = false;
+                          break;
+                        }
+                        if (occupied.has(`${newCol},${newRow}`)) {
+                          canPlaceAll = false;
+                          break;
+                        }
+                      }
+
+                      if (!canPlaceAll) {
+                        Alert.alert('Espacio insuficiente', 'No hay suficiente espacio en el panel para colocar todas las direcciones respecto al Norte');
+                        return;
+                      }
+
+                      for (const dir of directionsToPlace) {
+                        const [colOffset, rowOffset] = DIRECTION_OFFSETS[dir];
+                        newButtons.push({
+                          id: genId(),
+                          col: selectedCol + colOffset,
+                          row: selectedRow + rowOffset,
+                          label: dir,
+                          command: dir,
+                          color: editColor,
+                          opacity: editOpacity,
+                        });
+                      }
+
+                      const updatedPlaced = new Set([...autoPlacedDirections, 'n', 'ne', 'e', 'se', 's', 'so', 'o', 'no']);
+                      setPendingPanelButtons([...pendingPanelButtons, ...newButtons]);
+                      setAutoPlacedDirections(updatedPlaced);
+                      moveToNext(updatedPlaced);
+                    } else {
+                      setPendingPanelButtons([...pendingPanelButtons, newButton]);
+                      moveToNext();
+                    }
+                    setSelectedCol(null);
+                    setSelectedRow(null);
+                  }
+                }}
+                disabled={selectedCol === null}
+              >
+                <Text style={[styles.nextText, selectedCol === null && styles.nextTextDisabled]}>Confirmar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
   // ===== PICK CHANNEL SUBSCREEN =====
   if (subStep === 'pick-channel') {
     return (
@@ -434,8 +617,6 @@ export function AliasWizardModal({
           <Text style={styles.progressText}>
             {currentIndex + 1} de {aliases.length}
           </Text>
-
-          <Text style={styles.typeTag}>{currentAlias.type === 'direction' ? '↔' : currentAlias.type === 'locate' ? '◎' : '→'}</Text>
 
           <Text style={styles.aliasName}>{currentAlias.name}</Text>
           <Text style={styles.aliasCommand} numberOfLines={2}>
@@ -651,6 +832,11 @@ const styles = StyleSheet.create({
     color: '#666',
     fontWeight: 'bold',
     fontSize: 14,
+  },
+  gridSizeSubtext: {
+    color: '#666',
+    fontSize: 11,
+    marginTop: 4,
   },
   gridSizeTextSelected: {
     color: '#000',

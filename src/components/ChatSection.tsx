@@ -8,11 +8,15 @@ import {
   FlatList,
   Keyboard,
   useWindowDimensions,
+  Pressable,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AnsiText } from './AnsiText';
 import { ChannelMessage, ChannelTabs } from './ChannelPanel';
 import { VitalBars } from './VitalBars';
 import { MiniMap } from './MiniMap';
+import { FloatingKeyboard } from './FloatingKeyboard';
+import { PanelButtonGrid } from './PanelButtonGrid';
 import { MapRoom } from '../services/mapService';
 
 interface ChatSectionProps {
@@ -30,6 +34,8 @@ interface ChatSectionProps {
   energyMax: number;
   currentRoom: MapRoom | null;
   nearbyRooms: MapRoom[];
+  panelButtons?: Array<{ id: string; col: number; row: number; label: string; command: string; color: string; opacity: number }>;
+  gridSize?: number;
   onSelectChannel: (ch: string | null) => void;
   onAliasChange: (ch: string, alias: string) => void;
   onInputChange: (text: string) => void;
@@ -40,6 +46,8 @@ interface ChatSectionProps {
   onHistoryNavigate?: (command: string) => void;
   walking?: boolean;
   onStop?: () => void;
+  useCustomKeyboard?: boolean;
+  onCloseKeyboard?: () => void;
 }
 
 export function ChatSection({
@@ -57,6 +65,8 @@ export function ChatSection({
   energyMax,
   currentRoom,
   nearbyRooms,
+  panelButtons = [],
+  gridSize = 9,
   onSelectChannel,
   onAliasChange,
   onInputChange,
@@ -67,12 +77,16 @@ export function ChatSection({
   onHistoryNavigate,
   walking,
   onStop,
+  useCustomKeyboard = true,
+  onCloseKeyboard,
 }: ChatSectionProps) {
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);
   const messagesListRef = useRef<FlatList>(null);
   const [filteredMessages, setFilteredMessages] = useState<ChannelMessage[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+  const [inputActive, setInputActive] = useState(false);
 
   // Filter messages based on active channel
   useEffect(() => {
@@ -152,6 +166,14 @@ export function ChatSection({
 
   return (
     <View style={[styles.container, { height }]}>
+      {/* Close keyboard on tap outside input */}
+      {inputActive && useCustomKeyboard && (
+        <Pressable
+          style={StyleSheet.absoluteFillObject}
+          onPress={() => setInputActive(false)}
+        />
+      )}
+
       {/* Channel Tabs */}
       <View style={styles.tabsWrapper}>
         <ChannelTabs
@@ -166,9 +188,18 @@ export function ChatSection({
         />
       </View>
 
-      {/* Messages List or Map */}
-      <View style={styles.messagesList}>
-        {activeChannel === 'Mapa' ? (
+      {/* Messages List, Panel, or Map */}
+      <Pressable
+        style={[styles.messagesList, { maxHeight: 150 }]}
+        onPress={() => inputActive && setInputActive(false)}
+      >
+        {activeChannel === 'Botones' ? (
+          <PanelButtonGrid
+            buttons={panelButtons}
+            gridSize={gridSize}
+            onSendCommand={onSendCommand}
+          />
+        ) : activeChannel === 'Mapa' ? (
           <MiniMap
             currentRoom={currentRoom}
             nearbyRooms={nearbyRooms}
@@ -195,7 +226,7 @@ export function ChatSection({
           />
         )}
 
-      </View>
+      </Pressable>
 
       {/* Vital Bars */}
       <View style={styles.vitalBarsContainer}>
@@ -220,6 +251,9 @@ export function ChatSection({
           onSubmitEditing={handleSend}
           blurOnSubmit={false}
           returnKeyType="send"
+          showSoftInputOnFocus={!useCustomKeyboard}
+          onFocus={() => setInputActive(true)}
+          onBlur={() => setInputActive(false)}
         />
         <TouchableOpacity style={styles.historyButton} onPress={handleHistoryNext}>
           <Text style={styles.historyButtonText}>▼</Text>
@@ -228,11 +262,31 @@ export function ChatSection({
           <Text style={styles.sendButtonText}>›</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Custom Keyboard - always visible */}
+      {useCustomKeyboard && (
+        <View style={styles.keyboardContainer}>
+          <FloatingKeyboard
+            onKeyPress={(char) => onInputChange(inputText + char)}
+            onBackspace={() => {
+              if (inputText.length === 0) {
+                setInputActive(false);
+              } else {
+                onInputChange(inputText.slice(0, -1));
+              }
+            }}
+            onEnter={handleSend}
+          />
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardContainer: {
+    backgroundColor: '#1a1a1a',
+  },
   container: {
     flex: 1,
     flexDirection: 'column',

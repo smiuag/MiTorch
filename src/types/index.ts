@@ -14,6 +14,15 @@ export interface ServerProfile {
       color: string;
       opacity: number;
     }>;
+    panelButtons: Array<{
+      id: string;
+      col: number;
+      row: number;
+      label: string;
+      command: string;
+      color: string;
+      opacity: number;
+    }>;
     gridSize: number;
   };
   channelAliases?: Record<string, string>;

@@ -25,8 +25,8 @@ function genId(): string {
 
 export function LayoutEditorScreen({ navigation, route }: Props) {
   const { width, height } = useWindowDimensions();
-  const [layout, setLayout] = useState<ButtonLayout>({ buttons: [], gridSize: 11 });
-  const [originalLayout, setOriginalLayout] = useState<ButtonLayout>({ buttons: [], gridSize: 11 });
+  const [layout, setLayout] = useState<ButtonLayout>({ buttons: [], panelButtons: [], gridSize: 9 });
+  const [originalLayout, setOriginalLayout] = useState<ButtonLayout>({ buttons: [], panelButtons: [], gridSize: 9 });
   const [modalState, setModalState] = useState<ModalState>(null);
   const [editLabel, setEditLabel] = useState('');
   const [editCommand, setEditCommand] = useState('');
@@ -134,6 +134,7 @@ export function LayoutEditorScreen({ navigation, route }: Props) {
     const defaultButtons = createDefaultButtons(gridSize);
     const newLayout: ButtonLayout = {
       buttons: defaultButtons,
+      panelButtons: [],
       gridSize,
     };
     setLayout(newLayout);

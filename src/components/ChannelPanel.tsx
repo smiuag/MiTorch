@@ -57,8 +57,8 @@ export function ChannelTabs({
   const [editAlias, setEditAlias] = useState('');
   const sortedChannels = sortChannels(channels);
 
-  // Add "Todos" as the first channel and "Mapa" as the last
-  const allChannels = ['Todos', ...sortedChannels, 'Mapa'];
+  // Add "Botones", "Todos" as first channels and "Mapa" as the last
+  const allChannels = ['Botones', 'Todos', ...sortedChannels, 'Mapa'];
 
   return (
     <>
