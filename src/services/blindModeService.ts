@@ -1,5 +1,29 @@
 import { AccessibilityInfo } from 'react-native';
+import { Audio } from 'expo-av';
 import blindModeFiltersData from '../config/blindModeFilters.json';
+
+// Static sound asset mapping
+const SOUND_ASSETS: Record<string, any> = {
+  'bloqueos/bloqueo-termina.wav': require('../assets/sounds/bloqueos/bloqueo-termina.wav'),
+  'combate/pierdes-concentracion.wav': require('../assets/sounds/combate/pierdes-concentracion.wav'),
+  'hechizos/preparas.wav': require('../assets/sounds/hechizos/preparas.wav'),
+  'hechizos/formulando.wav': require('../assets/sounds/hechizos/formulando.wav'),
+  'hechizos/resiste.wav': require('../assets/sounds/hechizos/resiste.wav'),
+  'hechizos/fuera-rango.wav': require('../assets/sounds/hechizos/fuera-rango.wav'),
+  'hechizos/imagenes-off.wav': require('../assets/sounds/hechizos/imagenes-off.wav'),
+  'hechizos/imagenes-up.wav': require('../assets/sounds/hechizos/imagenes-up.wav'),
+  'hechizos/piel-piedra-on.wav': require('../assets/sounds/hechizos/piel-piedra-on.wav'),
+  'combate/impacto.wav': require('../assets/sounds/combate/impacto.wav'),
+  'combate/esquivado.wav': require('../assets/sounds/combate/esquivado.wav'),
+  'combate/bloqueado.wav': require('../assets/sounds/combate/bloqueado.wav'),
+  'combate/objetivo-perdido.wav': require('../assets/sounds/combate/objetivo-perdido.wav'),
+  'combate/interrumpido.wav': require('../assets/sounds/combate/interrumpido.wav'),
+  'combate/critico.wav': require('../assets/sounds/combate/critico.wav'),
+  'eventos/muerte.wav': require('../assets/sounds/eventos/muerte.wav'),
+  'eventos/victoria.wav': require('../assets/sounds/eventos/victoria.wav'),
+  'eventos/xp.wav': require('../assets/sounds/eventos/xp.wav'),
+  'eventos/curacion.wav': require('../assets/sounds/eventos/curacion.wav'),
+};
 
 export interface FilterAction {
   type: 'announce' | 'silence' | 'reduce' | 'filter';
@@ -211,14 +235,30 @@ class BlindModeService {
 
   /**
    * Play a sound file from the assets directory
-   * Disabled for now - sound support requires bundled assets
    */
   async playSound(soundPath: string) {
     try {
-      if (!soundPath) return;
-      console.log(`[BlindMode] Sound trigger (not yet implemented): ${soundPath}`);
+      if (!soundPath || !SOUND_ASSETS[soundPath]) {
+        console.warn(`[BlindMode] Sound not found: ${soundPath}`);
+        return;
+      }
+
+      // Set audio mode for playback
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+      });
+
+      // Load and play sound
+      const { sound } = await Audio.Sound.createAsync(SOUND_ASSETS[soundPath]);
+      await sound.playAsync();
+
+      // Unload after a delay to prevent memory leaks
+      setTimeout(() => {
+        sound.unloadAsync().catch(() => {});
+      }, 5000);
     } catch (e) {
-      console.warn(`[BlindMode] Error in playSound:`, e);
+      console.warn(`[BlindMode] Error playing sound ${soundPath}:`, e);
     }
   }
 
