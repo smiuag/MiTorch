@@ -89,6 +89,64 @@ export function SettingsScreen({ navigation }: Props) {
           </View>
         </View>
 
+        {/* UI Mode Section */}
+        <View style={[styles.sectionHeader, styles.marginTop]}>
+          <Text style={styles.sectionTitle}>Interfaz</Text>
+        </View>
+
+        <View style={styles.modeRow}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Modo de interfaz</Text>
+            <Text style={styles.rowDesc}>
+              Mostrar todos los controles o solo lo esencial.
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.modeButtonsRow}>
+          <TouchableOpacity
+            style={[
+              styles.modeButton,
+              settings.uiMode === 'completo' && styles.modeButtonActive,
+            ]}
+            onPress={() => updateSetting('uiMode', 'completo')}
+            accessible={true}
+            accessibilityLabel="Complete UI"
+            accessibilityRole="radio"
+            accessibilityState={{ selected: settings.uiMode === 'completo' }}
+          >
+            <Text
+              style={[
+                styles.modeButtonText,
+                settings.uiMode === 'completo' && styles.modeButtonTextActive,
+              ]}
+            >
+              Completo
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.modeButton,
+              settings.uiMode === 'minimalista' && styles.modeButtonActive,
+            ]}
+            onPress={() => updateSetting('uiMode', 'minimalista')}
+            accessible={true}
+            accessibilityLabel="Minimalist UI"
+            accessibilityRole="radio"
+            accessibilityState={{ selected: settings.uiMode === 'minimalista' }}
+          >
+            <Text
+              style={[
+                styles.modeButtonText,
+                settings.uiMode === 'minimalista' && styles.modeButtonTextActive,
+              ]}
+            >
+              Minimalista
+            </Text>
+          </TouchableOpacity>
+        </View>
+
       </ScrollView>
 
     </SafeAreaView>
@@ -205,5 +263,40 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     minWidth: 30,
     textAlign: 'center',
+  },
+  modeRow: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    marginBottom: 12,
+  },
+  modeButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modeButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#1a1a1a',
+    borderWidth: 2,
+    borderColor: '#333',
+    alignItems: 'center',
+  },
+  modeButtonActive: {
+    backgroundColor: '#0a3a0a',
+    borderColor: '#0c0',
+  },
+  modeButtonText: {
+    color: '#666',
+    fontSize: 13,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+  },
+  modeButtonTextActive: {
+    color: '#0c0',
   },
 });

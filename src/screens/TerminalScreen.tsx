@@ -54,6 +54,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [searchVisible, setSearchVisible] = useState(false);
   const [walking, setWalking] = useState(false);
   const [fontSize, setFontSize] = useState(14);
+  const [uiMode, setUiMode] = useState<'completo' | 'minimalista'>('completo');
   const [buttonLayout, setButtonLayout] = useState<ButtonLayout | null>(null);
   const [editButtonVisible, setEditButtonVisible] = useState(false);
   const [editButtonCol, setEditButtonCol] = useState(0);
@@ -88,6 +89,9 @@ export function TerminalScreen({ route, navigation }: Props) {
         if (settings.fontSize) {
           setFontSize(settings.fontSize);
           fontSizeRef.current = settings.fontSize;
+        }
+        if (settings.uiMode) {
+          setUiMode(settings.uiMode);
         }
       })();
     }, [])
@@ -684,17 +688,19 @@ export function TerminalScreen({ route, navigation }: Props) {
             </TouchableOpacity>
           )}
 
-          {/* MiniMap overlay */}
-          <View style={styles.miniMapContainer} pointerEvents="box-none">
-            <MiniMap
-              currentRoom={currentRoom}
-              nearbyRooms={nearbyRooms}
-              visible={mapVisible}
-              onToggle={() => setMapVisible(!mapVisible)}
-              walking={walking}
-              onStop={stopWalk}
-            />
-          </View>
+          {/* MiniMap overlay - Hidden in minimalist mode */}
+          {uiMode === 'completo' && (
+            <View style={styles.miniMapContainer} pointerEvents="box-none">
+              <MiniMap
+                currentRoom={currentRoom}
+                nearbyRooms={nearbyRooms}
+                visible={mapVisible}
+                onToggle={() => setMapVisible(!mapVisible)}
+                walking={walking}
+                onStop={stopWalk}
+              />
+            </View>
+          )}
         </View>
 
         {/* VitalBars */}
@@ -776,19 +782,21 @@ export function TerminalScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* ButtonGrid */}
-        <View style={[styles.buttonGridSection, { height: buttonGridHeight, paddingBottom: insets.bottom }]}>
-          <ButtonGrid
-            buttons={buttonLayout?.buttons || []}
-            onSendCommand={sendCommand}
-            onAddTextButton={handleAddTextButton}
-            onEditButton={handleEditButton}
-            moveMode={moveMode}
-            sourceCol={sourceCol}
-            sourceRow={sourceRow}
-            onSwapButtons={handleSwapButtons}
-          />
-        </View>
+        {/* ButtonGrid - Hidden in minimalist mode */}
+        {uiMode === 'completo' && (
+          <View style={[styles.buttonGridSection, { height: buttonGridHeight, paddingBottom: insets.bottom }]}>
+            <ButtonGrid
+              buttons={buttonLayout?.buttons || []}
+              onSendCommand={sendCommand}
+              onAddTextButton={handleAddTextButton}
+              onEditButton={handleEditButton}
+              moveMode={moveMode}
+              sourceCol={sourceCol}
+              sourceRow={sourceRow}
+              onSwapButtons={handleSwapButtons}
+            />
+          </View>
+        )}
       </View>
       ) : (
       // HORIZONTAL LAYOUT
@@ -840,23 +848,25 @@ export function TerminalScreen({ route, navigation }: Props) {
           />
         </View>
 
-        {/* Right Panel - ButtonGrid only */}
-        <View style={{ flex: 1, flexDirection: 'column' }}>
-          {/* ButtonGrid Horizontal (5 cols x 9 rows) */}
-          <View style={[styles.buttonGridSection, { flex: 1, paddingBottom: insets.bottom }]}>
-            <ButtonGrid
-              buttons={buttonLayout?.buttons || []}
-              onSendCommand={sendCommand}
-              onAddTextButton={handleAddTextButton}
-              onEditButton={handleEditButton}
-              moveMode={moveMode}
-              sourceCol={sourceCol}
-              sourceRow={sourceRow}
-              onSwapButtons={handleSwapButtons}
-              horizontalMode={{cols: 6, cellSize: horizontalCellSize}}
-            />
+        {/* Right Panel - ButtonGrid only - Hidden in minimalist mode */}
+        {uiMode === 'completo' && (
+          <View style={{ flex: 1, flexDirection: 'column' }}>
+            {/* ButtonGrid Horizontal (5 cols x 9 rows) */}
+            <View style={[styles.buttonGridSection, { flex: 1, paddingBottom: insets.bottom }]}>
+              <ButtonGrid
+                buttons={buttonLayout?.buttons || []}
+                onSendCommand={sendCommand}
+                onAddTextButton={handleAddTextButton}
+                onEditButton={handleEditButton}
+                moveMode={moveMode}
+                sourceCol={sourceCol}
+                sourceRow={sourceRow}
+                onSwapButtons={handleSwapButtons}
+                horizontalMode={{cols: 6, cellSize: horizontalCellSize}}
+              />
+            </View>
           </View>
-        </View>
+        )}
       </View>
       )}
 
