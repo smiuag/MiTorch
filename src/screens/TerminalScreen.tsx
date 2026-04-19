@@ -578,9 +578,6 @@ export function TerminalScreen({ route, navigation }: Props) {
   };
 
   const availableHeight = height - insets.top - insets.bottom;
-  const isHorizontal = width > height;
-
-  // Vertical layout
   const vitalsHeight = 35;
   const inputHeight = 30;
   const cellSize = width / GRID_COLS;
@@ -588,13 +585,6 @@ export function TerminalScreen({ route, navigation }: Props) {
   const BUTTON_GAP = 3; // gap between rows
   const BUTTON_GAPS_TOTAL = (GRID_ROWS - 1) * BUTTON_GAP; // gaps between rows
   const buttonGridHeight = GRID_ROWS * cellSize + BUTTON_GAPS_TOTAL + BUTTON_PADDING_VERTICAL;
-
-  // Horizontal layout
-  const horizontalVitalsWidth = 50;
-  const horizontalCellSize = height / GRID_COLS;
-  const horizontalButtonGridWidth = GRID_ROWS * horizontalCellSize + BUTTON_GAPS_TOTAL + 10;
-  const horizontalRightPanelWidth = horizontalButtonGridWidth + horizontalVitalsWidth;
-  const horizontalTerminalWidth = width - horizontalRightPanelWidth - insets.left - insets.right;
 
   const handleUpArrow = () => {
     if (historyIndex < commandHistory.length - 1) {
@@ -617,10 +607,8 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={[styles.container, isHorizontal && styles.containerHorizontal]}>
-        {!isHorizontal ? (
-          <>
-        {/* VERTICAL LAYOUT */}
+      <View style={styles.container}>
+        {/* Terminal (flex 1 - takes remaining space) */}
         <View style={[styles.terminalSection, { flex: 1 }]}>
           <FlatList
             scrollToEndDelay={100}
@@ -731,125 +719,6 @@ export function TerminalScreen({ route, navigation }: Props) {
             onSwapButtons={handleSwapButtons}
           />
         </View>
-          </>
-        ) : (
-          <>
-        {/* HORIZONTAL LAYOUT */}
-        {/* Terminal Left */}
-        <View style={[styles.terminalSection, { width: horizontalTerminalWidth, flex: 0 }]}>
-          <FlatList
-            scrollToEndDelay={100}
-            ref={flatListRef}
-            data={lines}
-            keyExtractor={item => String(item.id)}
-            renderItem={({ item }) => (
-              <View style={styles.lineContainer} key={item.id}>
-                <AnsiText spans={item.spans} fontSize={fontSize} lineId={item.id} />
-              </View>
-            )}
-            scrollEventThrottle={16}
-            onScroll={handleFlatListScroll}
-            onScrollEndDrag={handleFlatListScroll}
-            style={styles.flatList}
-          />
-
-          {showScrollToBottom && (
-            <TouchableOpacity style={styles.scrollToBottomButton} onPress={handleScrollToBottom}>
-              <Text style={styles.scrollToBottomText}>↓</Text>
-            </TouchableOpacity>
-          )}
-
-          <View style={styles.miniMapContainer} pointerEvents="box-none">
-            <MiniMap
-              currentRoom={currentRoom}
-              nearbyRooms={nearbyRooms}
-              visible={mapVisible}
-              onToggle={() => setMapVisible(!mapVisible)}
-              walking={walking}
-              onStop={stopWalk}
-            />
-          </View>
-        </View>
-
-        {/* Middle Panel - Vitals Vertical */}
-        <View style={[styles.vitalsSection, { width: horizontalVitalsWidth, height: availableHeight, flexDirection: 'column' }]}>
-          <VitalBars
-            hp={hp}
-            hpMax={hpMax}
-            energy={energy}
-            energyMax={energyMax}
-            orientation="vertical"
-          />
-        </View>
-
-        {/* Right Panel */}
-        <View style={{ flex: 1, flexDirection: 'column' }}>
-          {/* Input Row */}
-          <View style={[styles.inputSection, { height: inputHeight }]}>
-            <TouchableOpacity
-              style={styles.arrowButton}
-              onPress={handleUpArrow}
-            >
-              <Text style={styles.arrowText}>▲</Text>
-            </TouchableOpacity>
-
-            {connected ? (
-              <>
-                <TextInput
-                  ref={textInputRef}
-                  style={styles.input}
-                  placeholder="Comando..."
-                  placeholderTextColor="#888"
-                  value={inputText}
-                  onChangeText={(text) => {
-                    setInputText(text);
-                    setHistoryIndex(-1);
-                  }}
-                  onSubmitEditing={handleSendInput}
-                  returnKeyType="send"
-                  autoCapitalize="none"
-                />
-
-                <TouchableOpacity
-                  style={styles.sendButton}
-                  onPress={handleSendInput}
-                >
-                  <Text style={styles.sendButtonText}>›</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <TouchableOpacity
-                style={[styles.input, styles.reconnectButton]}
-                onPress={() => telnetRef.current?.connect()}
-              >
-                <Text style={styles.reconnectText}>Reconectar</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity
-              style={styles.arrowButton}
-              onPress={handleDownArrow}
-            >
-              <Text style={styles.arrowText}>▼</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* ButtonGrid Vertical */}
-          <View style={[styles.buttonGridSection, { flex: 1, paddingBottom: insets.bottom }]}>
-            <ButtonGrid
-              buttons={buttonLayout?.buttons || []}
-              onSendCommand={sendCommand}
-              onAddTextButton={handleAddTextButton}
-              onEditButton={handleEditButton}
-              moveMode={moveMode}
-              sourceCol={sourceCol}
-              sourceRow={sourceRow}
-              onSwapButtons={handleSwapButtons}
-            />
-          </View>
-        </View>
-          </>
-        )}
       </View>
 
       {/* Alias Wizard Modal */}
@@ -888,9 +757,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0a0a0a',
     flexDirection: 'column',
-  },
-  containerHorizontal: {
-    flexDirection: 'row',
   },
   terminalSection: {
     flex: 1,

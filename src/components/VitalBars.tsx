@@ -12,32 +12,19 @@ interface VitalBarsProps {
 export function VitalBars({ hp, hpMax, energy, energyMax, orientation = 'horizontal' }: VitalBarsProps) {
   const hpPct = hpMax > 0 ? Math.max(0, Math.min(1, hp / hpMax)) : 0;
   const energyPct = energyMax > 0 ? Math.max(0, Math.min(1, energy / energyMax)) : 0;
-  const isVertical = orientation === 'vertical';
 
   return (
-    <View style={[styles.container, { flex: 1, flexDirection: isVertical ? 'column' : 'row' }]}>
+    <View style={[styles.container, { flex: 1 }]}>
       {/* HP bar */}
       <View style={[styles.barBg, styles.hpBg, { flex: 1 }]}>
-        <View style={[
-          styles.barFill,
-          styles.hpFill,
-          isVertical
-            ? { height: `${hpPct * 100}%`, width: '100%' }
-            : { width: `${hpPct * 100}%`, height: '100%' }
-        ]} />
-        <Text style={[styles.label, isVertical && styles.labelVertical]}>{hp}/{hpMax}</Text>
+        <View style={[styles.barFill, styles.hpFill, { width: `${hpPct * 100}%` }]} />
+        <Text style={styles.label}>{hp}/{hpMax}</Text>
       </View>
 
       {/* Energy bar */}
       <View style={[styles.barBg, styles.energyBg, { flex: 1 }]}>
-        <View style={[
-          styles.barFill,
-          styles.energyFill,
-          isVertical
-            ? { height: `${energyPct * 100}%`, width: '100%' }
-            : { width: `${energyPct * 100}%`, height: '100%' }
-        ]} />
-        <Text style={[styles.label, isVertical && styles.labelVertical]}>{energy}/{energyMax}</Text>
+        <View style={[styles.barFill, styles.energyFill, { width: `${energyPct * 100}%` }]} />
+        <Text style={styles.label}>{energy}/{energyMax}</Text>
       </View>
     </View>
   );
@@ -79,9 +66,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     zIndex: 1,
     fontWeight: 'bold',
-  },
-  labelVertical: {
-    fontSize: 8,
-    transform: [{ rotate: '-90deg' }],
   },
 });
