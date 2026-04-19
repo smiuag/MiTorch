@@ -28,6 +28,7 @@ import { loadSettings } from '../storage/settingsStorage';
 import { MapService, MapRoom } from '../services/mapService';
 import { ButtonLayout, createDefaultLayout, loadLayout, saveLayout } from '../storage/layoutStorage';
 import { loadServers, saveServers } from '../storage/serverStorage';
+import { blindModeService } from '../services/blindModeService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Terminal'>;
 
@@ -96,6 +97,13 @@ export function TerminalScreen({ route, navigation }: Props) {
           setUiMode(settings.uiMode);
         }
       })();
+
+      // Reset blind mode service history periodically
+      const historyResetInterval = setInterval(() => {
+        blindModeService.resetHistory();
+      }, 60000); // Every minute
+
+      return () => clearInterval(historyResetInterval);
     }, [])
   );
 
@@ -145,13 +153,38 @@ export function TerminalScreen({ route, navigation }: Props) {
     // Skip lines that are only template variables like <VERSION>, <NAME>, etc
     if (/^\s*<[A-Z_]+>\s*$/.test(text)) return;
 
-    const spans = parseAnsi(text);
+    // Blind mode: Process with filters
+    let displayText = text;
+    let shouldAnnounce = false;
+    let announcementText = '';
+
+    if (uiMode === 'blind') {
+      const result = blindModeService.processLine(text);
+
+      // Skip line if filter says to silence it
+      if (!result.shouldDisplay) return;
+
+      displayText = result.modifiedText;
+
+      // Handle announcements from filters
+      if (result.announcement) {
+        shouldAnnounce = true;
+        announcementText = result.announcement;
+      }
+    }
+
+    const spans = parseAnsi(displayText);
     const newLine: MudLine = { id: lineIdCounter++, spans };
     linesRef.current = [...linesRef.current, newLine];
     if (linesRef.current.length > MAX_LINES) {
       linesRef.current = linesRef.current.slice(-MAX_LINES);
     }
     setLines([...linesRef.current]);
+
+    // Announce filtered content in blind mode
+    if (shouldAnnounce && uiMode === 'blind') {
+      blindModeService.announceMessage(announcementText, 'normal');
+    }
 
     if (isAtBottomRef.current) {
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);

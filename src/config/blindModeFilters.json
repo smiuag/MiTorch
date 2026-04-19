@@ -1,0 +1,104 @@
+{
+  "description": "Blind Mode filters - Similar to VipMUD configuration",
+  "version": "1.0",
+  "filters": {
+    "bloqueos": {
+      "enabled": true,
+      "description": "Silencia mensajes de bloqueo repetitivos",
+      "patterns": [
+        {
+          "regex": "El bloqueo '.*' termina",
+          "action": "announce",
+          "message": "Bloqueo terminado",
+          "announce": true,
+          "silence": false
+        }
+      ]
+    },
+    "combate": {
+      "enabled": true,
+      "description": "Filtros de mensajes de combate",
+      "patterns": [
+        {
+          "regex": "Alcanzas.*a .* con tu maniobra de .*",
+          "action": "announce",
+          "message": "Golpe exitoso",
+          "silence": false
+        },
+        {
+          "regex": ".*logra esquivar.*tu maniobra de .*",
+          "action": "announce",
+          "message": "Esquivado",
+          "silence": false
+        },
+        {
+          "regex": ".*logra parar.*tu maniobra de .*",
+          "action": "announce",
+          "message": "Bloqueado",
+          "silence": false
+        },
+        {
+          "regex": "Tu maniobra de .* se ve interrumpida",
+          "action": "announce",
+          "message": "Interrupción",
+          "silence": false
+        }
+      ]
+    },
+    "ambiente": {
+      "enabled": true,
+      "description": "Filtra mensajes repetitivos de ambiente",
+      "patterns": [
+        {
+          "regex": "^\\[.*\\]$",
+          "action": "reduce",
+          "description": "Reduce líneas entre corchetes (ambientación)",
+          "silence": false,
+          "frequency": "high"
+        }
+      ]
+    },
+    "movimiento": {
+      "enabled": true,
+      "description": "Anuncia cambios de ubicación",
+      "patterns": [
+        {
+          "regex": "^(Entras|Arrastras|Subes|Bajas|Cruzas).*",
+          "action": "announce",
+          "message": "Movimiento",
+          "announce": true,
+          "silence": false
+        }
+      ]
+    },
+    "eventos_importantes": {
+      "enabled": true,
+      "description": "Anuncia eventos importantes",
+      "patterns": [
+        {
+          "regex": "\\[muerte\\]|\\[muerte-jugador\\]|has muerto",
+          "action": "announce",
+          "message": "Muerte",
+          "announce": true,
+          "silence": false,
+          "priority": "high"
+        },
+        {
+          "regex": "\\[victoria\\]|objetivo destruido",
+          "action": "announce",
+          "message": "Victoria",
+          "announce": true,
+          "silence": false,
+          "priority": "high"
+        },
+        {
+          "regex": "Ganas .* puntos de experiencia",
+          "action": "announce",
+          "message": "Experiencia ganada",
+          "announce": true,
+          "silence": false
+        }
+      ]
+    }
+  }
+}
