@@ -1,29 +1,33 @@
 import { AccessibilityInfo } from 'react-native';
 import { Audio } from 'expo-av';
+import * as Asset from 'expo-asset';
 import blindModeFiltersData from '../config/blindModeFilters.json';
 
-// Static sound asset mapping
-const SOUND_ASSETS: Record<string, any> = {
-  'bloqueos/bloqueo-termina.wav': require('../assets/sounds/bloqueos/bloqueo-termina.wav'),
-  'combate/pierdes-concentracion.wav': require('../assets/sounds/combate/pierdes-concentracion.wav'),
-  'hechizos/preparas.wav': require('../assets/sounds/hechizos/preparas.wav'),
-  'hechizos/formulando.wav': require('../assets/sounds/hechizos/formulando.wav'),
-  'hechizos/resiste.wav': require('../assets/sounds/hechizos/resiste.wav'),
-  'hechizos/fuera-rango.wav': require('../assets/sounds/hechizos/fuera-rango.wav'),
-  'hechizos/imagenes-off.wav': require('../assets/sounds/hechizos/imagenes-off.wav'),
-  'hechizos/imagenes-up.wav': require('../assets/sounds/hechizos/imagenes-up.wav'),
-  'hechizos/piel-piedra-on.wav': require('../assets/sounds/hechizos/piel-piedra-on.wav'),
-  'combate/impacto.wav': require('../assets/sounds/combate/impacto.wav'),
-  'combate/esquivado.wav': require('../assets/sounds/combate/esquivado.wav'),
-  'combate/bloqueado.wav': require('../assets/sounds/combate/bloqueado.wav'),
-  'combate/objetivo-perdido.wav': require('../assets/sounds/combate/objetivo-perdido.wav'),
-  'combate/interrumpido.wav': require('../assets/sounds/combate/interrumpido.wav'),
-  'combate/critico.wav': require('../assets/sounds/combate/critico.wav'),
-  'eventos/muerte.wav': require('../assets/sounds/eventos/muerte.wav'),
-  'eventos/victoria.wav': require('../assets/sounds/eventos/victoria.wav'),
-  'eventos/xp.wav': require('../assets/sounds/eventos/xp.wav'),
-  'eventos/curacion.wav': require('../assets/sounds/eventos/curacion.wav'),
+// Sound asset definitions - loaded on demand
+const SOUND_SOURCES: Record<string, () => any> = {
+  'bloqueos/bloqueo-termina.wav': () => require('../assets/sounds/bloqueos/bloqueo-termina.wav'),
+  'combate/pierdes-concentracion.wav': () => require('../assets/sounds/combate/pierdes-concentracion.wav'),
+  'hechizos/preparas.wav': () => require('../assets/sounds/hechizos/preparas.wav'),
+  'hechizos/formulando.wav': () => require('../assets/sounds/hechizos/formulando.wav'),
+  'hechizos/resiste.wav': () => require('../assets/sounds/hechizos/resiste.wav'),
+  'hechizos/fuera-rango.wav': () => require('../assets/sounds/hechizos/fuera-rango.wav'),
+  'hechizos/imagenes-off.wav': () => require('../assets/sounds/hechizos/imagenes-off.wav'),
+  'hechizos/imagenes-up.wav': () => require('../assets/sounds/hechizos/imagenes-up.wav'),
+  'hechizos/piel-piedra-on.wav': () => require('../assets/sounds/hechizos/piel-piedra-on.wav'),
+  'combate/impacto.wav': () => require('../assets/sounds/combate/impacto.wav'),
+  'combate/esquivado.wav': () => require('../assets/sounds/combate/esquivado.wav'),
+  'combate/bloqueado.wav': () => require('../assets/sounds/combate/bloqueado.wav'),
+  'combate/objetivo-perdido.wav': () => require('../assets/sounds/combate/objetivo-perdido.wav'),
+  'combate/interrumpido.wav': () => require('../assets/sounds/combate/interrumpido.wav'),
+  'combate/critico.wav': () => require('../assets/sounds/combate/critico.wav'),
+  'eventos/muerte.wav': () => require('../assets/sounds/eventos/muerte.wav'),
+  'eventos/victoria.wav': () => require('../assets/sounds/eventos/victoria.wav'),
+  'eventos/xp.wav': () => require('../assets/sounds/eventos/xp.wav'),
+  'eventos/curacion.wav': () => require('../assets/sounds/eventos/curacion.wav'),
 };
+
+// Cache for loaded assets
+const loadedAssets = new Map<string, string>();
 
 export interface FilterAction {
   type: 'announce' | 'silence' | 'reduce' | 'filter';
@@ -238,7 +242,7 @@ class BlindModeService {
    */
   async playSound(soundPath: string) {
     try {
-      if (!soundPath || !SOUND_ASSETS[soundPath]) {
+      if (!soundPath || !SOUND_SOURCES[soundPath]) {
         console.warn(`[BlindMode] Sound not found: ${soundPath}`);
         return;
       }
@@ -249,8 +253,26 @@ class BlindModeService {
         staysActiveInBackground: false,
       });
 
+      // Load asset using lazy evaluation
+      let assetUri = loadedAssets.get(soundPath);
+      if (!assetUri) {
+        try {
+          const asset = Asset.fromModule(SOUND_SOURCES[soundPath]());
+          await asset.downloadAsync();
+          assetUri = asset.localUri || asset.uri;
+          if (assetUri) {
+            loadedAssets.set(soundPath, assetUri);
+          }
+        } catch (e) {
+          console.warn(`[BlindMode] Failed to load asset ${soundPath}:`, e);
+          return;
+        }
+      }
+
+      if (!assetUri) return;
+
       // Load and play sound
-      const { sound } = await Audio.Sound.createAsync(SOUND_ASSETS[soundPath]);
+      const { sound } = await Audio.Sound.createAsync({ uri: assetUri });
       await sound.playAsync();
 
       // Unload after a delay to prevent memory leaks
