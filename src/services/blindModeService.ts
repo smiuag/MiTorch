@@ -1,6 +1,5 @@
 import { AccessibilityInfo } from 'react-native';
 import { Audio } from 'expo-av';
-import * as Asset from 'expo-asset';
 import blindModeFiltersData from '../config/blindModeFilters.json';
 
 const soundModules = {
@@ -25,7 +24,6 @@ const soundModules = {
   'eventos/curacion.wav': require('../../assets/sounds/eventos/curacion.wav'),
 } as const;
 
-const loadedSounds = new Map<string, string>();
 
 export interface FilterAction {
   type: 'announce' | 'silence' | 'reduce' | 'filter';
@@ -272,7 +270,7 @@ class BlindModeService {
       }
 
       if (!(soundPath in soundModules)) {
-        console.log(`[SOUND] ✗ soundPath="${soundPath}" NO existe en soundModules. Disponibles: ${Object.keys(soundModules).join(', ')}`);
+        console.log(`[SOUND] ✗ soundPath="${soundPath}" NO existe en soundModules`);
         return;
       }
 
@@ -284,35 +282,16 @@ class BlindModeService {
         staysActiveInBackground: false,
       });
 
-      // Load sound asset if not cached
-      let uri = loadedSounds.get(soundPath);
-      if (!uri) {
-        console.log(`[SOUND] Cargando asset para "${soundPath}"...`);
-        const module = soundModules[soundPath as keyof typeof soundModules];
-        const asset = Asset.fromModule(module);
-        await asset.downloadAsync();
-        uri = asset.localUri || asset.uri;
-        if (uri) {
-          console.log(`[SOUND] ✓ Asset descargado: "${uri}"`);
-          loadedSounds.set(soundPath, uri);
-        } else {
-          console.log(`[SOUND] ✗ No se obtuvo URI del asset`);
-        }
-      } else {
-        console.log(`[SOUND] Usando URI en caché: "${uri}"`);
-      }
+      // Get the module directly from require
+      const module = soundModules[soundPath as keyof typeof soundModules];
 
-      if (!uri) {
-        console.log(`[SOUND] ✗ URI es null/undefined, no se puede reproducir`);
-        return;
-      }
-
-      // Play sound
-      console.log(`[SOUND] Reproduciendo desde: "${uri}"`);
-      const { sound } = await Audio.Sound.createAsync({ uri });
+      // Play sound directly from module
+      console.log(`[SOUND] Reproduciendo: "${soundPath}"`);
+      const { sound } = await Audio.Sound.createAsync(module);
       await sound.playAsync();
-      console.log(`[SOUND] ✓ Reproduciendo "${soundPath}"`);
+      console.log(`[SOUND] ✓ Sonido reproduciendo: "${soundPath}"`);
 
+      // Unload after playback completes
       setTimeout(() => {
         sound.unloadAsync().catch(() => {});
       }, 5000);
