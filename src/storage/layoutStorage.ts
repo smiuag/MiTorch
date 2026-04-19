@@ -10,6 +10,7 @@ export interface LayoutButton {
   textColor: string;
   addText?: boolean;
   secondaryCommand?: string;
+  locked?: boolean;
 }
 
 export interface ButtonLayout {
@@ -40,18 +41,26 @@ export function createDefaultLayout(): ButtonLayout {
     { id: genId(), col: 7, row: 0, label: 'IR', command: 'irsala', color: '#662266', textColor: '#fff', addText: true },
     { id: genId(), col: 8, row: 0, label: 'LOC', command: 'locate', color: '#223366', textColor: '#fff' },
     // Row 1: (empty)
-    // Row 2: _, _, _, NO, N, NE, _, _, _
-    { id: genId(), col: 3, row: 2, label: 'NO', command: 'noroeste', color: '#662222', textColor: '#fff' },
-    { id: genId(), col: 4, row: 2, label: 'N', command: 'norte', color: '#662222', textColor: '#fff' },
-    { id: genId(), col: 5, row: 2, label: 'NE', command: 'noreste', color: '#662222', textColor: '#fff' },
-    // Row 3: _, _, _, O, _, E, _, _, _
-    { id: genId(), col: 3, row: 3, label: 'O', command: 'oeste', color: '#662222', textColor: '#fff' },
-    { id: genId(), col: 5, row: 3, label: 'E', command: 'este', color: '#662222', textColor: '#fff' },
-    // Row 4: _, _, _, SO, S, SE, _, _, _
-    { id: genId(), col: 3, row: 4, label: 'SO', command: 'suroeste', color: '#662222', textColor: '#fff' },
-    { id: genId(), col: 4, row: 4, label: 'S', command: 'sur', color: '#662222', textColor: '#fff' },
-    { id: genId(), col: 5, row: 4, label: 'SE', command: 'sureste', color: '#662222', textColor: '#fff' },
-    // Row 5: (empty)
+    // Row 2: _, _, _, NO, N, NE, AR, _, _
+    { id: genId(), col: 3, row: 2, label: 'NO', command: 'noroeste', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 4, row: 2, label: 'N', command: 'norte', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 5, row: 2, label: 'NE', command: 'noreste', color: '#662222', textColor: '#fff', locked: true },
+    // Row 2: _, _, _, NO, N, NE, AR, _, _
+    { id: genId(), col: 3, row: 2, label: 'NO', command: 'noroeste', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 4, row: 2, label: 'N', command: 'norte', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 5, row: 2, label: 'NE', command: 'noreste', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 6, row: 2, label: 'AR', command: 'ar', color: '#663322', textColor: '#fff', locked: true },
+    // Row 3: _, _, _, O, _, E, AB, _, _
+    { id: genId(), col: 3, row: 3, label: 'O', command: 'oeste', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 5, row: 3, label: 'E', command: 'este', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 6, row: 3, label: 'AB', command: 'ab', color: '#663322', textColor: '#fff', locked: true },
+    // Row 4: _, _, _, SO, S, SE, DE, _, _
+    { id: genId(), col: 3, row: 4, label: 'SO', command: 'sudoeste', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 4, row: 4, label: 'S', command: 'sur', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 5, row: 4, label: 'SE', command: 'sudeste', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 6, row: 4, label: 'DE', command: 'dentro', color: '#663322', textColor: '#fff', locked: true },
+    // Row 5: _, _, _, _, _, _, FU, _, _
+    { id: genId(), col: 6, row: 5, label: 'FU', command: 'fuera', color: '#663322', textColor: '#fff', locked: true },
   ];
 
   return { buttons };

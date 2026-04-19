@@ -1,5 +1,4 @@
 import React from 'react';
-import { useColorScheme } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -12,7 +11,13 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
   return (
-    <NavigationContainer theme={DarkTheme}>
+    <NavigationContainer
+      theme={DarkTheme}
+      documentTitle={{
+        enabled: false,
+        formatter: (options) => `BlowTorch - ${options.title}`,
+      }}
+    >
       <StatusBar hidden={true} />
       <Stack.Navigator
         screenOptions={{
@@ -25,17 +30,26 @@ export default function App() {
         <Stack.Screen
           name="ServerList"
           component={ServerListScreen}
-          options={{ headerShown: false }}
+          options={{
+            headerShown: false,
+            title: 'Server List',
+          }}
         />
         <Stack.Screen
           name="Terminal"
           component={TerminalScreen}
-          options={{ headerShown: false }}
+          options={{
+            headerShown: false,
+            title: 'MUD Terminal',
+          }}
         />
         <Stack.Screen
           name="Settings"
           component={SettingsScreen}
-          options={{ headerShown: false }}
+          options={{
+            headerShown: false,
+            title: 'Settings',
+          }}
         />
       </Stack.Navigator>
     </NavigationContainer>

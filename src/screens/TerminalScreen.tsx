@@ -8,7 +8,6 @@ import {
   TextInput,
   useWindowDimensions,
   Modal,
-  ScrollView,
   Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -81,6 +80,18 @@ export function TerminalScreen({ route, navigation }: Props) {
   const recentLinesRef = useRef<string[]>([]);
   const isLocatingRef = useRef(false);
   const textInputRef = useRef<TextInput>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        const settings = await loadSettings();
+        if (settings.fontSize) {
+          setFontSize(settings.fontSize);
+          fontSizeRef.current = settings.fontSize;
+        }
+      })();
+    }, [])
+  );
 
   useEffect(() => {
     (async () => {
@@ -607,8 +618,8 @@ export function TerminalScreen({ route, navigation }: Props) {
   // Horizontal layout dimensions
   const vitalsWidth = 30;
   const horizontalCellSize = (availableHeight - inputHeight) / 9; // 9 rows in horizontal, accounting for input
-  const BUTTON_GAPS_HORIZONTAL = (5 - 1) * BUTTON_GAP; // 4 gaps for 5 columns
-  const horizontalButtonGridWidth = 5 * horizontalCellSize + BUTTON_GAPS_HORIZONTAL + 6; // 5 columns in horizontal
+  const BUTTON_GAPS_HORIZONTAL = (6 - 1) * BUTTON_GAP; // 5 gaps for 6 columns
+  const horizontalButtonGridWidth = 6 * horizontalCellSize + BUTTON_GAPS_HORIZONTAL + 6; // 6 columns in horizontal
   const horizontalRightPanelWidth = vitalsWidth + horizontalButtonGridWidth + 10;
   const horizontalTerminalWidth = width - horizontalRightPanelWidth - insets.left - insets.right;
 
@@ -637,7 +648,12 @@ export function TerminalScreen({ route, navigation }: Props) {
       // VERTICAL LAYOUT
       <View style={styles.container}>
         {/* Terminal (flex 1 - takes remaining space) */}
-        <View style={[styles.terminalSection, { flex: 1 }]}>
+        <View
+          style={[styles.terminalSection, { flex: 1 }]}
+          accessible={true}
+          accessibilityLabel="Terminal output"
+          accessibilityRole="list"
+        >
           <FlatList
             scrollToEndDelay={100}
             ref={flatListRef}
@@ -656,7 +672,14 @@ export function TerminalScreen({ route, navigation }: Props) {
 
           {/* Scroll to bottom button */}
           {showScrollToBottom && (
-            <TouchableOpacity style={styles.scrollToBottomButton} onPress={handleScrollToBottom}>
+            <TouchableOpacity
+              style={styles.scrollToBottomButton}
+              onPress={handleScrollToBottom}
+              accessible={true}
+              accessibilityLabel="Scroll to bottom"
+              accessibilityRole="button"
+              accessibilityHint="Scroll terminal to latest message"
+            >
               <Text style={styles.scrollToBottomText}>↓</Text>
             </TouchableOpacity>
           )}
@@ -689,6 +712,10 @@ export function TerminalScreen({ route, navigation }: Props) {
           <TouchableOpacity
             style={styles.arrowButton}
             onPress={handleUpArrow}
+            accessible={true}
+            accessibilityLabel="Previous command"
+            accessibilityRole="button"
+            accessibilityHint="Navigate to previous command in history"
           >
             <Text style={styles.arrowText}>▲</Text>
           </TouchableOpacity>
@@ -708,11 +735,18 @@ export function TerminalScreen({ route, navigation }: Props) {
                 onSubmitEditing={handleSendInput}
                 returnKeyType="send"
                 autoCapitalize="none"
+                accessible={true}
+                accessibilityLabel="Command input"
+                accessibilityHint="Type a command and press send or return"
               />
 
               <TouchableOpacity
                 style={styles.sendButton}
                 onPress={handleSendInput}
+                accessible={true}
+                accessibilityLabel="Send command"
+                accessibilityRole="button"
+                accessibilityHint="Send the current command to the server"
               >
                 <Text style={styles.sendButtonText}>›</Text>
               </TouchableOpacity>
@@ -721,6 +755,10 @@ export function TerminalScreen({ route, navigation }: Props) {
             <TouchableOpacity
               style={[styles.input, styles.reconnectButton]}
               onPress={() => telnetRef.current?.connect()}
+              accessible={true}
+              accessibilityLabel="Reconnect"
+              accessibilityRole="button"
+              accessibilityHint="Reconnect to the server"
             >
               <Text style={styles.reconnectText}>Reconectar</Text>
             </TouchableOpacity>
@@ -729,6 +767,10 @@ export function TerminalScreen({ route, navigation }: Props) {
           <TouchableOpacity
             style={styles.arrowButton}
             onPress={handleDownArrow}
+            accessible={true}
+            accessibilityLabel="Next command"
+            accessibilityRole="button"
+            accessibilityHint="Navigate to next command in history"
           >
             <Text style={styles.arrowText}>▼</Text>
           </TouchableOpacity>
@@ -798,58 +840,8 @@ export function TerminalScreen({ route, navigation }: Props) {
           />
         </View>
 
-        {/* Right Panel - Input + ButtonGrid */}
+        {/* Right Panel - ButtonGrid only */}
         <View style={{ flex: 1, flexDirection: 'column' }}>
-          {/* Input Row */}
-          <View style={[styles.inputSection, { height: inputHeight }]}>
-            <TouchableOpacity
-              style={styles.arrowButton}
-              onPress={handleUpArrow}
-            >
-              <Text style={styles.arrowText}>▲</Text>
-            </TouchableOpacity>
-
-            {connected ? (
-              <>
-                <TextInput
-                  ref={textInputRef}
-                  style={styles.input}
-                  placeholder="Comando..."
-                  placeholderTextColor="#888"
-                  value={inputText}
-                  onChangeText={(text) => {
-                    setInputText(text);
-                    setHistoryIndex(-1);
-                  }}
-                  onSubmitEditing={handleSendInput}
-                  returnKeyType="send"
-                  autoCapitalize="none"
-                />
-
-                <TouchableOpacity
-                  style={styles.sendButton}
-                  onPress={handleSendInput}
-                >
-                  <Text style={styles.sendButtonText}>›</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <TouchableOpacity
-                style={[styles.input, styles.reconnectButton]}
-                onPress={() => telnetRef.current?.connect()}
-              >
-                <Text style={styles.reconnectText}>Reconectar</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity
-              style={styles.arrowButton}
-              onPress={handleDownArrow}
-            >
-              <Text style={styles.arrowText}>▼</Text>
-            </TouchableOpacity>
-          </View>
-
           {/* ButtonGrid Horizontal (5 cols x 9 rows) */}
           <View style={[styles.buttonGridSection, { flex: 1, paddingBottom: insets.bottom }]}>
             <ButtonGrid
@@ -861,7 +853,7 @@ export function TerminalScreen({ route, navigation }: Props) {
               sourceCol={sourceCol}
               sourceRow={sourceRow}
               onSwapButtons={handleSwapButtons}
-              horizontalMode={{cols: 5, cellSize: horizontalCellSize}}
+              horizontalMode={{cols: 6, cellSize: horizontalCellSize}}
             />
           </View>
         </View>

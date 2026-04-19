@@ -14,7 +14,5 @@ export async function saveServers(servers: ServerProfile[]): Promise<void> {
 }
 
 function getDefaultServers(): ServerProfile[] {
-  return [
-    { id: '1', name: 'Reinos de Leyenda', host: 'rlmud.org', port: 5001 },
-  ];
+  return [];
 }

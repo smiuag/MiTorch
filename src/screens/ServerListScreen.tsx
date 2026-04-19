@@ -90,6 +90,17 @@ export function ServerListScreen({ navigation }: Props) {
     await saveServers(updated);
   };
 
+  const handleDuplicate = async (server: ServerProfile) => {
+    const newServer: ServerProfile = {
+      ...server,
+      id: generateId(),
+      name: `${server.name} (copia)`,
+    };
+    const updated = [...servers, newServer];
+    setServers(updated);
+    await saveServers(updated);
+  };
+
   const renderServer = ({ item }: { item: ServerProfile }) => {
     const isConfigured = !!item.buttonLayout;
     return (
@@ -97,6 +108,9 @@ export function ServerListScreen({ navigation }: Props) {
         style={styles.serverCard}
         onPress={() => navigation.navigate('Terminal', { server: item })}
         onLongPress={() => openEdit(item)}
+        accessible={true}
+        accessibilityLabel={`${item.name} server`}
+        accessibilityHint={`Connects to ${item.host}:${item.port}. Double tap to connect, long press to edit`}
       >
         <View style={styles.serverInfo}>
           <Text style={styles.serverName}>{item.name}</Text>
@@ -104,16 +118,34 @@ export function ServerListScreen({ navigation }: Props) {
         </View>
         <View style={styles.serverActions}>
           <TouchableOpacity
-            style={styles.editBtn}
+            style={[styles.actionBtn, styles.editBtn]}
             onPress={() => openEdit(item)}
+            accessible={true}
+            accessibilityLabel="Edit"
+            accessibilityRole="button"
+            accessibilityHint={`Edit ${item.name} server settings`}
           >
-            <Text style={styles.editText}>Edit</Text>
+            <Text style={[styles.actionBtnText, styles.editBtnText]}>✎</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.deleteBtn}
-            onPress={() => handleDelete(item)}
+            style={[styles.actionBtn, styles.duplicateBtn]}
+            onPress={() => handleDuplicate(item)}
+            accessible={true}
+            accessibilityLabel="Duplicate"
+            accessibilityRole="button"
+            accessibilityHint={`Create a copy of ${item.name}`}
           >
-            <Text style={styles.deleteText}>X</Text>
+            <Text style={[styles.actionBtnText, styles.duplicateBtnText]}>⬚</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.deleteBtn]}
+            onPress={() => handleDelete(item)}
+            accessible={true}
+            accessibilityLabel="Delete"
+            accessibilityRole="button"
+            accessibilityHint={`Delete ${item.name} server`}
+          >
+            <Text style={[styles.actionBtnText, styles.deleteBtnText]}>✕</Text>
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
@@ -132,12 +164,20 @@ export function ServerListScreen({ navigation }: Props) {
             <TouchableOpacity
               style={styles.helpBtn}
               onPress={() => setHelpModalVisible(true)}
+              accessible={true}
+              accessibilityLabel="Help"
+              accessibilityRole="button"
+              accessibilityHint="Open help information"
             >
               <Text style={styles.helpIcon}>?</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.settingsBtn}
               onPress={() => navigation.navigate('Settings')}
+              accessible={true}
+              accessibilityLabel="Settings"
+              accessibilityRole="button"
+              accessibilityHint="Open application settings"
             >
               <Text style={styles.settingsIcon}>⚙</Text>
             </TouchableOpacity>
@@ -158,7 +198,14 @@ export function ServerListScreen({ navigation }: Props) {
       </View>
 
       <View style={styles.addButtonContainer}>
-        <TouchableOpacity style={styles.addBtn} onPress={openAdd}>
+        <TouchableOpacity
+          style={styles.addBtn}
+          onPress={openAdd}
+          accessible={true}
+          accessibilityLabel="Add server"
+          accessibilityRole="button"
+          accessibilityHint="Create a new server profile"
+        >
           <Text style={styles.addText}>+</Text>
         </TouchableOpacity>
       </View>
@@ -182,6 +229,9 @@ export function ServerListScreen({ navigation }: Props) {
               onChangeText={setFormName}
               placeholder="Mi personaje"
               placeholderTextColor="#666"
+              accessible={true}
+              accessibilityLabel="Server name"
+              accessibilityHint="Enter a name for this server"
             />
 
             <Text style={styles.label}>Host</Text>
@@ -193,6 +243,9 @@ export function ServerListScreen({ navigation }: Props) {
               placeholderTextColor="#666"
               autoCapitalize="none"
               autoCorrect={false}
+              accessible={true}
+              accessibilityLabel="Server host"
+              accessibilityHint="Enter the server hostname or IP address"
             />
 
             <Text style={styles.label}>Puerto</Text>
@@ -203,18 +256,29 @@ export function ServerListScreen({ navigation }: Props) {
               placeholder="5001"
               placeholderTextColor="#666"
               keyboardType="number-pad"
+              accessible={true}
+              accessibilityLabel="Server port"
+              accessibilityHint="Enter the port number"
             />
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={styles.cancelBtn}
                 onPress={() => setModalVisible(false)}
+                accessible={true}
+                accessibilityLabel="Cancel"
+                accessibilityRole="button"
+                accessibilityHint="Close without saving"
               >
                 <Text style={styles.cancelText}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.saveBtn}
                 onPress={handleSave}
+                accessible={true}
+                accessibilityLabel="Save"
+                accessibilityRole="button"
+                accessibilityHint="Save server configuration"
               >
                 <Text style={styles.saveText}>Guardar</Text>
               </TouchableOpacity>
@@ -245,7 +309,13 @@ export function ServerListScreen({ navigation }: Props) {
             >
               <Text style={styles.helpModalSectionTitle}>Conectar a un personaje</Text>
               <Text style={styles.helpModalText}>
-                Pulsa el botón + para crear un nuevo personaje. Introduce el nombre del personaje, host y puerto. Luego pulsa en el personaje para conectar. Una vez conectado, pulsa el botón ⚙ para configurar los botones de la grilla.
+                Pulsa el botón + para crear un nuevo personaje. Introduce el nombre del personaje, host y puerto. Luego pulsa en el personaje para conectar.
+              </Text>
+              <Text style={styles.helpModalText}>
+                En la lista de personajes:
+                • ✎ (verde) - Editar los datos del personaje
+                • ⬚ (azul) - Duplicar el personaje
+                • ✕ (rojo) - Eliminar el personaje
               </Text>
 
               <Text style={styles.helpModalSectionTitle}>Durante la partida</Text>
@@ -258,10 +328,10 @@ export function ServerListScreen({ navigation }: Props) {
 
               <Text style={styles.helpModalSectionTitle}>Configuración</Text>
               <Text style={styles.helpModalText}>
-                • Ajusta el tamaño de fuente del terminal
+                • Ajusta el tamaño de fuente del terminal (se aplica automáticamente cuando vuelves al juego)
+                • El tamaño afecta tanto al terminal como a los canales de chat
                 • Activa los botones flotantes para una interfaz personalizable
                 • En el editor de pantalla flotante, organiza botones, vitales y chat a tu gusto
-                • Elige orientación vertical u horizontal para bloquear la rotación
               </Text>
 
               <Text style={styles.helpModalSectionTitle}>Macros y atajos</Text>
@@ -384,26 +454,34 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
-  editBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#2a2a2a',
-    borderRadius: 4,
+  actionBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  editText: {
-    color: '#cccccc',
-    fontSize: 12,
+  editBtn: {
+    backgroundColor: '#0a3a0a',
+  },
+  duplicateBtn: {
+    backgroundColor: '#0a2a3a',
   },
   deleteBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: '#331111',
-    borderRadius: 4,
+    backgroundColor: '#3a0a0a',
   },
-  deleteText: {
-    color: '#cc0000',
-    fontSize: 12,
+  actionBtnText: {
+    fontSize: 20,
     fontWeight: 'bold',
+  },
+  editBtnText: {
+    color: '#0c0',
+  },
+  duplicateBtnText: {
+    color: '#0099ff',
+  },
+  deleteBtnText: {
+    color: '#cc3333',
   },
   emptyText: {
     color: '#666',

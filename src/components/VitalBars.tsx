@@ -16,15 +16,32 @@ export function VitalBars({ hp, hpMax, energy, energyMax, orientation = 'horizon
 
   if (isVertical) {
     return (
-      <View style={[styles.container, styles.containerVertical]}>
+      <View
+        style={[styles.container, styles.containerVertical]}
+        accessible={true}
+        accessibilityLabel="Vital Bars"
+        accessibilityHint="Shows current health points and energy levels"
+      >
         {/* HP bar - vertical, fills from bottom to top */}
-        <View style={[styles.barBgVertical, styles.hpBg]}>
+        <View
+          style={[styles.barBgVertical, styles.hpBg]}
+          accessible={true}
+          accessibilityLabel={`Health: ${hp} of ${hpMax}`}
+          accessibilityRole="progressbar"
+          accessibilityValue={{ min: 0, max: hpMax, now: hp }}
+        >
           <View style={[styles.barFillVertical, styles.hpFill, { height: `${hpPct * 100}%` }]} />
           <Text style={styles.labelVertical}>H</Text>
         </View>
 
         {/* Energy bar - vertical, fills from bottom to top */}
-        <View style={[styles.barBgVertical, styles.energyBg]}>
+        <View
+          style={[styles.barBgVertical, styles.energyBg]}
+          accessible={true}
+          accessibilityLabel={`Energy: ${energy} of ${energyMax}`}
+          accessibilityRole="progressbar"
+          accessibilityValue={{ min: 0, max: energyMax, now: energy }}
+        >
           <View style={[styles.barFillVertical, styles.energyFill, { height: `${energyPct * 100}%` }]} />
           <Text style={styles.labelVertical}>E</Text>
         </View>
@@ -33,15 +50,32 @@ export function VitalBars({ hp, hpMax, energy, energyMax, orientation = 'horizon
   }
 
   return (
-    <View style={[styles.container, { flex: 1 }]}>
+    <View
+      style={[styles.container, { flex: 1 }]}
+      accessible={true}
+      accessibilityLabel="Vital Bars"
+      accessibilityHint="Shows current health points and energy levels"
+    >
       {/* HP bar */}
-      <View style={[styles.barBg, styles.hpBg, { flex: 1 }]}>
+      <View
+        style={[styles.barBg, styles.hpBg, { flex: 1 }]}
+        accessible={true}
+        accessibilityLabel={`Health: ${hp} of ${hpMax}`}
+        accessibilityRole="progressbar"
+        accessibilityValue={{ min: 0, max: hpMax, now: hp }}
+      >
         <View style={[styles.barFill, styles.hpFill, { width: `${hpPct * 100}%` }]} />
         <Text style={styles.label}>{hp}/{hpMax}</Text>
       </View>
 
       {/* Energy bar */}
-      <View style={[styles.barBg, styles.energyBg, { flex: 1 }]}>
+      <View
+        style={[styles.barBg, styles.energyBg, { flex: 1 }]}
+        accessible={true}
+        accessibilityLabel={`Energy: ${energy} of ${energyMax}`}
+        accessibilityRole="progressbar"
+        accessibilityValue={{ min: 0, max: energyMax, now: energy }}
+      >
         <View style={[styles.barFill, styles.energyFill, { width: `${energyPct * 100}%` }]} />
         <Text style={styles.label}>{energy}/{energyMax}</Text>
       </View>

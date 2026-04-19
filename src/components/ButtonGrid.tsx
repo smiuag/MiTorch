@@ -106,7 +106,7 @@ function ButtonCell({
             }
           } else {
             // Tap - execute primary command or moveMode swap
-            if (moveMode && onSwapButtons) {
+            if (moveMode && onSwapButtons && !button?.locked) {
               if (horizontalMode) {
                 onSwapButtons(row, col);
               } else {
@@ -138,6 +138,10 @@ function ButtonCell({
           borderColor: isSource ? '#ffff00' : '#444',
         },
       ]}
+      accessible={!!button}
+      accessibilityLabel={button ? button.label : ''}
+      accessibilityRole="button"
+      accessibilityHint={button ? (button.addText ? `Type: ${button.command}` : `Execute: ${button.command}`) : 'Empty button slot'}
     >
       {button && (
         <Text
@@ -167,11 +171,45 @@ export function ButtonGrid({
 }: ButtonGridProps) {
   const { width } = useWindowDimensions();
 
+  // Additional transformations in horizontal mode (after swap col/row and row inversion)
+  const additionalTransforms: { [key: string]: { col: number; row: number } } = {
+    '2,2': { col: 5, row: 2 }, // AR → FU
+    '3,2': { col: 5, row: 3 }, // AB → 3
+    '4,2': { col: 5, row: 4 }, // DE → 2
+    '5,2': { col: 5, row: 5 }, // FU → 1
+    '5,3': { col: 4, row: 5 }, // 3 → SO
+    '5,4': { col: 3, row: 5 }, // 2 → O
+    '5,5': { col: 2, row: 5 }, // 1 → NO
+    '2,5': { col: 2, row: 2 }, // NO → AR
+    '2,4': { col: 3, row: 2 }, // N → AB
+    '2,3': { col: 4, row: 2 }, // NE → DE
+    '3,3': { col: 4, row: 3 }, // E → SE
+    '4,3': { col: 4, row: 4 }, // SE → S
+    '3,4': { col: 3, row: 3 }, // 4 → E
+    '4,4': { col: 3, row: 4 }, // S → 4
+    '4,5': { col: 2, row: 4 }, // SO → N
+    '3,5': { col: 2, row: 3 }, // O → NE
+  };
+
   const buttonLookup = new Map<string, LayoutButton>();
   buttons.forEach((btn) => {
-    // In horizontal mode, swap col/row for lookup (rotate 90°)
+    // In horizontal mode, swap col/row for lookup (rotate 90°) and reverse row order
     if (horizontalMode) {
-      buttonLookup.set(`${btn.row},${btn.col}`, btn);
+      const newCol = btn.row;
+      const newRow = 8 - btn.col; // Invert row order (9 rows: 0-8)
+      const key = `${newCol},${newRow}`;
+
+      let finalCol = newCol;
+      let finalRow = newRow;
+
+      // Apply additional transformations if available
+      if (additionalTransforms[key]) {
+        const transform = additionalTransforms[key];
+        finalCol = transform.col;
+        finalRow = transform.row;
+      }
+
+      buttonLookup.set(`${finalCol},${finalRow}`, btn);
     } else {
       buttonLookup.set(`${btn.col},${btn.row}`, btn);
     }
@@ -181,8 +219,8 @@ export function ButtonGrid({
     onSendCommand(command);
   };
 
-  // Grid dimensions: horizontal mode (5 cols × 9 rows) or vertical (9 cols × 6 rows)
-  const gridCols = horizontalMode ? 5 : GRID_COLS;
+  // Grid dimensions: horizontal mode (6 cols × 9 rows) or vertical (9 cols × 6 rows)
+  const gridCols = horizontalMode ? 6 : GRID_COLS;
   const gridRows = horizontalMode ? 9 : GRID_ROWS;
   const cellSize = horizontalMode ? horizontalMode.cellSize : width / GRID_COLS;
 

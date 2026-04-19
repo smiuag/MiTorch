@@ -83,15 +83,6 @@ export function ButtonEditModal({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.modal}>
-          <View style={styles.header}>
-            <Text style={styles.title}>
-              {button ? 'Editar Botón' : 'Nuevo Botón'} ({col}, {row})
-            </Text>
-            <TouchableOpacity onPress={onClose}>
-              <Text style={styles.closeButton}>✕</Text>
-            </TouchableOpacity>
-          </View>
-
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
             <Text style={styles.label}>Etiqueta</Text>
             <TextInput
@@ -101,16 +92,23 @@ export function ButtonEditModal({
               value={label}
               onChangeText={setLabel}
               autoCapitalize="none"
+              accessible={true}
+              accessibilityLabel="Button label"
+              accessibilityHint="Short text displayed on the button"
             />
 
-            <Text style={styles.label}>Comando</Text>
+            <Text style={styles.label}>Comando{button?.locked ? ' (protegido)' : ''}</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, button?.locked && { opacity: 0.5 }]}
               placeholder="Ej: enterrar"
               placeholderTextColor="#888"
               value={command}
               onChangeText={setCommand}
               autoCapitalize="none"
+              editable={!button?.locked}
+              accessible={true}
+              accessibilityLabel="Primary command"
+              accessibilityHint={button?.locked ? 'This command is locked' : 'Command to send on button tap'}
             />
 
             <Text style={styles.label}>Comando Secundario (Swipe)</Text>
@@ -121,6 +119,9 @@ export function ButtonEditModal({
               value={secondaryCommand}
               onChangeText={setSecondaryCommand}
               autoCapitalize="none"
+              accessible={true}
+              accessibilityLabel="Secondary command"
+              accessibilityHint="Command to send on button swipe, optional"
             />
 
             <Text style={styles.label}>Color Fondo</Text>
@@ -133,6 +134,10 @@ export function ButtonEditModal({
                     { backgroundColor: c, borderWidth: color === c ? 3 : 0, borderColor: '#fff' },
                   ]}
                   onPress={() => setColor(c)}
+                  accessible={true}
+                  accessibilityLabel={`Color option: ${c}`}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: color === c }}
                 />
               ))}
             </View>
@@ -140,6 +145,10 @@ export function ButtonEditModal({
             <TouchableOpacity
               style={styles.checkboxRow}
               onPress={() => setAddText(!addText)}
+              accessible={true}
+              accessibilityLabel="Add text to input"
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: addText }}
             >
               <View style={[styles.checkbox, addText && styles.checkboxChecked]}>
                 {addText && <Text style={styles.checkmark}>✓</Text>}
@@ -164,20 +173,48 @@ export function ButtonEditModal({
           </ScrollView>
 
           <View style={styles.actions}>
-            {button && (
+            {button && !button.locked && (
               <>
-                <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={onDelete}>
+                <TouchableOpacity
+                  style={[styles.button, styles.deleteButton]}
+                  onPress={onDelete}
+                  accessible={true}
+                  accessibilityLabel="Delete"
+                  accessibilityRole="button"
+                  accessibilityHint="Delete this button from the layout"
+                >
                   <Text style={styles.buttonText}>Borrar</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.button, styles.moveButton]} onPress={onMove}>
+                <TouchableOpacity
+                  style={[styles.button, styles.moveButton]}
+                  onPress={onMove}
+                  accessible={true}
+                  accessibilityLabel="Move"
+                  accessibilityRole="button"
+                  accessibilityHint="Move this button to a different location"
+                >
                   <Text style={styles.buttonText}>Mover</Text>
                 </TouchableOpacity>
               </>
             )}
-            <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={onClose}>
+            <TouchableOpacity
+              style={[styles.button, styles.cancelButton]}
+              onPress={onClose}
+              accessible={true}
+              accessibilityLabel="Cancel"
+              accessibilityRole="button"
+              accessibilityHint="Close without saving changes"
+            >
               <Text style={styles.buttonText}>Cancelar</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.button, styles.saveButton]} onPress={handleSave}>
+            <TouchableOpacity
+              style={[styles.button, styles.saveButton]}
+              onPress={handleSave}
+              accessible={true}
+              accessibilityLabel="Save"
+              accessibilityRole="button"
+              accessibilityHint="Save button configuration"
+            >
               <Text style={styles.buttonText}>Guardar</Text>
             </TouchableOpacity>
           </View>

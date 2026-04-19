@@ -119,7 +119,15 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMod
   if (!visible || !currentRoom || !mapContent) {
     return (
       <View style={styles.wrapperClosed}>
-        <TouchableOpacity style={styles.toggleBtn} onPress={onToggle} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.toggleBtn}
+          onPress={onToggle}
+          activeOpacity={0.7}
+          accessible={true}
+          accessibilityLabel="Toggle map"
+          accessibilityRole="button"
+          accessibilityHint="Show or hide the map view"
+        >
           <Text style={styles.toggleText}>M</Text>
         </TouchableOpacity>
       </View>
@@ -127,9 +135,20 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMod
   }
 
   return (
-    <View style={styles.wrapperOpen}>
+    <View
+      style={styles.wrapperOpen}
+      accessible={true}
+      accessibilityLabel="Mini map"
+      accessibilityRole="region"
+    >
       <View style={styles.container}>
-        <Text style={styles.roomName} numberOfLines={1}>
+        <Text
+          style={styles.roomName}
+          numberOfLines={1}
+          accessible={true}
+          accessibilityLabel={`Current room: ${currentRoom.n}`}
+          accessibilityRole="header"
+        >
           {currentRoom.n}
         </Text>
 

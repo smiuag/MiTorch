@@ -13,10 +13,29 @@ export function RoomSearchResults({ rooms, visible, onSelect, onClose }: RoomSea
   if (!visible || rooms.length === 0) return null;
 
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+      accessible={true}
+      accessibilityLabel="Room search results"
+      accessibilityRole="region"
+    >
       <View style={styles.header}>
-        <Text style={styles.title}>Salas encontradas ({rooms.length})</Text>
-        <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+        <Text
+          style={styles.title}
+          accessible={true}
+          accessibilityLabel={`Found ${rooms.length} rooms`}
+          accessibilityRole="header"
+        >
+          Salas encontradas ({rooms.length})
+        </Text>
+        <TouchableOpacity
+          onPress={onClose}
+          style={styles.closeBtn}
+          accessible={true}
+          accessibilityLabel="Close search results"
+          accessibilityRole="button"
+          accessibilityHint="Hide the search results panel"
+        >
           <Text style={styles.closeText}>X</Text>
         </TouchableOpacity>
       </View>
@@ -24,12 +43,19 @@ export function RoomSearchResults({ rooms, visible, onSelect, onClose }: RoomSea
         data={rooms}
         keyExtractor={item => String(item.id)}
         style={styles.list}
+        accessible={true}
+        accessibilityLabel="Room list"
+        accessibilityRole="list"
         renderItem={({ item }) => {
           const exits = Object.keys(item.e || {}).sort().join(', ');
           return (
             <TouchableOpacity
               style={styles.roomItem}
               onPress={() => onSelect(item)}
+              accessible={true}
+              accessibilityLabel={item.n}
+              accessibilityRole="button"
+              accessibilityHint={`Navigate to ${item.n}. Exits: ${exits || 'none'}`}
             >
               <View style={[styles.colorDot, { backgroundColor: item.c ?? '#0b0' }]} />
               <View style={styles.roomInfo}>
