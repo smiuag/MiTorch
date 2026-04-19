@@ -146,13 +146,12 @@ export function SettingsScreen({ navigation }: Props) {
 
               return (
                 <View key={item.id} style={[styles.row, styles.profileRow, index === 0 ? styles.marginTop : styles.profileListMargin]}>
-                  <TouchableOpacity
+                  <View
                     style={{ flex: 1 }}
-                    onPress={() => navigation.navigate('LayoutEditor', { profileId: item.id })}
                   >
                     <Text style={styles.profileName}>{item.name}</Text>
                     <Text style={styles.profileDate}>{dateStr}</Text>
-                  </TouchableOpacity>
+                  </View>
                   <View style={styles.profileActions}>
                     <TouchableOpacity
                       onPress={() => handleRenameProfile(item.id, item.name)}
@@ -184,14 +183,6 @@ export function SettingsScreen({ navigation }: Props) {
             </Text>
           </View>
         )}
-
-        {/* Add Profile Button - LAST */}
-        <TouchableOpacity
-          style={[styles.row, styles.newProfileBtn, styles.marginTop]}
-          onPress={() => navigation.navigate('LayoutEditor')}
-        >
-          <Text style={styles.newProfileBtnText}>+ Nuevo perfil</Text>
-        </TouchableOpacity>
       </ScrollView>
 
       {/* Rename Profile Modal */}
@@ -334,17 +325,6 @@ const styles = StyleSheet.create({
   },
   marginTop: {
     marginTop: 12,
-  },
-  newProfileBtn: {
-    justifyContent: 'center',
-    backgroundColor: '#0a3a0a',
-    borderColor: '#0c0',
-  },
-  newProfileBtnText: {
-    color: '#0c0',
-    fontSize: 14,
-    fontFamily: 'monospace',
-    fontWeight: 'bold',
   },
   profileName: {
     color: '#ccc',

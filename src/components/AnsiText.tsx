@@ -7,19 +7,22 @@ interface AnsiTextProps {
   spans?: AnsiSpan[];
   fontSize?: number;
   addNewline?: boolean;
+  lineId?: number;
 }
 
-export function AnsiText({ line, spans, fontSize = 14, addNewline = true }: AnsiTextProps) {
+export function AnsiText({ line, spans, fontSize = 14, addNewline = true, lineId }: AnsiTextProps) {
   const spansToRender = spans || line?.spans || [];
+  const id = lineId || line?.id || 0;
 
   return (
     <Text style={[styles.line, { fontSize, lineHeight: fontSize * 1.2 }]}>
       {spansToRender.map((span, i) => (
         <Text
-          key={i}
+          key={`${id}-${i}`}
           style={[
             span.fg ? { color: span.fg } : null,
-            span.bg ? { backgroundColor: span.bg } : null,
+            // Avoid solid black backgrounds that hide text - use transparent instead
+            span.bg && span.bg !== '#000000' ? { backgroundColor: span.bg } : null,
             span.bold ? styles.bold : null,
             span.italic ? styles.italic : null,
             span.underline ? styles.underline : null,

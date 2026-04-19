@@ -71,6 +71,7 @@ export class MapService {
 
     // Find candidates by short name
     const candidates = this.nameIndexLower.get(shortLower) ?? [];
+    console.log('[MAP] Búsqueda "' + shortLower + '": ' + candidates.length + ' coincidencias');
 
     if (candidates.length === 0) {
       return null;

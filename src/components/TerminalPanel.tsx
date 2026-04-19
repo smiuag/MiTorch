@@ -12,8 +12,6 @@ interface TerminalPanelProps {
   onToggleMap: () => void;
   currentRoom: MapRoom | null;
   nearbyRooms: MapRoom[];
-  activeChannel: string | null;
-  onSelectChannel: (ch: string | null) => void;
   flatListRef?: React.RefObject<FlatList>;
   isAtBottomRef?: React.RefObject<boolean>;
 }
@@ -25,8 +23,6 @@ export function TerminalPanel({
   onToggleMap,
   currentRoom,
   nearbyRooms,
-  activeChannel,
-  onSelectChannel,
   flatListRef,
   isAtBottomRef,
 }: TerminalPanelProps) {
@@ -44,9 +40,6 @@ export function TerminalPanel({
 
   return (
     <View style={styles.outputWrapper} onTouchStart={() => {
-      if (activeChannel) {
-        onSelectChannel(null);
-      }
       Keyboard.dismiss();
     }}>
       <MiniMap

@@ -12,11 +12,9 @@ export interface ServerProfile {
       label: string;
       command: string;
       color: string;
-      opacity: number;
+      textColor: string;
     }>;
-    gridSize: number;
   };
-  channelAliases?: Record<string, string>;
 }
 
 export interface AnsiSpan {
@@ -33,26 +31,17 @@ export interface MudLine {
   spans: AnsiSpan[];
 }
 
-export interface Macro {
-  id: string;
-  label: string;
-  command: string;
-  color: string;
-}
-
 export type RootStackParamList = {
   ServerList: undefined;
   Terminal: { server: ServerProfile };
   Settings: undefined;
-  LayoutEditor: { profileId?: string; serverId?: string } | undefined;
 };
 
-export type LayoutItemType = 'button' | 'vitalbars' | 'input' | 'chat' | 'terminal';
 export type FloatingOrientation = 'portrait' | 'landscape';
 
 export interface LayoutItem {
   id: string;
-  type: LayoutItemType;
+  type: 'button' | 'vitalbars' | 'input' | 'chat' | 'terminal';
   col: number;
   row: number;
   colSpan: number;
@@ -70,25 +59,3 @@ export interface FloatingLayout {
   items: LayoutItem[];
 }
 
-// New unified layout types
-export type Orientation = 'portrait' | 'landscape';
-
-export interface FloatingButton {
-  id: string;
-  label: string;
-  command: string;
-  color: string;
-  gridX: number;
-  gridRow: number;
-  opacity?: number;
-}
-
-export interface OrientationLayout {
-  orientation: Orientation;
-  floatingButtons: FloatingButton[];
-}
-
-export interface UnifiedLayoutConfig {
-  portrait: OrientationLayout;
-  landscape: OrientationLayout;
-}

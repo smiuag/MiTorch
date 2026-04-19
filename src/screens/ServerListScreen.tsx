@@ -103,14 +103,6 @@ export function ServerListScreen({ navigation }: Props) {
           <Text style={styles.serverHost}>{item.host}:{item.port}</Text>
         </View>
         <View style={styles.serverActions}>
-          {isConfigured && (
-            <TouchableOpacity
-              style={styles.configBtn}
-              onPress={() => navigation.navigate('LayoutEditor', { serverId: item.id })}
-            >
-              <Text style={styles.configBtnText}>⚙</Text>
-            </TouchableOpacity>
-          )}
           <TouchableOpacity
             style={styles.editBtn}
             onPress={() => openEdit(item)}
@@ -413,17 +405,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
   },
-  configBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: '#2a3a2a',
-    borderRadius: 4,
-  },
-  configBtnText: {
-    color: '#3399ff',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
   emptyText: {
     color: '#666',
     textAlign: 'center',
@@ -654,23 +635,6 @@ const styles = StyleSheet.create({
     color: '#0c0',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  newProfileBtn: {
-    backgroundColor: '#0a3a0a',
-    borderWidth: 1,
-    borderColor: '#0c0',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginTop: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  newProfileBtnText: {
-    color: '#0c0',
-    fontSize: 14,
-    fontWeight: 'bold',
-    fontFamily: 'monospace',
   },
   saveBtnDisabled: {
     backgroundColor: '#333',

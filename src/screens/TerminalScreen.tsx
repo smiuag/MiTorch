@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
-  TextInput,
   FlatList,
   StyleSheet,
   Text,
   TouchableOpacity,
-  Keyboard,
+  TextInput,
   useWindowDimensions,
   Modal,
   ScrollView,
@@ -15,27 +14,18 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList, MudLine, Macro } from '../types';
+import { RootStackParamList, MudLine } from '../types';
 import { TelnetService } from '../services/telnetService';
 import { parseAnsi } from '../utils/ansiParser';
 import { AnsiText } from '../components/AnsiText';
-import { FKeyBar } from '../components/FKeyBar';
-import { MacroEditor } from '../components/MacroEditor';
-import { DirectionPad } from '../components/DirectionPad';
-import { LandscapeButtons } from '../components/LandscapeButtons';
 import { MiniMap } from '../components/MiniMap';
 import { VitalBars } from '../components/VitalBars';
+import { ButtonGrid, GRID_COLS, GRID_ROWS } from '../components/ButtonGrid';
+import { ButtonEditModal } from '../components/ButtonEditModal';
 import { RoomSearchResults } from '../components/RoomSearchResults';
-import { ChannelTabs, ChannelActivePanel, ChannelMessage, nextMsgId } from '../components/ChannelPanel';
 import { loadSettings } from '../storage/settingsStorage';
 import { MapService, MapRoom } from '../services/mapService';
-import { ButtonLayout } from '../storage/layoutStorage';
-import { loadFKeys, saveFKeys } from '../storage/fkeyStorage';
-import { loadExtraButtons, saveExtraButtons } from '../storage/extraButtonStorage';
-import { TerminalPanel } from '../components/TerminalPanel';
-import { UnifiedTerminalLayout } from '../components/UnifiedTerminalLayout';
-import { AliasWizardModal, WizardResult } from '../components/AliasWizardModal';
-import { parseAliasOutput, ParsedAlias } from '../utils/aliasParser';
+import { ButtonLayout, createDefaultLayout, loadLayout, saveLayout } from '../storage/layoutStorage';
 import { loadServers, saveServers } from '../storage/serverStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Terminal'>;
@@ -46,22 +36,13 @@ let lineIdCounter = 0;
 export function TerminalScreen({ route, navigation }: Props) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const isLandscape = width > height;
-  const [customKeyboardActive, setCustomKeyboardActive] = useState(false);
-  const keyboardHeight = isLandscape ? 273 : 182;
-  const chatHeightCompressed = isLandscape ? 150 : 180;
-  const availableHeight = height - insets.top - insets.bottom - (customKeyboardActive ? Math.max(0, keyboardHeight - chatHeightCompressed) : 0);
   const { server: initialServer } = route.params;
+
   const [server, setServer] = useState(initialServer);
   const [lines, setLines] = useState<MudLine[]>([]);
   const [inputText, setInputText] = useState('');
   const [connected, setConnected] = useState(false);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
-  const [fkeys, setFkeys] = useState<(Macro | null)[]>([null, null, null, null, null, null, null, null, null, null]);
-  const [extraButtons, setExtraButtons] = useState<(Macro | null)[]>([null]);
-  const [macroEditorVisible, setMacroEditorVisible] = useState(false);
-  const [editingMacro, setEditingMacro] = useState<Macro | null>(null);
-  const [editingTarget, setEditingTarget] = useState<{ type: 'fkey' | 'extra'; index: number }>({ type: 'fkey', index: 0 });
   const [mapVisible, setMapVisible] = useState(true);
   const [currentRoom, setCurrentRoom] = useState<MapRoom | null>(null);
   const [nearbyRooms, setNearbyRooms] = useState<MapRoom[]>([]);
@@ -72,16 +53,15 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [searchResults, setSearchResults] = useState<MapRoom[]>([]);
   const [searchVisible, setSearchVisible] = useState(false);
   const [walking, setWalking] = useState(false);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [channelMessages, setChannelMessages] = useState<ChannelMessage[]>([]);
-  const [channels, setChannels] = useState<string[]>([]);
-  const [activeChannel, setActiveChannel] = useState<string | null>(null);
-  const [channelAliases, setChannelAliases] = useState<Record<string, string>>({});
-  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [fontSize, setFontSize] = useState(14);
   const [buttonLayout, setButtonLayout] = useState<ButtonLayout | null>(null);
-  const [aliasWizardVisible, setAliasWizardVisible] = useState(false);
-  const [capturedAliases, setCapturedAliases] = useState<ParsedAlias[]>([]);
+  const [editButtonVisible, setEditButtonVisible] = useState(false);
+  const [editButtonCol, setEditButtonCol] = useState(0);
+  const [editButtonRow, setEditButtonRow] = useState(0);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+
   const fontSizeRef = useRef(14);
   const linesRef = useRef<MudLine[]>([]);
   const isCapturingAliasRef = useRef(false);
@@ -91,229 +71,194 @@ export function TerminalScreen({ route, navigation }: Props) {
   const walkPathRef = useRef<string[]>([]);
   const walkStepRef = useRef(0);
   const walkActiveRef = useRef(false);
-  const activeChannelRef = useRef<string | null>(null);
-  const lastSentChannelTime = useRef(0);
-
-  const handleSelectChannel = useCallback((ch: string | null) => {
-    setActiveChannel(ch);
-    activeChannelRef.current = ch;
-    if (ch && ch !== 'Todos') {
-      setUnreadCounts(prev => ({ ...prev, [ch]: 0 }));
-    }
-  }, []);
-  const flatListRef = useRef<FlatList>(null);
-  const telnetRef = useRef<TelnetService | null>(null);
-  const inputRef = useRef<TextInput>(null);
-  const pendingText = useRef('');
-  const mapServiceRef = useRef(new MapService());
-  const locatingRef = useRef(false);
-  const recentLinesRef = useRef<string[]>([]);
   const isAtBottomRef = useRef(true);
-
+  const flatListRef = useRef<FlatList<MudLine>>(null);
   const lastLineBlankRef = useRef(false);
+  const recentLinesRef = useRef<string[]>([]);
+  const isLocatingRef = useRef(false);
 
-  const addLine = useCallback((text: string) => {
+  useEffect(() => {
+    (async () => {
+      const layout = await loadLayout();
+      setButtonLayout(layout);
+      if (server.buttonLayout) {
+        setButtonLayout(server.buttonLayout as ButtonLayout);
+      }
+
+      // Load map for locate command
+      await mapServiceRef.current.load();
+    })();
+  }, [server]);
+
+  const addLine = (text: string) => {
+    // Skip empty lines if last line was also empty
     const isBlank = text.trim().length === 0;
     if (isBlank) {
-      if (lastLineBlankRef.current) return; // skip consecutive blanks
+      if (lastLineBlankRef.current) return;
       lastLineBlankRef.current = true;
     } else {
       lastLineBlankRef.current = false;
     }
 
+    // Skip lines that are only ">" or whitespace + ">"
+    const cleanText = text.trim();
+    if (cleanText === '>' || cleanText.endsWith('>')) {
+      if (/^\s*>\s*$/.test(text)) return;
+    }
+
+    // Skip lines that are only template variables like <VERSION>, <NAME>, etc
+    if (/^\s*<[A-Z_]+>\s*$/.test(text)) return;
+
     const spans = parseAnsi(text);
     const newLine: MudLine = { id: lineIdCounter++, spans };
-    setLines(prev => {
-      const updated = [...prev, newLine];
-      if (updated.length > MAX_LINES) {
-        return updated.slice(updated.length - MAX_LINES);
-      }
-      return updated;
+    linesRef.current = [...linesRef.current, newLine];
+    if (linesRef.current.length > MAX_LINES) {
+      linesRef.current = linesRef.current.slice(-MAX_LINES);
+    }
+    setLines([...linesRef.current]);
+
+    if (isAtBottomRef.current) {
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
+    }
+  };
+
+  const addMultipleLines = (texts: string[]) => {
+    texts.forEach(text => {
+      const spans = parseAnsi(text);
+      const newLine: MudLine = { id: lineIdCounter++, spans };
+      linesRef.current.push(newLine);
     });
+    if (linesRef.current.length > MAX_LINES) {
+      linesRef.current = linesRef.current.slice(-MAX_LINES);
+    }
+    setLines([...linesRef.current]);
+
+    if (isAtBottomRef.current) {
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
+    }
+  };
+
+  const telnetRef = useRef<TelnetService | null>(null);
+
+  const mapServiceRef = useRef(new MapService());
+
+  useEffect(() => {
+    (async () => {
+      await mapServiceRef.current.load();
+    })();
   }, []);
 
-  const addMultipleLines = useCallback((texts: string[]) => {
-    // Capture alias output if in progress
-    if (isCapturingAliasRef.current) {
-      aliasBufferRef.current.push(...texts);
-      // Reset timer: wait 3s with no new lines before parsing
-      if (aliasTimerRef.current) clearTimeout(aliasTimerRef.current);
-      aliasTimerRef.current = setTimeout(() => {
-        isCapturingAliasRef.current = false;
-        const parsed = parseAliasOutput(aliasBufferRef.current);
-        // Add predefined directions first, then parsed aliases (locate + user aliases)
-        const DIRECTIONS = ['n', 's', 'e', 'o', 'ne', 'no', 'se', 'so', 'de', 'fu', 'ar', 'ab'];
-        const DIRECTION_NAMES: Record<string, string> = {
-          'n': 'norte', 's': 'sur', 'e': 'este', 'o': 'oeste',
-          'ne': 'noreste', 'no': 'noroeste', 'se': 'sureste', 'so': 'suroeste',
-          'de': 'dentro', 'fu': 'fuera', 'ar': 'arriba', 'ab': 'abajo'
-        };
-        const withDirections: ParsedAlias[] = [
-          ...DIRECTIONS.map(d => ({
-            name: d.toUpperCase(),
-            command: DIRECTION_NAMES[d],
-            type: 'direction' as const,
-            description: d === 'n'
-              ? 'Coloca donde irá el Norte, el resto de direcciones se configurarán respecto a esta'
-              : undefined
-          })),
-          {
-            name: 'LOC',
-            command: 'locate',
-            type: 'locate' as const,
-            description: 'Este botón se utilizará para localizarte en el mapa, como el "buscarsala"'
-          },
-          ...parsed
-        ];
-        setCapturedAliases(withDirections);
-        setAliasWizardVisible(true);
-      }, 3000);
-      // IMPORTANTE: continuar mostrando las líneas normalmente
+  useEffect(() => {
+    if (lines.length > 0) {
+      setTimeout(() => {
+        if (isAtBottomRef.current) {
+          flatListRef.current?.scrollToEnd({ animated: false });
+        }
+      }, 100);
     }
+  }, [lines.length]);
 
-    const newLines: MudLine[] = [];
-    const channelMessagesToAdd: ChannelMessage[] = [];
+  useEffect(() => {
+    const telnet = new TelnetService(server, {
+      onData: (text: string) => {
+        if (isCapturingAliasRef.current) {
+          aliasBufferRef.current.push(text);
+          if (aliasTimerRef.current) clearTimeout(aliasTimerRef.current);
+          isCapturingAliasRef.current = false;
+          aliasBufferRef.current = [];
+        } else {
+          // Capture raw lines for locate command
+          const lines = text.split('\n');
+          for (const line of lines) {
+            if (line.trim().length > 0) {
+              const clean = line.replace(/\x1b\[[0-9;]*m/g, '').trim();
+              recentLinesRef.current.push(clean);
+              if (recentLinesRef.current.length > 30) {
+                recentLinesRef.current.shift();
+              }
 
-    for (const text of texts) {
-      const isBlank = text.trim().length === 0;
-      if (isBlank) {
-        if (lastLineBlankRef.current) continue; // skip consecutive blanks
-        lastLineBlankRef.current = true;
-      } else {
-        lastLineBlankRef.current = false;
-      }
-
-      // Try to detect channel messages from text patterns if useChannels is enabled
-      let channelName: string | null = null;
-      let messageText = text;
-
-      if (channels.length > 0) {
-        // Try to match patterns like "[canal]:", "canal:", or similar
-        const patterns = [
-          new RegExp(`^\\[(${channels.join('|')})\\]\\s+(.+)$`, 'i'),
-          new RegExp(`^(${channels.join('|')}):\\s+(.+)$`, 'i'),
-        ];
-
-        for (const pattern of patterns) {
-          const match = text.match(pattern);
-          if (match) {
-            channelName = match[1].toLowerCase();
-            messageText = match[2];
-            break;
-          }
-        }
-      }
-
-      const spans = parseAnsi(messageText);
-
-      if (channelName && channels.includes(channelName)) {
-        // Add to channel messages instead of main display
-        channelMessagesToAdd.push({
-          id: nextMsgId(),
-          channel: channelName,
-          spans,
-        });
-        // Still track unread count - also consider reading if in "Todos" channel
-        const isReading = activeChannelRef.current === channelName || activeChannelRef.current === 'Todos';
-        if (!isReading) {
-          setUnreadCounts(prev => ({ ...prev, [channelName]: (prev[channelName] || 0) + 1 }));
-        }
-      } else {
-        // Add to main display
-        const newLine: MudLine = { id: lineIdCounter++, spans };
-        newLines.push(newLine);
-
-        // Check for "Sigues a X en dirección Y" pattern to update map when following someone
-        const cleanText = messageText.replace(/\x1b\[[0-9;]*m/g, '').trim();
-        const followMatch = cleanText.match(/Sigues a .+ en dirección ([a-záéíóúñ]+)/i);
-        if (followMatch) {
-          const direction = followMatch[1];
-          const mapSvc = mapServiceRef.current;
-          if (mapSvc.isLoaded) {
-            const room = mapSvc.moveByDirection(direction);
-            if (room) {
-              updateMapPosition(room);
+              // Check if we're locating and found the room
+              if (isLocatingRef.current) {
+                if (clean.match(/\[.*\]\s*$/)) {
+                  let roomName = clean.replace(/^[>\]]\s*/, '');
+                  console.log('[LOCATE] Buscando:', roomName);
+                  const mapSvc = mapServiceRef.current;
+                  if (mapSvc.isLoaded && roomName) {
+                    const room = mapSvc.findRoom(roomName);
+                    if (room) {
+                      console.log('[LOCATE] ✓ Encontrada:', room.n);
+                      mapSvc.setCurrentRoom(room.id);
+                      setCurrentRoom(room);
+                      const nearby = mapSvc.getNearbyRooms(room.x, room.y, room.z, 15);
+                      setNearbyRooms(nearby);
+                      isLocatingRef.current = false;
+                    } else {
+                      console.log('[LOCATE] ✗ No encontrada en mapa');
+                    }
+                  }
+                }
+              }
             }
           }
+          addMultipleLines(lines);
         }
-      }
-    }
-
-    // Add main display lines
-    if (newLines.length > 0) {
-      setLines(prev => {
-        const updated = [...prev, ...newLines];
-        if (updated.length > MAX_LINES) {
-          return updated.slice(updated.length - MAX_LINES);
+      },
+      onConnect: () => {
+        setConnected(true);
+      },
+      onClose: () => {
+        setConnected(false);
+      },
+      onError: (err: string) => {
+        Alert.alert('Error de conexión', err);
+      },
+      onGMCP: (module: string, data: any) => {
+        if (module === 'Room.Actual') {
+          const roomName = typeof data === 'string' ? data : String(data);
+          const room = mapServiceRef.current.findRoom(roomName);
+          if (room) {
+            mapServiceRef.current.setCurrentRoom(room.id);
+            setCurrentRoom(room);
+            const nearby = mapServiceRef.current.getNearbyRooms(room.x, room.y, room.z, 15);
+            setNearbyRooms(nearby);
+          }
+        } else if (module === 'Room.Movimiento') {
+          const dir = typeof data === 'string' ? data : String(data);
+          const room = mapServiceRef.current.moveByDirection(dir);
+          if (room) {
+            setCurrentRoom(room);
+            const nearby = mapServiceRef.current.getNearbyRooms(room.x, room.y, room.z, 15);
+            setNearbyRooms(nearby);
+          }
+        } else if (module === 'Char.Status' && data && typeof data === 'object') {
+          // HP from Char.Status.pvs (current/max)
+          if (data.pvs) {
+            if (data.pvs.min !== undefined) setHp(data.pvs.min);
+            if (data.pvs.max !== undefined) setHpMax(data.pvs.max);
+          }
+          // Energy from Char.Status.pe (current/max)
+          if (data.pe) {
+            if (data.pe.min !== undefined) setEnergy(data.pe.min);
+            if (data.pe.max !== undefined) setEnergyMax(data.pe.max);
+          }
+        } else if (module === 'Comm.Vitals') {
+          if (data.hp !== undefined) setHp(data.hp);
+          if (data.hpMax !== undefined) setHpMax(data.hpMax);
+          if (data.hp_max !== undefined) setHpMax(data.hp_max);
+          if (data.energy !== undefined) setEnergy(data.energy);
+          if (data.energyMax !== undefined) setEnergyMax(data.energyMax);
+          if (data.energy_max !== undefined) setEnergyMax(data.energy_max);
         }
-        return updated;
-      });
-    }
-
-    // Add channel messages
-    if (channelMessagesToAdd.length > 0) {
-      setChannelMessages(prev => {
-        const updated = [...prev, ...channelMessagesToAdd];
-        return updated.length > 500 ? updated.slice(-500) : updated;
-      });
-    }
-  }, [channels]);
-
-  const addSystemLine = useCallback((text: string) => {
-    const newLine: MudLine = {
-      id: lineIdCounter++,
-      spans: [{ text, fg: '#ffcc00', bold: true }],
-    };
-    setLines(prev => [...prev, newLine]);
-  }, []);
-
-  useEffect(() => {
-    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
-    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
-    return () => { showSub.remove(); hideSub.remove(); };
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (walkTimeoutRef.current) {
-        clearTimeout(walkTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    loadFKeys(server.id).then(setFkeys);
-    loadExtraButtons(server.id).then(setExtraButtons);
-    loadSettings().then(s => {
-      setFontSize(s.fontSize);
-      fontSizeRef.current = s.fontSize;
+      },
     });
 
-    // Load button layout and channel aliases from server
-    if (server.buttonLayout) {
-      setButtonLayout(server.buttonLayout);
-    } else {
-      setButtonLayout(null);
-    }
+    telnetRef.current = telnet;
+    telnet.connect();
 
-    if (server.channelAliases) {
-      setChannelAliases(server.channelAliases);
-    } else {
-      setChannelAliases({});
-    }
-
-    // Load map (works with Reinos de Leyenda)
-    mapServiceRef.current.load();
-    setMapVisible(true);
-  }, [server.id, server.name, server.buttonLayout, server.channelAliases]);
-
-
-  const updateMapPosition = useCallback((room: MapRoom) => {
-    setCurrentRoom(room);
-    mapServiceRef.current.setCurrentRoom(room.id);
-    const nearby = mapServiceRef.current.getNearbyRooms(room.x, room.y, room.z, 15);
-    setNearbyRooms(nearby);
-  }, []);
+    return () => {
+      telnet.disconnect();
+    };
+  }, [server]);
 
   const stopWalk = useCallback(() => {
     if (walkTimeoutRef.current) {
@@ -327,9 +272,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, []);
 
   const walkTo = useCallback((targetRoom: MapRoom) => {
-    // Prevent re-entrance from renders
     if (walkActiveRef.current) return;
-
     if (walkTimeoutRef.current) {
       clearTimeout(walkTimeoutRef.current);
       walkTimeoutRef.current = null;
@@ -338,19 +281,18 @@ export function TerminalScreen({ route, navigation }: Props) {
     const mapSvc = mapServiceRef.current;
     const current = mapSvc.getCurrentRoom();
     if (!current) {
-      addSystemLine('--- No se conoce tu posición actual. Usa LOC primero ---');
+      addLine('--- No se conoce tu posición actual. Usa LOC primero ---');
       return;
     }
     const path = mapSvc.findPath(current.id, targetRoom.id);
     if (!path || path.length === 0) {
-      addSystemLine('--- No se encuentra camino ---');
+      addLine('--- No se encuentra camino ---');
       return;
     }
 
     walkActiveRef.current = true;
     setWalking(true);
     setSearchVisible(false);
-
     walkPathRef.current = path;
     walkStepRef.current = 0;
 
@@ -358,7 +300,6 @@ export function TerminalScreen({ route, navigation }: Props) {
     const processNextStep = () => {
       const step = walkStepRef.current;
       const allPaths = walkPathRef.current;
-
       if (step < allPaths.length && walkActiveRef.current) {
         if (telnetRef.current) {
           telnetRef.current.send(allPaths[step]);
@@ -366,7 +307,6 @@ export function TerminalScreen({ route, navigation }: Props) {
         walkStepRef.current = step + 1;
         walkTimeoutRef.current = setTimeout(processNextStep, STEP_DELAY);
       } else {
-        // Walk completed or cancelled
         walkTimeoutRef.current = null;
         walkPathRef.current = [];
         walkStepRef.current = 0;
@@ -374,620 +314,434 @@ export function TerminalScreen({ route, navigation }: Props) {
         setWalking(false);
       }
     };
-
     processNextStep();
-  }, [addSystemLine]);
+  }, []);
+
+  const updateMapPosition = useCallback((room: MapRoom) => {
+    setCurrentRoom(room);
+    mapServiceRef.current.setCurrentRoom(room.id);
+    const nearby = mapServiceRef.current.getNearbyRooms(room.x, room.y, room.z, 15);
+    setNearbyRooms(nearby);
+  }, []);
 
   const handleLocate = useCallback(() => {
+    if (!telnetRef.current) return;
     recentLinesRef.current = [];
-    sendCommand('ojear');
-    setTimeout(() => {
-      let foundRoom: MapRoom | null = null;
-      for (const line of recentLinesRef.current) {
-        if (line.match(/\[.*\]\s*$/)) {
-          const bracketIdx = line.lastIndexOf('[');
-          let roomName = line.substring(0, bracketIdx).trim();
-          roomName = roomName.replace(/^[>\]]\s*/, '');
-          const mapSvc = mapServiceRef.current;
-          if (mapSvc.isLoaded && roomName) {
-            const room = mapSvc.findRoom(roomName);
-            if (room) {
-              mapSvc.setCurrentRoom(room.id);
-              foundRoom = room;
-            }
-          }
-        }
-      }
-      if (foundRoom) {
-        updateMapPosition(foundRoom);
-      }
-    }, 1500);
+    isLocatingRef.current = true;
+    telnetRef.current.send('ojear');
   }, []);
 
   const sendCommand = useCallback((command: string) => {
     if (!telnetRef.current) return;
 
-    // Intercept "alias" command to capture output
-    if (command.trim().toLowerCase() === 'alias') {
-      isCapturingAliasRef.current = true;
-      aliasBufferRef.current = [];
-      if (aliasTimerRef.current) clearTimeout(aliasTimerRef.current);
-    }
-
-    // Intercept "parar" or "stop" to stop walking (with or without channel prefix)
-    const stopMatch = command.match(/^(?:\w+\s+)?(parar|stop)$/i);
-    if (stopMatch && walking) {
+    // Intercept "parar" or "stop" to stop walking
+    if ((command.toLowerCase() === 'parar' || command.toLowerCase() === 'stop') && walking) {
       stopWalk();
-      return;
-    }
-
-    // Intercept LOCATE command
-    if (command.toLowerCase() === 'locate') {
-      setCommandHistory(prev => [...prev.slice(-49), command]);
-      handleLocate();
       return;
     }
 
     // Intercept irsala command
     const irsalaMatch = command.match(/^irsala\s+(.+)$/i);
     if (irsalaMatch) {
-      setCommandHistory(prev => [...prev.slice(-49), command]);
-      Keyboard.dismiss();
       const query = irsalaMatch[1];
       const mapSvc = mapServiceRef.current;
       if (mapSvc.isLoaded) {
         const results = mapSvc.searchRooms(query);
         if (results.length === 0) {
-          addSystemLine(`--- No se encontró ninguna sala con "${query}" ---`);
+          addLine(`--- No se encontró ninguna sala con "${query}" ---`);
         } else if (results.length === 1) {
           walkTo(results[0]);
         } else {
-          setSearchResults(results.slice(0, 50));  // Limit to 50 results
+          setSearchResults(results);
           setSearchVisible(true);
         }
       }
+      setCommandHistory([command, ...commandHistory]);
       return;
     }
 
-    const commands = command.split(';');
-    for (const cmd of commands) {
-      telnetRef.current.send(cmd.trim());
-    }
-    // Add to command history (max 50)
-    setCommandHistory(prev => [...prev.slice(-49), command]);
-  }, [addSystemLine, walkTo, handleLocate]);
-
-  const handleMacroSave = useCallback(async (macro: Macro) => {
-    if (editingTarget.type === 'fkey') {
-      setFkeys(prev => {
-        const updated = [...prev];
-        updated[editingTarget.index] = macro;
-        saveFKeys(server.id, updated);
-        return updated;
-      });
-    } else {
-      setExtraButtons(prev => {
-        const updated = [...prev];
-        updated[editingTarget.index] = macro;
-        saveExtraButtons(server.id, updated);
-        return updated;
-      });
-    }
-    setMacroEditorVisible(false);
-  }, [server.id, editingTarget]);
-
-  const handleMacroDelete = useCallback(async (_macroId: string) => {
-    if (editingTarget.type === 'fkey') {
-      setFkeys(prev => {
-        const updated = [...prev];
-        updated[editingTarget.index] = null;
-        saveFKeys(server.id, updated);
-        return updated;
-      });
-    } else {
-      setExtraButtons(prev => {
-        const updated = [...prev];
-        updated[editingTarget.index] = null;
-        saveExtraButtons(server.id, updated);
-        return updated;
-      });
-    }
-    setMacroEditorVisible(false);
-  }, [server.id, editingTarget]);
-
-  const handleWizardSave = useCallback(
-    async (result: WizardResult) => {
-      try {
-        // Save layout and aliases directly to server
-        const layout: ButtonLayout = {
-          buttons: result.buttons,
-          gridSize: result.gridSize,
-        };
-        const newAliases = { ...channelAliases, ...result.channelAliasUpdates };
-
-        // Update server with configuration
-        const servers = await loadServers();
-        const updated = servers.map(s =>
-          s.id === server.id ? { ...s, buttonLayout: layout, channelAliases: newAliases } : s
-        );
-        await saveServers(updated);
-
-        // Update local state
-        setServer(prev => ({ ...prev, buttonLayout: layout, channelAliases: newAliases }));
-        setChannelAliases(newAliases);
-        setButtonLayout(layout);
-        setAliasWizardVisible(false);
-
-        addSystemLine('✓ Configuración guardada');
-      } catch (e) {
-        console.error('Error saving wizard configuration:', e);
-        addSystemLine('✗ Error al guardar la configuración');
-      }
-    },
-    [server.id, server.name, channelAliases, addSystemLine]
-  );
-
-  useEffect(() => {
-    linesRef.current = lines;
-  }, [lines]);
-
-  useEffect(() => {
-    navigation.setOptions({ title: server.name });
-
-    const telnet = new TelnetService(server, {
-      onData: (text: string) => {
-        // Skip empty text
-        if (!text || text.length === 0) return;
-
-        console.log('[onData] Raw text received:', JSON.stringify(text.slice(0, 200)));
-        console.log('[onData] Text length:', text.length, 'lines count:', (text.match(/\n/g) || []).length);
-
-        pendingText.current += text;
-        // Split by \n, but also handle \r\n and \r variants
-        // First normalize: replace \r\n with \n, and standalone \r with \n
-        const normalized = pendingText.current.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-        const parts = normalized.split('\n');
-        // Keep last part (possibly incomplete) in pending
-        pendingText.current = parts.pop() ?? '';
-
-        console.log('[onData] After split - parts count:', parts.length, 'pending buffer length:', pendingText.current.length);
-
-        // Collect lines to add and recent raw lines
-        const linesToAdd: string[] = [];
-        for (const part of parts) {
-          // Keep the original line (with spaces), don't trim
-          if (part.length > 0) {
-            linesToAdd.push(part);
-            // Keep recent raw lines for LOC (trimmed and without ANSI codes)
-            const clean = part.replace(/\x1b\[[0-9;]*m/g, '').trim();
-            recentLinesRef.current.push(clean);
-            if (recentLinesRef.current.length > 30) {
-              recentLinesRef.current = recentLinesRef.current.slice(-30);
-            }
-          }
-        }
-
-        // Add all lines at once to avoid multiple re-renders
-        if (linesToAdd.length > 0) {
-          console.log('[onData] Adding', linesToAdd.length, 'lines. First line:', JSON.stringify(linesToAdd[0].slice(0, 100)));
-          addMultipleLines(linesToAdd);
-        }
-      },
-      onConnect: () => {
-        setConnected(true);
-        addSystemLine(`--- Connected to ${server.name} (${server.host}:${server.port}) ---`);
-        // Auto-send character name after brief delay
-        setTimeout(() => {
-          telnetRef.current?.send(server.name);
-        }, 300);
-      },
-      onClose: () => {
-        if (pendingText.current && pendingText.current.trim().length > 0) {
-          addLine(pendingText.current.trim());
-        }
-        pendingText.current = '';
-        setConnected(false);
-        addSystemLine('--- Connection closed ---');
-      },
-      onError: (error: string) => {
-        addSystemLine(`--- Error: ${error} ---`);
-      },
-      onGMCP: (module: string, data: any) => {
-        // Comm: channels
-        if (module === 'Comm.Canales' && data && typeof data === 'object') {
-          setChannels(Object.keys(data));
-        } else if (module === 'Comm.EnciendeCanal' && data?.canal) {
-          setChannels(prev => prev.includes(data.canal) ? prev : [...prev, data.canal]);
-        } else if (module === 'Comm.ApagaCanal' && data?.canal) {
-          setChannels(prev => prev.filter(ch => ch !== data.canal));
-          if (activeChannelRef.current === data.canal) {
-            handleSelectChannel(null);
-          }
-        } else if ((module === 'Comm.MensajeCanal' || module === 'Comm.MensajeCanalHistorico') && data?.canal && data?.mensaje) {
-          const rawMsg = data.mensaje;
-          console.log('[GMCP]', module, 'canal:', data.canal);
-          console.log('[GMCP] Raw message (first 150 chars):', JSON.stringify(rawMsg.slice(0, 150)));
-          console.log('[GMCP] Message length:', rawMsg.length, 'Contains \\n:', rawMsg.includes('\n'), 'Contains \\r:', rawMsg.includes('\r'));
-          console.log('[GMCP] Char codes at position 0-10:', rawMsg.slice(0, 10).split('').map((c: string) => c.charCodeAt(0)));
-
-          const spans = parseAnsi(rawMsg);
-          console.log('[GMCP] After parseAnsi - spans count:', spans.length, 'first span text:', JSON.stringify(spans[0]?.text.slice(0, 50)));
-
-          setChannelMessages(prev => {
-            const updated = [...prev, { id: nextMsgId(), channel: data.canal, spans }];
-            console.log('[GMCP] setChannelMessages called, total messages:', updated.length);
-            return updated.length > 500 ? updated.slice(-500) : updated;
-          });
-          const isOwnEcho = Date.now() - lastSentChannelTime.current < 1000;
-          const isReading = activeChannelRef.current === data.canal || activeChannelRef.current === 'Todos';
-          if (!isOwnEcho && !isReading) {
-            setUnreadCounts(prev => ({ ...prev, [data.canal]: (prev[data.canal] || 0) + 1 }));
-          }
-        }
-
-        // Char.Status: vitals (pvs, pe, xp)
-        if (module === 'Char.Status' && data && typeof data === 'object') {
-          if (data.pvs) {
-            if (data.pvs.min !== undefined) setHp(data.pvs.min);
-            if (data.pvs.max !== undefined) setHpMax(data.pvs.max);
-          }
-          if (data.pe) {
-            if (data.pe.min !== undefined) setEnergy(data.pe.min);
-            if (data.pe.max !== undefined) setEnergyMax(data.pe.max);
-          }
-        }
-
-        const mapSvc = mapServiceRef.current;
-        if (!mapSvc.isLoaded) return;
-
-        if (module === 'Room.Actual') {
-          const roomName = typeof data === 'string' ? data : String(data);
-          const room = mapSvc.findRoom(roomName);
-          if (room) {
-            updateMapPosition(room);
-          }
-        } else if (module === 'Room.Movimiento') {
-          const dir = typeof data === 'string' ? data : String(data);
-          const room = mapSvc.moveByDirection(dir);
-          if (room) {
-            updateMapPosition(room);
-          }
-        }
-      },
-    });
-
-    telnetRef.current = telnet;
-    telnet.connect();
-
-    return () => {
-      telnet.disconnect();
-    };
-  }, [server]);
-
-  const handleSend = useCallback(() => {
-    const text = inputText.trim();
-    if (!text) {
-      setInputText('');
+    // Intercept LOCATE command
+    if (command.toLowerCase() === 'locate') {
+      setCommandHistory([command, ...commandHistory]);
+      handleLocate();
       return;
     }
 
-    // Capture alias output if user writes "alias" and not configured yet
-    if (text.toLowerCase() === 'alias' && !server.buttonLayout) {
-      setAliasWizardVisible(true);
-      setCapturedAliases([]);
-
-      // After 2 seconds, try to populate from visible lines
-      setTimeout(() => {
-        const recentLines = linesRef.current.slice(-100);
-        const recentText = recentLines.map(l => l.spans.map(s => s.text).join('')).join('\n');
-        const parsed = parseAliasOutput(recentText.split('\n'));
-        if (parsed.length > 0) {
-          const DIRECTIONS = ['n', 's', 'e', 'o', 'ne', 'no', 'se', 'so', 'de', 'fu', 'ar', 'ab'];
-          const DIRECTION_NAMES: Record<string, string> = {
-            'n': 'norte', 's': 'sur', 'e': 'este', 'o': 'oeste',
-            'ne': 'noreste', 'no': 'noroeste', 'se': 'sureste', 'so': 'suroeste',
-            'de': 'dentro', 'fu': 'fuera', 'ar': 'arriba', 'ab': 'abajo'
-          };
-          const withDirections: ParsedAlias[] = [
-            ...DIRECTIONS.map(d => ({
-              name: d.toUpperCase(),
-              command: DIRECTION_NAMES[d],
-              type: 'direction' as const,
-              description: d === 'n'
-                ? 'Coloca donde irá el Norte, el resto de direcciones se configurarán respecto a esta'
-                : undefined
-            })),
-            {
-              name: 'LOC',
-              command: 'locate',
-              type: 'locate' as const,
-              description: 'Este botón se utilizará para localizarte en el mapa, como el "buscarsala"'
-            },
-            ...parsed
-          ];
-          setCapturedAliases(withDirections);
-        }
-      }, 2000);
+    if (connected) {
+      telnetRef.current.send(command);
+      setCommandHistory([command, ...commandHistory]);
     }
 
-    // Cancel walk if any command is sent
+    // Cancel walk if any other command is sent
     if (walking) {
       stopWalk();
-      addSystemLine('--- Movimiento cancelado ---');
+      addLine('--- Movimiento cancelado ---');
+    }
+  }, [connected, commandHistory, walking, stopWalk, walkTo, handleLocate, addLine]);
+
+  const handleSendInput = () => {
+    if (inputText.trim()) {
+      sendCommand(inputText);
+      setInputText('');
+    }
+  };
+
+  const handleCaptureAliases = () => {
+    isCapturingAliasRef.current = true;
+    aliasBufferRef.current = [];
+    sendCommand('alias');
+  };
+
+  const handleEditButton = (col: number, row: number) => {
+    setEditButtonCol(col);
+    setEditButtonRow(row);
+    setEditButtonVisible(true);
+  };
+
+  const handleSaveEditButton = async (btn: any) => {
+    if (!buttonLayout) return;
+
+    const updated = buttonLayout.buttons.filter(
+      b => !(b.col === editButtonCol && b.row === editButtonRow)
+    );
+    if (btn.label && btn.label !== '—') {
+      updated.push(btn);
     }
 
-    if (telnetRef.current) {
-      telnetRef.current.send(text);
+    const newLayout = { buttons: updated };
+    setButtonLayout(newLayout);
+
+    const updatedServer = {
+      ...server,
+      buttonLayout: newLayout,
+    };
+    setServer(updatedServer);
+
+    const servers = await loadServers();
+    const index = servers.findIndex(s => s.id === server.id);
+    if (index >= 0) {
+      servers[index] = updatedServer;
+      await saveServers(servers);
     }
-    setCommandHistory(prev => [...prev.slice(-49), text]);
-    setInputText('');
-    // Always scroll to bottom when sending
+
+    setEditButtonVisible(false);
+  };
+
+  const handleDeleteButton = async () => {
+    if (!buttonLayout) return;
+
+    const updated = buttonLayout.buttons.filter(
+      b => !(b.col === editButtonCol && b.row === editButtonRow)
+    );
+
+    const newLayout = { buttons: updated };
+    setButtonLayout(newLayout);
+
+    const updatedServer = {
+      ...server,
+      buttonLayout: newLayout,
+    };
+    setServer(updatedServer);
+
+    const servers = await loadServers();
+    const index = servers.findIndex(s => s.id === server.id);
+    if (index >= 0) {
+      servers[index] = updatedServer;
+      await saveServers(servers);
+    }
+
+    setEditButtonVisible(false);
+  };
+
+  const handleFlatListScroll = (event: any) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const isAtEnd = contentOffset.y >= contentSize.height - layoutMeasurement.height - 50;
+    isAtBottomRef.current = isAtEnd;
+    setIsAtBottom(isAtEnd);
+    setShowScrollToBottom(!isAtEnd && lines.length > 0);
+  };
+
+  const handleScrollToBottom = () => {
     isAtBottomRef.current = true;
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
-  }, [inputText, walking, stopWalk, walkTo]);
+    setIsAtBottom(true);
+    setShowScrollToBottom(false);
+    flatListRef.current?.scrollToEnd({ animated: true });
+  };
 
-  // Scroll to end when layout changes (keyboard, channel, orientation, buttons appear/disappear)
-  useEffect(() => {
-    isAtBottomRef.current = true;
-    const scrollToBottom = () => flatListRef.current?.scrollToEnd({ animated: false });
-    setTimeout(scrollToBottom, 200);
-    setTimeout(scrollToBottom, 500);
-    setTimeout(scrollToBottom, 1000);
-  }, [keyboardVisible, activeChannel, isLandscape]);
+  const availableHeight = height - insets.top - insets.bottom;
+  const vitalsHeight = 35;
+  const inputHeight = 30;
+  const cellSize = width / GRID_COLS;
+  const BUTTON_PADDING_VERTICAL = 3 * 2; // paddingVertical: 3 (top + bottom)
+  const BUTTON_GAP = 3; // gap between rows
+  const BUTTON_GAPS_TOTAL = (GRID_ROWS - 1) * BUTTON_GAP; // gaps between rows
+  const buttonGridHeight = GRID_ROWS * cellSize + BUTTON_GAPS_TOTAL + BUTTON_PADDING_VERTICAL;
 
-  const renderLine = useCallback(({ item }: { item: MudLine }) => (
-    <AnsiText line={item} fontSize={fontSize} />
-  ), [fontSize]);
+  const handleUpArrow = () => {
+    if (historyIndex < commandHistory.length - 1) {
+      const newIndex = historyIndex + 1;
+      setHistoryIndex(newIndex);
+      setInputText(commandHistory[newIndex]);
+    }
+  };
 
-  const keyExtractor = useCallback((item: MudLine) => String(item.id), []);
+  const handleDownArrow = () => {
+    if (historyIndex > 0) {
+      const newIndex = historyIndex - 1;
+      setHistoryIndex(newIndex);
+      setInputText(commandHistory[newIndex]);
+    } else if (historyIndex === 0) {
+      setHistoryIndex(-1);
+      setInputText('');
+    }
+  };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
-      {/* New unified layout */}
-      <UnifiedTerminalLayout
-        lines={lines}
-        inputText={inputText}
-        connected={connected}
-        channels={channels}
-        channelMessages={channelMessages}
-        channelAliases={channelAliases}
-        activeChannel={activeChannel}
-        unreadCounts={unreadCounts}
-        hp={hp}
-        hpMax={hpMax}
-        energy={energy}
-        energyMax={energyMax}
-        fontSize={fontSize}
-        currentRoom={currentRoom}
-        nearbyRooms={nearbyRooms}
-        mapVisible={mapVisible}
-        commandHistory={commandHistory}
-        buttonLayout={buttonLayout}
-        walking={walking}
-        onInputChange={setInputText}
-        onSend={handleSend}
-        onSendCommand={sendCommand}
-        onSelectChannel={handleSelectChannel}
-        onAliasChange={(ch, alias) => {
-          const updated = { ...channelAliases, [ch]: alias };
-          setChannelAliases(updated);
-          // Update both local state and server
-          (async () => {
-            const servers = await loadServers();
-            const serverUpdated = servers.map(s =>
-              s.id === server.id ? { ...s, channelAliases: updated } : s
-            );
-            await saveServers(serverUpdated);
-            setServer(prev => ({ ...prev, channelAliases: updated }));
-          })();
-        }}
-        onToggleMap={() => setMapVisible(v => !v)}
-        onStop={stopWalk}
-        onConfigureButtons={() => {
-          if (server.buttonLayout) {
-            // Already configured - ask to reconfigure
-            Alert.alert(
-              'Configuración existente',
-              '¿Ya existe una configuración, estás seguro que quieres borrarla y volver a hacerla?',
-              [
-                { text: 'No, cancelar', style: 'cancel' },
-                {
-                  text: 'Sí, borrar y reconfigurar',
-                  style: 'destructive',
-                  onPress: async () => {
-                    // Delete configuration
-                    const servers = await loadServers();
-                    const updated = servers.map(s =>
-                      s.id === server.id ? { ...s, buttonLayout: undefined, channelAliases: undefined } : s
-                    );
-                    await saveServers(updated);
-                    setServer(prev => ({ ...prev, buttonLayout: undefined, channelAliases: undefined }));
-                    setButtonLayout(null);
-                    setChannelAliases({});
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        {/* Terminal (flex 1 - takes remaining space) */}
+        <View style={[styles.terminalSection, { flex: 1 }]}>
+          <FlatList
+            scrollToEndDelay={100}
+            ref={flatListRef}
+            data={lines}
+            keyExtractor={item => String(item.id)}
+            renderItem={({ item }) => (
+              <View style={styles.lineContainer} key={item.id}>
+                <AnsiText spans={item.spans} fontSize={fontSize} lineId={item.id} />
+              </View>
+            )}
+            scrollEventThrottle={16}
+            onScroll={handleFlatListScroll}
+            onScrollEndDrag={handleFlatListScroll}
+            style={styles.flatList}
+          />
 
-                    // Open wizard
-                    setAliasWizardVisible(true);
-                    if (capturedAliases.length === 0) {
-                      sendCommand('alias');
-                    }
-                  },
-                },
-              ]
-            );
-          } else {
-            // Not configured - open wizard
-            setAliasWizardVisible(true);
-            if (capturedAliases.length === 0) {
-              sendCommand('alias');
-            }
-          }
-        }}
-        showConfigureButton={!server.buttonLayout}
+          {/* Scroll to bottom button */}
+          {showScrollToBottom && (
+            <TouchableOpacity style={styles.scrollToBottomButton} onPress={handleScrollToBottom}>
+              <Text style={styles.scrollToBottomText}>↓</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* MiniMap overlay */}
+          <View style={styles.miniMapContainer} pointerEvents="box-none">
+            <MiniMap
+              currentRoom={currentRoom}
+              nearbyRooms={nearbyRooms}
+              visible={mapVisible}
+              onToggle={() => setMapVisible(!mapVisible)}
+              walking={walking}
+              onStop={stopWalk}
+            />
+          </View>
+        </View>
+
+        {/* VitalBars */}
+        <View style={[styles.vitalsSection, { height: vitalsHeight }]}>
+          <VitalBars
+            hp={hp}
+            hpMax={hpMax}
+            energy={energy}
+            energyMax={energyMax}
+          />
+        </View>
+
+        {/* Input Row */}
+        <View style={[styles.inputSection, { height: inputHeight }]}>
+          <TouchableOpacity
+            style={styles.arrowButton}
+            onPress={handleUpArrow}
+          >
+            <Text style={styles.arrowText}>▲</Text>
+          </TouchableOpacity>
+
+          {connected ? (
+            <>
+              <TextInput
+                style={styles.input}
+                placeholder="Comando..."
+                placeholderTextColor="#888"
+                value={inputText}
+                onChangeText={(text) => {
+                  setInputText(text);
+                  setHistoryIndex(-1);
+                }}
+                onSubmitEditing={handleSendInput}
+                returnKeyType="send"
+                autoCapitalize="none"
+              />
+
+              <TouchableOpacity
+                style={styles.sendButton}
+                onPress={handleSendInput}
+              >
+                <Text style={styles.sendButtonText}>›</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <TouchableOpacity
+              style={[styles.input, styles.reconnectButton]}
+              onPress={() => telnetRef.current?.connect()}
+            >
+              <Text style={styles.reconnectText}>Reconectar</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            style={styles.arrowButton}
+            onPress={handleDownArrow}
+          >
+            <Text style={styles.arrowText}>▼</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ButtonGrid */}
+        <View style={[styles.buttonGridSection, { height: buttonGridHeight, paddingBottom: insets.bottom }]}>
+          <ButtonGrid
+            buttons={buttonLayout?.buttons || []}
+            onSendCommand={sendCommand}
+            onEditButton={handleEditButton}
+          />
+        </View>
+      </View>
+
+      {/* Alias Wizard Modal */}
+      {/* Button Edit Modal */}
+      <ButtonEditModal
+        visible={editButtonVisible}
+        col={editButtonCol}
+        row={editButtonRow}
+        button={buttonLayout?.buttons.find(b => b.col === editButtonCol && b.row === editButtonRow) || null}
+        onSave={handleSaveEditButton}
+        onDelete={handleDeleteButton}
+        onClose={() => setEditButtonVisible(false)}
       />
 
-
-      {/* Active channel panel handled by UnifiedTerminalLayout now */}
-
-      {/* Room search results */}
+      {/* Room Search Results */}
       <RoomSearchResults
         rooms={searchResults}
         visible={searchVisible}
         onSelect={(room) => {
           setSearchVisible(false);
-          handleSelectChannel('Mapa');
           walkTo(room);
         }}
         onClose={() => setSearchVisible(false)}
       />
-
-      {/* Macro editor modal */}
-      <MacroEditor
-        visible={macroEditorVisible}
-        macro={editingMacro}
-        onSave={handleMacroSave}
-        onDelete={handleMacroDelete}
-        onClose={() => setMacroEditorVisible(false)}
-      />
-
-      {/* Alias wizard modal */}
-      <AliasWizardModal
-        visible={aliasWizardVisible}
-        aliases={capturedAliases}
-        channels={channels.filter(c => c !== 'Todos' && c !== 'Mapa')}
-        onSave={handleWizardSave}
-        onDiscard={() => setAliasWizardVisible(false)}
-      />
-
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#0a0a0a',
+  },
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: '#0a0a0a',
+    flexDirection: 'column',
   },
-  portraitBody: {
+  terminalSection: {
+    flex: 1,
+    position: 'relative',
+    backgroundColor: '#1a1a1a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+    overflow: 'hidden',
+  },
+  flatList: {
     flex: 1,
   },
-  landscapeBody: {
-    flex: 1,
-    flexDirection: 'row',
+  lineContainer: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
   },
-  portraitLeft: {
-    flex: 1,
-  },
-  landscapeLeft: {
-    flex: 1,
-  },
-  portraitBottom: {
-  },
-  landscapeRight: {
-    width: 280,
-    backgroundColor: '#111',
-    borderLeftWidth: 1,
-    borderLeftColor: '#333',
-  },
-  safeTop: {
-    backgroundColor: '#111',
-  },
-  statusBar: {
-    flexDirection: 'row',
+  scrollToBottomButton: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    backgroundColor: '#3399cc',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    backgroundColor: '#111',
+  },
+  scrollToBottomText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  miniMapContainer: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 200,
+    height: 200,
+    zIndex: 100,
+  },
+  vitalsSection: {
+    backgroundColor: '#1a1a1a',
+    borderBottomWidth: 0,
+    padding: 0,
+  },
+  inputSection: {
+    flexDirection: 'row',
+    paddingHorizontal: 2,
+    paddingVertical: 0,
+    gap: 2,
+    backgroundColor: '#222',
     borderBottomWidth: 1,
     borderBottomColor: '#333',
   },
-  backBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+  arrowButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#333',
+    borderRadius: 2,
+    paddingHorizontal: 6,
   },
-  backText: {
-    color: '#00cc00',
+  arrowText: {
+    color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 6,
-  },
-  statusName: {
-    color: '#00cc00',
-    fontSize: 11,
-    fontFamily: 'monospace',
-    fontWeight: 'bold',
-    marginRight: 6,
-    flexShrink: 1,
-  },
-  statusHost: {
-    color: '#666',
-    fontSize: 10,
-    fontFamily: 'monospace',
-    flex: 1,
-  },
-  connected: {
-    backgroundColor: '#00cc00',
-  },
-  disconnected: {
-    backgroundColor: '#cc0000',
-  },
-  reconnectBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    backgroundColor: '#333',
-    borderRadius: 3,
-  },
-  reconnectText: {
-    color: '#cccccc',
-    fontSize: 10,
-  },
-  outputWrapper: {
-    flex: 1,
-    position: 'relative',
-  },
-  output: {
-    flex: 1,
-    backgroundColor: '#000000',
-  },
-  outputContent: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  safeBottom: {
-    backgroundColor: '#111',
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#111',
-    paddingHorizontal: 4,
-    paddingTop: 2,
-    paddingBottom: 2,
   },
   input: {
     flex: 1,
-    color: '#ffffff',
-    fontFamily: 'monospace',
-    fontSize: 16,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    minHeight: 40,
-    backgroundColor: '#0a0a0a',
-    borderWidth: 1,
-    borderColor: '#444',
+    backgroundColor: '#333',
+    color: '#fff',
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 0,
+    fontSize: 14,
+    textAlignVertical: 'center',
+  },
+  sendButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#3399cc',
+    borderRadius: 4,
+    paddingHorizontal: 12,
+  },
+  sendButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  reconnectButton: {
+    backgroundColor: '#333',
+    justifyContent: 'center',
+    alignItems: 'center',
     borderRadius: 4,
   },
-  sendBtn: {
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    backgroundColor: '#2a2a2a',
-  },
-  sendText: {
-    color: '#00cc00',
-    fontWeight: 'bold',
+  reconnectText: {
+    color: '#fff',
     fontSize: 14,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  buttonGridSection: {
+    overflow: 'hidden',
   },
 });

@@ -10,21 +10,19 @@ interface VitalBarsProps {
 }
 
 export function VitalBars({ hp, hpMax, energy, energyMax, orientation = 'horizontal' }: VitalBarsProps) {
-  if (hpMax <= 0 && energyMax <= 0) return null;
-
   const hpPct = hpMax > 0 ? Math.max(0, Math.min(1, hp / hpMax)) : 0;
   const energyPct = energyMax > 0 ? Math.max(0, Math.min(1, energy / energyMax)) : 0;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { flex: 1 }]}>
       {/* HP bar */}
-      <View style={styles.barBg}>
+      <View style={[styles.barBg, styles.hpBg, { flex: 1 }]}>
         <View style={[styles.barFill, styles.hpFill, { width: `${hpPct * 100}%` }]} />
         <Text style={styles.label}>{hp}/{hpMax}</Text>
       </View>
 
       {/* Energy bar */}
-      <View style={styles.barBg}>
+      <View style={[styles.barBg, styles.energyBg, { flex: 1 }]}>
         <View style={[styles.barFill, styles.energyFill, { width: `${energyPct * 100}%` }]} />
         <Text style={styles.label}>{energy}/{energyMax}</Text>
       </View>
@@ -34,15 +32,20 @@ export function VitalBars({ hp, hpMax, energy, energyMax, orientation = 'horizon
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#111',
-    gap: 1,
-    paddingVertical: 1,
+    backgroundColor: '#0a0a0a',
+    gap: 0,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
   },
   barBg: {
-    height: 14,
-    backgroundColor: '#1a1a1a',
     justifyContent: 'center',
     position: 'relative',
+  },
+  hpBg: {
+    backgroundColor: '#330000',
+  },
+  energyBg: {
+    backgroundColor: '#000033',
   },
   barFill: {
     position: 'absolute',
@@ -51,16 +54,17 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   hpFill: {
-    backgroundColor: 'rgba(180, 0, 0, 0.8)',
+    backgroundColor: '#ff3333',
   },
   energyFill: {
-    backgroundColor: 'rgba(0, 60, 180, 0.8)',
+    backgroundColor: '#3366ff',
   },
   label: {
-    color: 'rgba(220, 220, 220, 0.9)',
-    fontSize: 9,
+    color: '#fff',
+    fontSize: 10,
     fontFamily: 'monospace',
     textAlign: 'center',
     zIndex: 1,
+    fontWeight: 'bold',
   },
 });
