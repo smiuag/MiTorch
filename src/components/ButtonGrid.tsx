@@ -229,9 +229,9 @@ export function ButtonGrid({
     onSendCommand(command);
   };
 
-  // Grid dimensions: horizontal mode (6 cols × 9 rows) or vertical (9 cols × 6 rows)
+  // Grid dimensions: horizontal mode or vertical
   const gridCols = horizontalMode ? horizontalMode.cols : displayCols;
-  const gridRows = horizontalMode ? 9 : displayRows;
+  const gridRows = horizontalMode ? minRows : displayRows;
   const cellSize = horizontalMode ? horizontalMode.cellSize : width / displayCols;
 
   return (
