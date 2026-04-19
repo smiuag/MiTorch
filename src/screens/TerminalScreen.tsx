@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
   Modal,
   Alert,
+  AccessibilityInfo,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -270,11 +271,27 @@ export function TerminalScreen({ route, navigation }: Props) {
                       setNearbyRooms(nearby);
                       setLocateFeedback('success');
                       setTimeout(() => setLocateFeedback(null), 2000);
+
+                      // Blind mode: announce location
+                      if (uiMode === 'blind') {
+                        const exits = Object.keys(room.e || {}).sort().join(', ');
+                        AccessibilityInfo.announceForAccessibility(
+                          `Localización encontrada. Sala: ${room.n}. Salidas: ${exits || 'ninguna'}`
+                        );
+                      }
+
                       isLocatingRef.current = false;
                     } else {
                       console.log('[LOCATE] ✗ No encontrada en mapa');
                       setLocateFeedback('failed');
                       setTimeout(() => setLocateFeedback(null), 2000);
+
+                      // Blind mode: announce failure
+                      if (uiMode === 'blind') {
+                        AccessibilityInfo.announceForAccessibility(
+                          `No se encontró la sala: ${roomName}`
+                        );
+                      }
                     }
                   }
                 }
@@ -286,12 +303,23 @@ export function TerminalScreen({ route, navigation }: Props) {
       },
       onConnect: () => {
         setConnected(true);
+        if (uiMode === 'blind') {
+          AccessibilityInfo.announceForAccessibility(
+            `Conectado a ${server.name}. Comando listo para enviar.`
+          );
+        }
       },
       onClose: () => {
         setConnected(false);
+        if (uiMode === 'blind') {
+          AccessibilityInfo.announceForAccessibility('Desconectado del servidor');
+        }
       },
       onError: (err: string) => {
         Alert.alert('Error de conexión', err);
+        if (uiMode === 'blind') {
+          AccessibilityInfo.announceForAccessibility(`Error: ${err}`);
+        }
       },
       onGMCP: (module: string, data: any) => {
         if (module === 'Room.Actual') {
@@ -310,6 +338,14 @@ export function TerminalScreen({ route, navigation }: Props) {
             setCurrentRoom(room);
             const nearby = mapServiceRef.current.getNearbyRooms(room.x, room.y, room.z, 15);
             setNearbyRooms(nearby);
+
+            // Blind mode: announce room change
+            if (uiMode === 'blind') {
+              const exits = Object.keys(room.e || {}).sort().join(', ');
+              AccessibilityInfo.announceForAccessibility(
+                `Entraste a ${room.n}. Salidas disponibles: ${exits || 'ninguna'}`
+              );
+            }
           }
         } else if (module === 'Char.Status' && data && typeof data === 'object') {
           // HP from Char.Status.pvs (current/max)
@@ -666,6 +702,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           accessible={true}
           accessibilityLabel="Terminal output"
           accessibilityRole="list"
+          accessibilityLiveRegion={uiMode === 'blind' ? 'polite' : 'none'}
         >
           <FlatList
             scrollToEndDelay={100}

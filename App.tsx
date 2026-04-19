@@ -33,15 +33,17 @@ export default function App() {
           options={{
             headerShown: false,
             title: 'Server List',
+            accessibilityLabel: 'Server List Screen',
           }}
         />
         <Stack.Screen
           name="Terminal"
           component={TerminalScreen}
-          options={{
+          options={({ route }) => ({
             headerShown: false,
-            title: 'MUD Terminal',
-          }}
+            title: `MUD Terminal - ${route.params?.server?.name || 'Conectando'}`,
+            accessibilityLabel: `Terminal - ${route.params?.server?.name || 'Conectando'}. Presiona el botón atrás para desconectar.`,
+          })}
         />
         <Stack.Screen
           name="Settings"
@@ -49,6 +51,7 @@ export default function App() {
           options={{
             headerShown: false,
             title: 'Settings',
+            accessibilityLabel: 'Settings Screen',
           }}
         />
       </Stack.Navigator>

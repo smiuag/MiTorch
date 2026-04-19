@@ -63,9 +63,17 @@ export function SettingsScreen({ navigation }: Props) {
               style={[styles.fontBtn, settings.fontSize <= 10 && styles.fontBtnDisabled]}
               onPress={() => settings.fontSize > 10 && updateSetting('fontSize', settings.fontSize - 1)}
               accessible={true}
-              accessibilityLabel="Decrease font size"
-              accessibilityRole="button"
-              accessibilityHint={`Current size: ${settings.fontSize}px`}
+              accessibilityLabel="Font size"
+              accessibilityRole="slider"
+              accessibilityState={{ disabled: settings.fontSize <= 10 }}
+              accessibilityValue={{ min: 10, max: 20, now: settings.fontSize }}
+              accessibilityHint={`Current size: ${settings.fontSize}px. Use swipe down to decrease.`}
+              accessibilityActions={settings.uiMode === 'blind' ? [{ name: 'decrement' }] : undefined}
+              onAccessibilityAction={(event) => {
+                if (event.nativeEvent.actionName === 'decrement' && settings.fontSize > 10) {
+                  updateSetting('fontSize', settings.fontSize - 1);
+                }
+              }}
             >
               <Text style={[styles.fontBtnText, settings.fontSize <= 10 && styles.fontBtnTextDisabled]}>−</Text>
             </TouchableOpacity>
@@ -80,9 +88,17 @@ export function SettingsScreen({ navigation }: Props) {
               style={[styles.fontBtn, settings.fontSize >= 20 && styles.fontBtnDisabled]}
               onPress={() => settings.fontSize < 20 && updateSetting('fontSize', settings.fontSize + 1)}
               accessible={true}
-              accessibilityLabel="Increase font size"
-              accessibilityRole="button"
-              accessibilityHint={`Current size: ${settings.fontSize}px`}
+              accessibilityLabel="Font size"
+              accessibilityRole="slider"
+              accessibilityState={{ disabled: settings.fontSize >= 20 }}
+              accessibilityValue={{ min: 10, max: 20, now: settings.fontSize }}
+              accessibilityHint={`Current size: ${settings.fontSize}px. Use swipe up to increase.`}
+              accessibilityActions={settings.uiMode === 'blind' ? [{ name: 'increment' }] : undefined}
+              onAccessibilityAction={(event) => {
+                if (event.nativeEvent.actionName === 'increment' && settings.fontSize < 20) {
+                  updateSetting('fontSize', settings.fontSize + 1);
+                }
+              }}
             >
               <Text style={[styles.fontBtnText, settings.fontSize >= 20 && styles.fontBtnTextDisabled]}>+</Text>
             </TouchableOpacity>
