@@ -322,6 +322,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, [lines.length]);
 
   useEffect(() => {
+    console.log(`[TELNET_SETUP] Creating TelnetService, uiMode="${uiMode}" settingsLoaded=${settingsLoaded}`);
     const telnet = new TelnetService(server, {
       onData: (text: string) => {
         if (isCapturingAliasRef.current) {
