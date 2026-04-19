@@ -1,104 +1,286 @@
 {
-  "description": "Blind Mode filters - Similar to VipMUD configuration",
-  "version": "1.0",
+  "description": "Blind Mode filters - Comprehensive VipMUD-style configuration",
+  "version": "2.0",
+  "variables": {
+    "playerClass": "desconocida",
+    "playerLevel": 0,
+    "playerHP": 0,
+    "playerMaxHP": 0,
+    "playerEnergy": 0,
+    "playerMaxEnergy": 0,
+    "concentrationActive": false,
+    "inCombat": false
+  },
+  "sounds": {
+    "enabled": true,
+    "enabledByDefault": false,
+    "directory": "assets/sounds",
+    "categories": {
+      "bloqueos": "bloqueos/",
+      "hechizos": "hechizos/",
+      "combate": "combate/",
+      "eventos": "eventos/"
+    }
+  },
   "filters": {
     "bloqueos": {
       "enabled": true,
-      "description": "Silencia mensajes de bloqueo repetitivos",
+      "class": "all",
+      "description": "Bloqueos y restricciones",
       "patterns": [
         {
-          "regex": "El bloqueo '.*' termina",
+          "regex": "El bloqueo '([^']+)' termina",
           "action": "announce",
-          "message": "Bloqueo terminado",
-          "announce": true,
-          "silence": false
-        }
-      ]
-    },
-    "combate": {
-      "enabled": true,
-      "description": "Filtros de mensajes de combate",
-      "patterns": [
+          "message": "Bloqueo de {1} terminado",
+          "sound": "bloqueos/bloqueo-termina.wav",
+          "priority": "normal"
+        },
         {
-          "regex": "Alcanzas.*a .* con tu maniobra de .*",
+          "regex": "Te estremeces y pierdes la concentración",
           "action": "announce",
-          "message": "Golpe exitoso",
+          "message": "Pierdes concentración",
+          "sound": "combate/pierdes-concentracion.wav",
+          "priority": "high",
           "silence": false
         },
         {
-          "regex": ".*logra esquivar.*tu maniobra de .*",
+          "regex": "Concentración bloqueada",
+          "action": "announce",
+          "message": "Concentración bloqueada",
+          "priority": "high"
+        }
+      ]
+    },
+    "hechizos": {
+      "enabled": true,
+      "class": "magos",
+      "description": "Eventos de hechizos arcanos",
+      "patterns": [
+        {
+          "regex": "Preparas los componentes del hechizo",
+          "action": "announce",
+          "message": "Preparando hechizo",
+          "sound": "hechizos/preparas.wav",
+          "silence": true
+        },
+        {
+          "regex": "Comienzas a formular el hechizo",
+          "action": "announce",
+          "message": "Formulando hechizo",
+          "sound": "hechizos/formulando.wav",
+          "silence": true
+        },
+        {
+          "regex": "resiste los efectos de tu hechizo",
+          "action": "announce",
+          "message": "Enemigo resiste hechizo",
+          "sound": "hechizos/resiste.wav",
+          "priority": "normal"
+        },
+        {
+          "regex": "El destino de tu hechizo ha desaparecido",
+          "action": "announce",
+          "message": "Objetivo fuera de rango",
+          "sound": "hechizos/fuera-rango.wav",
+          "silence": true
+        },
+        {
+          "regex": "Tus imágenes se desvanecen",
+          "action": "announce",
+          "message": "Imágenes desvanecidas",
+          "sound": "hechizos/imagenes-off.wav",
+          "priority": "high"
+        },
+        {
+          "regex": "Tus clones ilusorios se dividen.*imágenes suba a (\\d+)",
+          "action": "announce",
+          "message": "Imágenes: {1}",
+          "sound": "hechizos/imagenes-up.wav"
+        },
+        {
+          "regex": "Tu piel queda cubierta.*capas de piedra",
+          "action": "announce",
+          "message": "Piel de piedra activada",
+          "sound": "hechizos/piel-piedra-on.wav",
+          "priority": "normal"
+        }
+      ]
+    },
+    "combate_fisico": {
+      "enabled": true,
+      "class": "guerreros",
+      "description": "Combate físico y habilidades",
+      "patterns": [
+        {
+          "regex": "Alcanzas.*a .* con tu maniobra de (.+)!",
+          "action": "announce",
+          "message": "Golpe: {1}",
+          "sound": "combate/impacto.wav",
+          "priority": "normal"
+        },
+        {
+          "regex": ".*logra esquivar.*tu maniobra",
           "action": "announce",
           "message": "Esquivado",
-          "silence": false
+          "sound": "combate/esquivado.wav",
+          "priority": "normal"
         },
         {
-          "regex": ".*logra parar.*tu maniobra de .*",
+          "regex": ".*logra parar.*tu maniobra",
           "action": "announce",
           "message": "Bloqueado",
-          "silence": false
+          "sound": "combate/bloqueado.wav",
+          "priority": "normal"
         },
         {
-          "regex": "Tu maniobra de .* se ve interrumpida",
+          "regex": "Tus objetivos ya no están al alcance",
+          "action": "announce",
+          "message": "Objetivo perdido",
+          "sound": "combate/objetivo-perdido.wav",
+          "silence": true
+        },
+        {
+          "regex": "Tu maniobra.*se ve interrumpida",
           "action": "announce",
           "message": "Interrupción",
-          "silence": false
-        }
-      ]
-    },
-    "ambiente": {
-      "enabled": true,
-      "description": "Filtra mensajes repetitivos de ambiente",
-      "patterns": [
+          "sound": "combate/interrumpido.wav",
+          "priority": "high"
+        },
         {
-          "regex": "^\\[.*\\]$",
-          "action": "reduce",
-          "description": "Reduce líneas entre corchetes (ambientación)",
-          "silence": false,
-          "frequency": "high"
+          "regex": "críticamente",
+          "action": "announce",
+          "message": "CRÍTICO",
+          "sound": "combate/critico.wav",
+          "priority": "high"
         }
       ]
     },
     "movimiento": {
       "enabled": true,
-      "description": "Anuncia cambios de ubicación",
+      "class": "all",
+      "description": "Movimiento y navegación",
       "patterns": [
         {
-          "regex": "^(Entras|Arrastras|Subes|Bajas|Cruzas).*",
+          "regex": "^(Entras|Arrastras|Subes|Bajas|Cruzas|Saltas).*",
           "action": "announce",
           "message": "Movimiento",
           "announce": true,
-          "silence": false
+          "priority": "normal"
+        },
+        {
+          "regex": "^Caminas hacia.*",
+          "action": "announce",
+          "message": "Caminando",
+          "frequency": "high",
+          "silence": true
         }
       ]
     },
-    "eventos_importantes": {
+    "eventos_criticos": {
       "enabled": true,
-      "description": "Anuncia eventos importantes",
+      "class": "all",
+      "description": "Eventos importantes para la supervivencia",
       "patterns": [
         {
-          "regex": "\\[muerte\\]|\\[muerte-jugador\\]|has muerto",
+          "regex": "\\[muerte\\]|has muerto|Your death|You have been killed",
           "action": "announce",
-          "message": "Muerte",
-          "announce": true,
-          "silence": false,
-          "priority": "high"
+          "message": "MUERTE",
+          "sound": "eventos/muerte.wav",
+          "priority": "high",
+          "announce": true
         },
         {
-          "regex": "\\[victoria\\]|objetivo destruido",
+          "regex": "\\[victoria\\]|enemigo ha sido aniquilado|Victory",
           "action": "announce",
-          "message": "Victoria",
-          "announce": true,
-          "silence": false,
-          "priority": "high"
+          "message": "VICTORIA",
+          "sound": "eventos/victoria.wav",
+          "priority": "high",
+          "announce": true
         },
         {
-          "regex": "Ganas .* puntos de experiencia",
+          "regex": "Ganas ([\\d,]+) puntos de experiencia",
           "action": "announce",
-          "message": "Experiencia ganada",
-          "announce": true,
-          "silence": false
+          "message": "XP: +{1}",
+          "sound": "eventos/xp.wav",
+          "priority": "normal"
+        },
+        {
+          "regex": "ALERTA:|ADVERTENCIA:|WARNING:",
+          "action": "announce",
+          "message": "Alerta del sistema",
+          "priority": "high",
+          "announce": true
         }
       ]
+    },
+    "ambiente": {
+      "enabled": true,
+      "class": "all",
+      "description": "Mensajes repetitivos de ambiente",
+      "patterns": [
+        {
+          "regex": "^\\[.*\\]$",
+          "action": "reduce",
+          "description": "Reduce ambientación entre corchetes",
+          "frequency": "high",
+          "silence": false,
+          "ratio": 3
+        },
+        {
+          "regex": "^(El viento|La brisa|Escuchas|Ves).*",
+          "action": "reduce",
+          "description": "Reduce descripciones de ambiente",
+          "frequency": "medium",
+          "ratio": 2
+        }
+      ]
+    },
+    "stats_y_combate": {
+      "enabled": true,
+      "class": "all",
+      "description": "Actualizaciones de stats en combate",
+      "patterns": [
+        {
+          "regex": "Tu salud ha aumentado",
+          "action": "announce",
+          "message": "Salud restaurada",
+          "sound": "eventos/curacion.wav"
+        },
+        {
+          "regex": "Te sientes agotado",
+          "action": "announce",
+          "message": "Agotado",
+          "priority": "high"
+        },
+        {
+          "regex": "enfoque|concentración|alineamiento",
+          "action": "announce",
+          "message": "Estado modificado",
+          "priority": "normal"
+        }
+      ]
+    }
+  },
+  "classConfigs": {
+    "guerreros": {
+      "description": "Soldados, Lanceros, Campeones",
+      "enabledFilters": ["combate_fisico", "bloqueos", "movimiento", "eventos_criticos", "stats_y_combate"],
+      "disabledFilters": ["hechizos"]
+    },
+    "magos": {
+      "description": "Magos, Hechiceros, Brujos",
+      "enabledFilters": ["hechizos", "bloqueos", "movimiento", "eventos_criticos", "stats_y_combate"],
+      "disabledFilters": ["combate_fisico"]
+    },
+    "hibridos": {
+      "description": "Paladines, Rangers, Druidas",
+      "enabledFilters": ["combate_fisico", "hechizos", "bloqueos", "movimiento", "eventos_criticos", "stats_y_combate"],
+      "disabledFilters": []
+    },
+    "generica": {
+      "description": "Configuración por defecto",
+      "enabledFilters": ["bloqueos", "movimiento", "eventos_criticos", "stats_y_combate", "ambiente"],
+      "disabledFilters": []
     }
   }
 }

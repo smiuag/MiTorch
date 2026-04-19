@@ -1,4 +1,5 @@
 import { AccessibilityInfo } from 'react-native';
+import { Audio } from 'expo-av';
 import blindModeFiltersData from '../config/blindModeFilters.json';
 
 export interface FilterAction {
@@ -18,6 +19,7 @@ export interface FilterPattern {
   priority?: 'low' | 'normal' | 'high';
   description?: string;
   frequency?: string;
+  sound?: string;
 }
 
 export interface FilterGroup {
@@ -26,34 +28,97 @@ export interface FilterGroup {
   patterns: FilterPattern[];
 }
 
+export interface PlayerVariables {
+  playerClass: string;
+  playerLevel: number;
+  playerHP: number;
+  playerMaxHP: number;
+  playerEnergy: number;
+  playerMaxEnergy: number;
+  concentrationActive: boolean;
+  inCombat: boolean;
+}
+
 class BlindModeService {
   private filters: Record<string, FilterGroup>;
   private lineHistory: Map<string, number> = new Map();
   private lastAnnouncedTime: Record<string, number> = {};
+  private playerVariables: PlayerVariables;
+  private activeFilters: Set<string>;
 
   constructor() {
-    this.filters = blindModeFiltersData.filters;
+    this.filters = { ...blindModeFiltersData.filters };
+    this.playerVariables = {
+      playerClass: 'desconocida',
+      playerLevel: 0,
+      playerHP: 0,
+      playerMaxHP: 0,
+      playerEnergy: 0,
+      playerMaxEnergy: 0,
+      concentrationActive: false,
+      inCombat: false,
+    };
+    this.activeFilters = new Set(
+      blindModeFiltersData.classConfigs.generica.enabledFilters
+    );
+  }
+
+  /**
+   * Update player variables from GMCP or status messages
+   */
+  updatePlayerVariables(variables: Partial<PlayerVariables>) {
+    this.playerVariables = { ...this.playerVariables, ...variables };
+
+    // Update active filters based on character class
+    if (variables.playerClass && variables.playerClass !== 'desconocida') {
+      this.updateActiveFiltersByClass(variables.playerClass);
+    }
+  }
+
+  /**
+   * Update active filters based on character class from config
+   */
+  private updateActiveFiltersByClass(playerClass: string) {
+    const classKey = playerClass.toLowerCase();
+    const classConfig = blindModeFiltersData.classConfigs[classKey as keyof typeof blindModeFiltersData.classConfigs] ||
+                       blindModeFiltersData.classConfigs.generica;
+
+    // Disable all filters first
+    Object.keys(this.filters).forEach(filterName => {
+      this.filters[filterName].enabled = false;
+    });
+
+    // Enable only the filters for this class
+    classConfig.enabledFilters.forEach(filterName => {
+      if (this.filters[filterName]) {
+        this.filters[filterName].enabled = true;
+      }
+    });
+
+    this.activeFilters = new Set(classConfig.enabledFilters);
   }
 
   /**
    * Process a line of text from the server
-   * Returns { shouldDisplay, announcement, modifiedText }
+   * Returns { shouldDisplay, announcement, modifiedText, sound }
    */
   processLine(text: string): {
     shouldDisplay: boolean;
     announcement?: string;
     modifiedText: string;
     action?: FilterAction;
+    sound?: string;
   } {
-    // Check all filter groups
+    // Check all filter groups that are enabled
     for (const [groupName, group] of Object.entries(this.filters)) {
       if (!group.enabled) continue;
 
       for (const pattern of group.patterns) {
         try {
           const regex = new RegExp(pattern.regex, 'i');
-          if (regex.test(text)) {
-            return this.executeFilterAction(pattern, text, groupName);
+          const match = regex.exec(text);
+          if (match) {
+            return this.executeFilterAction(pattern, text, groupName, match);
           }
         } catch (e) {
           console.warn(`[BlindMode] Invalid regex in ${groupName}: ${pattern.regex}`);
@@ -74,16 +139,26 @@ class BlindModeService {
   private executeFilterAction(
     pattern: FilterPattern,
     text: string,
-    groupName: string
+    groupName: string,
+    regexMatch: RegExpExecArray
   ): {
     shouldDisplay: boolean;
     announcement?: string;
     modifiedText: string;
     action?: FilterAction;
+    sound?: string;
   } {
+    // Interpolate regex groups into message
+    let message = pattern.message || text;
+    if (regexMatch) {
+      for (let i = 1; i < regexMatch.length; i++) {
+        message = message.replace(`{${i}}`, regexMatch[i]);
+      }
+    }
+
     const action: FilterAction = {
       type: (pattern.action as any) || 'filter',
-      message: pattern.message,
+      message,
       announce: pattern.announce ?? false,
       silence: pattern.silence ?? false,
       priority: pattern.priority ?? 'normal',
@@ -110,9 +185,10 @@ class BlindModeService {
 
     return {
       shouldDisplay: !shouldSilence,
-      announcement: shouldAnnounce ? pattern.message || text : undefined,
+      announcement: shouldAnnounce ? message : undefined,
       modifiedText: text,
       action,
+      sound: pattern.sound,
     };
   }
 
@@ -134,12 +210,43 @@ class BlindModeService {
   }
 
   /**
+   * Play a sound file from the assets directory
+   */
+  async playSound(soundPath: string) {
+    try {
+      if (!soundPath) return;
+
+      // Set audio mode for playback
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+      });
+
+      // Construct the path to the sound file relative to assets
+      const soundFile = require(`../assets/${blindModeFiltersData.sounds.directory}/${soundPath}`);
+      const { sound } = await Audio.Sound.createAsync(soundFile);
+      await sound.playAsync();
+
+      // Clean up sound object after playing
+      setTimeout(() => {
+        sound.unloadAsync().catch(e => console.warn('[BlindMode] Error unloading sound:', e));
+      }, 5000);
+    } catch (e) {
+      console.warn(`[BlindMode] Error playing sound ${soundPath}:`, e);
+    }
+  }
+
+  /**
    * Get all enabled filters for debugging
    */
   getActiveFilters(): string[] {
-    return Object.entries(this.filters)
-      .filter(([_, group]) => group.enabled)
-      .map(([name, _]) => name);
+    return Array.from(this.activeFilters);
+  }
+
+  /**
+   * Get current player variables
+   */
+  getPlayerVariables(): PlayerVariables {
+    return { ...this.playerVariables };
   }
 
   /**
@@ -148,6 +255,11 @@ class BlindModeService {
   setFilterEnabled(groupName: string, enabled: boolean) {
     if (this.filters[groupName]) {
       this.filters[groupName].enabled = enabled;
+      if (enabled) {
+        this.activeFilters.add(groupName);
+      } else {
+        this.activeFilters.delete(groupName);
+      }
     }
   }
 

@@ -157,6 +157,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     let displayText = text;
     let shouldAnnounce = false;
     let announcementText = '';
+    let soundPath = '';
 
     if (uiMode === 'blind') {
       const result = blindModeService.processLine(text);
@@ -171,6 +172,29 @@ export function TerminalScreen({ route, navigation }: Props) {
         shouldAnnounce = true;
         announcementText = result.announcement;
       }
+
+      // Get sound from filter if present
+      if (result.sound) {
+        soundPath = result.sound;
+      }
+    }
+
+    // Detect player class from common text patterns
+    if (!uiMode || uiMode === 'blind') {
+      const classPatterns: Record<string, string[]> = {
+        guerreros: ['Soldado', 'Lancero', 'Campeón', 'Guerrero'],
+        magos: ['Mago', 'Hechicero', 'Brujo'],
+        hibridos: ['Paladín', 'Ranger', 'Druida'],
+      };
+
+      for (const [className, patterns] of Object.entries(classPatterns)) {
+        for (const pattern of patterns) {
+          if (text.includes(pattern)) {
+            blindModeService.updatePlayerVariables({ playerClass: className });
+            break;
+          }
+        }
+      }
     }
 
     const spans = parseAnsi(displayText);
@@ -181,9 +205,12 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
     setLines([...linesRef.current]);
 
-    // Announce filtered content in blind mode
+    // Announce filtered content and play sound in blind mode
     if (shouldAnnounce && uiMode === 'blind') {
       blindModeService.announceMessage(announcementText, 'normal');
+      if (soundPath) {
+        blindModeService.playSound(soundPath);
+      }
     }
 
     if (isAtBottomRef.current) {
@@ -391,6 +418,15 @@ export function TerminalScreen({ route, navigation }: Props) {
             if (data.pe.min !== undefined) setEnergy(data.pe.min);
             if (data.pe.max !== undefined) setEnergyMax(data.pe.max);
           }
+          // Update blind mode service with player stats
+          if (data.pvs || data.pe) {
+            blindModeService.updatePlayerVariables({
+              playerHP: data.pvs?.min || 0,
+              playerMaxHP: data.pvs?.max || 0,
+              playerEnergy: data.pe?.min || 0,
+              playerMaxEnergy: data.pe?.max || 0,
+            });
+          }
         } else if (module === 'Comm.Vitals') {
           if (data.hp !== undefined) setHp(data.hp);
           if (data.hpMax !== undefined) setHpMax(data.hpMax);
@@ -398,6 +434,17 @@ export function TerminalScreen({ route, navigation }: Props) {
           if (data.energy !== undefined) setEnergy(data.energy);
           if (data.energyMax !== undefined) setEnergyMax(data.energyMax);
           if (data.energy_max !== undefined) setEnergyMax(data.energy_max);
+          // Update blind mode service with vitals
+          blindModeService.updatePlayerVariables({
+            playerHP: data.hp || 0,
+            playerMaxHP: data.hpMax || data.hp_max || 0,
+            playerEnergy: data.energy || 0,
+            playerMaxEnergy: data.energyMax || data.energy_max || 0,
+          });
+        } else if (module === 'Char.Class' && data) {
+          // Player class from GMCP
+          const playerClass = typeof data === 'string' ? data : String(data);
+          blindModeService.updatePlayerVariables({ playerClass });
         }
       },
     });
