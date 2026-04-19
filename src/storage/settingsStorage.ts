@@ -4,7 +4,7 @@ const SETTINGS_KEY = 'aljhtar_settings';
 
 export interface AppSettings {
   fontSize: number;
-  uiMode: 'completo' | 'minimalista';
+  uiMode: 'completo' | 'blind';
 }
 
 const DEFAULT_SETTINGS: AppSettings = {

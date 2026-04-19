@@ -98,7 +98,7 @@ export function SettingsScreen({ navigation }: Props) {
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Modo de interfaz</Text>
             <Text style={styles.rowDesc}>
-              Mostrar todos los controles o solo lo esencial.
+              Mostrar todos los controles o solo lo esencial para lectores de pantalla.
             </Text>
           </View>
         </View>
@@ -111,7 +111,7 @@ export function SettingsScreen({ navigation }: Props) {
             ]}
             onPress={() => updateSetting('uiMode', 'completo')}
             accessible={true}
-            accessibilityLabel="Complete UI"
+            accessibilityLabel="Complete mode"
             accessibilityRole="radio"
             accessibilityState={{ selected: settings.uiMode === 'completo' }}
           >
@@ -128,21 +128,21 @@ export function SettingsScreen({ navigation }: Props) {
           <TouchableOpacity
             style={[
               styles.modeButton,
-              settings.uiMode === 'minimalista' && styles.modeButtonActive,
+              settings.uiMode === 'blind' && styles.modeButtonActive,
             ]}
-            onPress={() => updateSetting('uiMode', 'minimalista')}
+            onPress={() => updateSetting('uiMode', 'blind')}
             accessible={true}
-            accessibilityLabel="Minimalist UI"
+            accessibilityLabel="Blind mode"
             accessibilityRole="radio"
-            accessibilityState={{ selected: settings.uiMode === 'minimalista' }}
+            accessibilityState={{ selected: settings.uiMode === 'blind' }}
           >
             <Text
               style={[
                 styles.modeButtonText,
-                settings.uiMode === 'minimalista' && styles.modeButtonTextActive,
+                settings.uiMode === 'blind' && styles.modeButtonTextActive,
               ]}
             >
-              Minimalista
+              Blind mode
             </Text>
           </TouchableOpacity>
         </View>

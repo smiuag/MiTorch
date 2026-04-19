@@ -54,7 +54,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [searchVisible, setSearchVisible] = useState(false);
   const [walking, setWalking] = useState(false);
   const [fontSize, setFontSize] = useState(14);
-  const [uiMode, setUiMode] = useState<'completo' | 'minimalista'>('completo');
+  const [uiMode, setUiMode] = useState<'completo' | 'blind'>('completo');
   const [buttonLayout, setButtonLayout] = useState<ButtonLayout | null>(null);
   const [editButtonVisible, setEditButtonVisible] = useState(false);
   const [editButtonCol, setEditButtonCol] = useState(0);
@@ -620,7 +620,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const inputHeight = 30;
 
   // Grid dimensions - change for minimalist mode
-  const isMinimalista = uiMode === 'minimalista';
+  const isMinimalista = uiMode === 'blind';
   const gridCols = isMinimalista ? 2 : GRID_COLS;
   const gridRows = isMinimalista ? 4 : GRID_ROWS;
   const cellSize = width / gridCols;
