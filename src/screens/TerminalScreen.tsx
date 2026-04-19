@@ -10,9 +10,9 @@ import {
   Modal,
   ScrollView,
   Alert,
-  StatusBar,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, MudLine } from '../types';
@@ -81,10 +81,6 @@ export function TerminalScreen({ route, navigation }: Props) {
   const recentLinesRef = useRef<string[]>([]);
   const isLocatingRef = useRef(false);
   const textInputRef = useRef<TextInput>(null);
-
-  useEffect(() => {
-    StatusBar.setHidden(isHorizontal);
-  }, [isHorizontal]);
 
   useEffect(() => {
     (async () => {
@@ -637,6 +633,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <StatusBar hidden={isHorizontal} translucent={true} />
       {!isHorizontal ? (
       // VERTICAL LAYOUT
       <View style={styles.container}>
