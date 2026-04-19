@@ -39,7 +39,6 @@ export function TerminalScreen({ route, navigation }: Props) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { server: initialServer } = route.params;
-  console.log(`[RENDER] TerminalScreen render, about to check state`);
 
   const [server, setServer] = useState(initialServer);
   const [lines, setLines] = useState<MudLine[]>([]);
@@ -58,7 +57,6 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [walking, setWalking] = useState(false);
   const [fontSize, setFontSize] = useState(14);
   const [uiMode, setUiMode] = useState<'completo' | 'blind'>('completo');
-  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [buttonLayout, setButtonLayout] = useState<ButtonLayout | null>(null);
   const [editButtonVisible, setEditButtonVisible] = useState(false);
   const [editButtonCol, setEditButtonCol] = useState(0);
@@ -92,17 +90,13 @@ export function TerminalScreen({ route, navigation }: Props) {
     useCallback(() => {
       (async () => {
         const settings = await loadSettings();
-        console.log(`[LOAD_SETTINGS] uiMode="${settings.uiMode}"`);
         if (settings.fontSize) {
           setFontSize(settings.fontSize);
           fontSizeRef.current = settings.fontSize;
         }
         if (settings.uiMode) {
-          console.log(`[SET_UI_MODE] Setting to "${settings.uiMode}"`);
           setUiMode(settings.uiMode);
         }
-        console.log(`[SETTINGS_LOADED] settingsLoaded=true, uiMode will be "${settings.uiMode}"`);
-        setSettingsLoaded(true);
       })();
 
       // Reset blind mode service history periodically
@@ -114,10 +108,6 @@ export function TerminalScreen({ route, navigation }: Props) {
     }, [])
   );
 
-  // Diagnostic: Log uiMode changes in real-time
-  useEffect(() => {
-    console.log(`[UIMODE_STATE] Current uiMode="${uiMode}" settingsLoaded=${settingsLoaded} at render`);
-  }, [uiMode, settingsLoaded]);
 
   useEffect(() => {
     (async () => {
@@ -242,12 +232,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   const addMultipleLines = (texts: string[]) => {
     let hasAdded = false;
-    const timestamp = new Date().toISOString().split('T')[1]; // HH:MM:SS.mmm
     texts.forEach(text => {
-      const cleanForLog = text.replace(/\x1b/g, '\\x1b').replace(/\n/g, '\\n');
-      console.log(`[TERMINAL ${timestamp}] Recibida (len=${text.length}): "${cleanForLog}"`);
-      console.log(`[MODE ${timestamp}] uiMode="${uiMode}" settingsLoaded=${settingsLoaded} (connected=${connected})`);
-      console.log(`[STATE ${timestamp}] lines.length=${lines.length}, hasMore=${lines.length > 500}`);
 
       // Remove ANSI codes first, then check if there are letters or numbers
       const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
@@ -283,7 +268,6 @@ export function TerminalScreen({ route, navigation }: Props) {
         return;
       }
 
-      console.log(`[TERMINAL] ✓ Mostrada (len=${text.length}): "${cleanForLog}"`);
       const spans = parseAnsi(text);
       const newLine: MudLine = { id: lineIdCounter++, spans };
       linesRef.current.push(newLine);
@@ -322,7 +306,6 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, [lines.length]);
 
   useEffect(() => {
-    console.log(`[TELNET_SETUP] Creating TelnetService, uiMode="${uiMode}" settingsLoaded=${settingsLoaded}`);
     const telnet = new TelnetService(server, {
       onData: (text: string) => {
         if (isCapturingAliasRef.current) {
@@ -481,7 +464,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     return () => {
       telnet.disconnect();
     };
-  }, [server, uiMode, settingsLoaded]);
+  }, [server, uiMode]);
 
   const stopWalk = useCallback(() => {
     if (walkTimeoutRef.current) {
