@@ -139,9 +139,11 @@ export function TerminalScreen({ route, navigation }: Props) {
     })();
   }, [server, uiMode]);
 
-  const addLine = (text: string) => {
+  // Process a single line with blind mode filters and add to display
+  const processingAndAddLine = (text: string) => {
     // Skip lines that don't contain any letters or numbers
-    if (!/[a-z0-9]/i.test(text)) return;
+    const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
+    if (!/[a-z0-9]/i.test(withoutAnsi)) return;
 
     // Skip empty lines if last line was also empty
     const isBlank = text.trim().length === 0;
@@ -168,14 +170,18 @@ export function TerminalScreen({ route, navigation }: Props) {
     let soundPath = '';
 
     if (text.includes('bloqueo')) {
-      console.log(`[CHECK] uiMode=${uiMode}, text includes bloqueo`);
+      console.log(`[CHECK] Procesando bloqueo: uiMode=${uiMode}`);
     }
 
     if (uiMode === 'blind') {
+      console.log(`[BLIND_PROCESS] Procesando con blind mode: "${text.substring(0, 50)}..."`);
       const result = blindModeService.processLine(text);
 
       // Skip line if filter says to silence it
-      if (!result.shouldDisplay) return;
+      if (!result.shouldDisplay) {
+        console.log(`[BLIND_PROCESS] Línea silenciada por filter`);
+        return;
+      }
 
       displayText = result.modifiedText;
 
@@ -183,11 +189,13 @@ export function TerminalScreen({ route, navigation }: Props) {
       if (result.announcement) {
         shouldAnnounce = true;
         announcementText = result.announcement;
+        console.log(`[BLIND_PROCESS] Anuncio: "${announcementText}"`);
       }
 
       // Get sound from filter if present
       if (result.sound) {
         soundPath = result.sound;
+        console.log(`[BLIND_PROCESS] Sonido: "${soundPath}"`);
       }
     }
 
@@ -211,7 +219,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
     const spans = parseAnsi(displayText);
     const newLine: MudLine = { id: lineIdCounter++, spans };
-    linesRef.current = [...linesRef.current, newLine];
+    linesRef.current.push(newLine);
     if (linesRef.current.length > MAX_LINES) {
       linesRef.current = linesRef.current.slice(-MAX_LINES);
     }
@@ -219,8 +227,10 @@ export function TerminalScreen({ route, navigation }: Props) {
 
     // Announce filtered content and play sound in blind mode
     if (shouldAnnounce && uiMode === 'blind') {
+      console.log(`[TERMINAL_BLIND] Anunciando: "${announcementText}", sonido: "${soundPath}"`);
       blindModeService.announceMessage(announcementText, 'normal');
       if (soundPath) {
+        console.log(`[TERMINAL_BLIND] Reproduciendo sonido: "${soundPath}"`);
         blindModeService.playSound(soundPath);
       }
     }
@@ -230,59 +240,12 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
   };
 
+  const addLine = processingAndAddLine;
+
   const addMultipleLines = (texts: string[]) => {
-    let hasAdded = false;
     texts.forEach(text => {
-
-      // Remove ANSI codes first, then check if there are letters or numbers
-      const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
-      if (!/[a-z0-9]/i.test(withoutAnsi)) {
-        console.log(`[TERMINAL] ✗ Filtrada: sin letras/números (después remover ANSI)`);
-        return;
-      }
-
-      // Skip empty lines if last line was also empty
-      const isBlank = text.trim().length === 0;
-      if (isBlank) {
-        if (lastLineBlankRef.current) {
-          console.log(`[TERMINAL] ✗ Filtrada (línea en blanco repetida)`);
-          return;
-        }
-        lastLineBlankRef.current = true;
-      } else {
-        lastLineBlankRef.current = false;
-      }
-
-      // Skip lines that are only ">" or whitespace + ">"
-      const cleanText = text.trim();
-      if (cleanText === '>' || cleanText.endsWith('>')) {
-        if (/^\s*>\s*$/.test(text)) {
-          console.log(`[TERMINAL] ✗ Filtrada (solo ">")`);
-          return;
-        }
-      }
-
-      // Skip lines that are only template variables like <VERSION>, <NAME>, etc
-      if (/^\s*<[A-Z_]+>\s*$/.test(text)) {
-        console.log(`[TERMINAL] ✗ Filtrada: template variable`);
-        return;
-      }
-
-      const spans = parseAnsi(text);
-      const newLine: MudLine = { id: lineIdCounter++, spans };
-      linesRef.current.push(newLine);
-      hasAdded = true;
+      processingAndAddLine(text);
     });
-    if (linesRef.current.length > MAX_LINES) {
-      linesRef.current = linesRef.current.slice(-MAX_LINES);
-    }
-    if (hasAdded) {
-      setLines([...linesRef.current]);
-    }
-
-    if (isAtBottomRef.current && hasAdded) {
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 150);
-    }
   };
 
   const telnetRef = useRef<TelnetService | null>(null);

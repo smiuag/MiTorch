@@ -149,13 +149,12 @@ class BlindModeService {
     const cleanText = this.stripAnsiCodes(text);
 
     if (cleanText.includes('bloqueo')) {
-      console.log(`[BM] bloqueo: ${cleanText}`);
+      console.log(`[BM] BLOQUEO DETECTADO: "${cleanText}"`);
     }
 
     // Check all filter groups that are enabled
     for (const [groupName, group] of Object.entries(this.filters)) {
       if (!group.enabled) {
-        if (cleanText.includes('bloqueo')) console.log(`[BM] ${groupName} disabled`);
         continue;
       }
 
@@ -164,7 +163,12 @@ class BlindModeService {
           const regex = new RegExp(pattern.regex, 'i');
           const match = regex.exec(cleanText);
           if (match) {
+            if (cleanText.includes('bloqueo')) {
+              console.log(`[BM] ✓ MATCH en ${groupName}: patrón="${pattern.regex}" sonido="${pattern.sound}"`);
+            }
             return this.executeFilterAction(pattern, cleanText, groupName, match);
+          } else if (cleanText.includes('bloqueo')) {
+            console.log(`[BM] ✗ NO MATCH en ${groupName}: patrón="${pattern.regex}"`);
           }
         } catch (e) {
           console.warn(`[BlindMode] Invalid regex in ${groupName}: ${pattern.regex}`);
@@ -260,9 +264,19 @@ class BlindModeService {
    */
   async playSound(soundPath: string) {
     try {
-      if (!soundPath || !(soundPath in soundModules)) {
+      console.log(`[SOUND] Intentando reproducir: "${soundPath}"`);
+
+      if (!soundPath) {
+        console.log(`[SOUND] ✗ soundPath está vacío`);
         return;
       }
+
+      if (!(soundPath in soundModules)) {
+        console.log(`[SOUND] ✗ soundPath="${soundPath}" NO existe en soundModules. Disponibles: ${Object.keys(soundModules).join(', ')}`);
+        return;
+      }
+
+      console.log(`[SOUND] ✓ soundPath encontrado en soundModules`);
 
       // Set audio mode for playback
       await Audio.setAudioModeAsync({
@@ -273,26 +287,37 @@ class BlindModeService {
       // Load sound asset if not cached
       let uri = loadedSounds.get(soundPath);
       if (!uri) {
+        console.log(`[SOUND] Cargando asset para "${soundPath}"...`);
         const module = soundModules[soundPath as keyof typeof soundModules];
         const asset = Asset.fromModule(module);
         await asset.downloadAsync();
         uri = asset.localUri || asset.uri;
         if (uri) {
+          console.log(`[SOUND] ✓ Asset descargado: "${uri}"`);
           loadedSounds.set(soundPath, uri);
+        } else {
+          console.log(`[SOUND] ✗ No se obtuvo URI del asset`);
         }
+      } else {
+        console.log(`[SOUND] Usando URI en caché: "${uri}"`);
       }
 
-      if (!uri) return;
+      if (!uri) {
+        console.log(`[SOUND] ✗ URI es null/undefined, no se puede reproducir`);
+        return;
+      }
 
       // Play sound
+      console.log(`[SOUND] Reproduciendo desde: "${uri}"`);
       const { sound } = await Audio.Sound.createAsync({ uri });
       await sound.playAsync();
+      console.log(`[SOUND] ✓ Reproduciendo "${soundPath}"`);
 
       setTimeout(() => {
         sound.unloadAsync().catch(() => {});
       }, 5000);
     } catch (e) {
-      // Silent fail
+      console.error(`[SOUND] ✗ Error: ${e}`);
     }
   }
 
