@@ -41,7 +41,12 @@ export function ButtonGrid({
 
   const buttonLookup = new Map<string, LayoutButton>();
   buttons.forEach((btn) => {
-    buttonLookup.set(`${btn.col},${btn.row}`, btn);
+    // In horizontal mode, swap col/row for lookup (rotate 90°)
+    if (horizontalMode) {
+      buttonLookup.set(`${btn.row},${btn.col}`, btn);
+    } else {
+      buttonLookup.set(`${btn.col},${btn.row}`, btn);
+    }
   });
 
   const handleButtonPressIn = (col: number, row: number) => {
@@ -70,9 +75,9 @@ export function ButtonGrid({
     }
   };
 
-  // Grid dimensions: horizontal mode (9 cols × 5 rows) or vertical (9 cols × 6 rows)
-  const gridCols = horizontalMode ? horizontalMode.cols : GRID_COLS;
-  const gridRows = horizontalMode ? 5 : GRID_ROWS;
+  // Grid dimensions: horizontal mode (5 cols × 9 rows) or vertical (9 cols × 6 rows)
+  const gridCols = horizontalMode ? 5 : GRID_COLS;
+  const gridRows = horizontalMode ? 9 : GRID_ROWS;
   const cellSize = horizontalMode ? horizontalMode.cellSize : width / GRID_COLS;
 
   return (

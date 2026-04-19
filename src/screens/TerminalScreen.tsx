@@ -589,9 +589,9 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   // Horizontal layout dimensions
   const vitalsWidth = 30;
-  const horizontalCellSize = (availableHeight - inputHeight) / 5; // 5 rows in horizontal, accounting for input
-  const BUTTON_GAPS_HORIZONTAL = (5 - 1) * BUTTON_GAP; // 4 gaps for 5 rows
-  const horizontalButtonGridWidth = 9 * horizontalCellSize + BUTTON_GAPS_HORIZONTAL + 6; // 9 columns in horizontal
+  const horizontalCellSize = (availableHeight - inputHeight) / 9; // 9 rows in horizontal, accounting for input
+  const BUTTON_GAPS_HORIZONTAL = (5 - 1) * BUTTON_GAP; // 4 gaps for 5 columns
+  const horizontalButtonGridWidth = 5 * horizontalCellSize + BUTTON_GAPS_HORIZONTAL + 6; // 5 columns in horizontal
   const horizontalRightPanelWidth = vitalsWidth + horizontalButtonGridWidth + 10;
   const horizontalTerminalWidth = width - horizontalRightPanelWidth - insets.left - insets.right;
 
@@ -833,7 +833,7 @@ export function TerminalScreen({ route, navigation }: Props) {
             </TouchableOpacity>
           </View>
 
-          {/* ButtonGrid Horizontal (9 cols x 5 rows) */}
+          {/* ButtonGrid Horizontal (5 cols x 9 rows) */}
           <View style={[styles.buttonGridSection, { flex: 1, paddingBottom: insets.bottom }]}>
             <ButtonGrid
               buttons={buttonLayout?.buttons || []}
@@ -844,7 +844,7 @@ export function TerminalScreen({ route, navigation }: Props) {
               sourceCol={sourceCol}
               sourceRow={sourceRow}
               onSwapButtons={handleSwapButtons}
-              horizontalMode={{cols: 9, cellSize: horizontalCellSize}}
+              horizontalMode={{cols: 5, cellSize: horizontalCellSize}}
             />
           </View>
         </View>
