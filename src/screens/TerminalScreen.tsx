@@ -633,7 +633,11 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar hidden={true} />
+      <StatusBar
+        hidden={isHorizontal}
+        barStyle={!isHorizontal ? "light-content" : "default"}
+        backgroundColor={!isHorizontal ? "#0a0a0a" : undefined}
+      />
       {!isHorizontal ? (
       // VERTICAL LAYOUT
       <View style={styles.container}>
