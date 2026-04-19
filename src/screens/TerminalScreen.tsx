@@ -468,8 +468,16 @@ export function TerminalScreen({ route, navigation }: Props) {
   const handleSaveEditButton = async (btn: any) => {
     if (!buttonLayout) return;
 
+    // In horizontal mode, swap coordinates to match storage
+    let storageCol = editButtonCol;
+    let storageRow = editButtonRow;
+    if (isHorizontal) {
+      storageCol = editButtonRow;
+      storageRow = editButtonCol;
+    }
+
     const updated = buttonLayout.buttons.filter(
-      b => !(b.col === editButtonCol && b.row === editButtonRow)
+      b => !(b.col === storageCol && b.row === storageRow)
     );
     if (btn.label && btn.label !== '—') {
       updated.push(btn);
@@ -497,8 +505,16 @@ export function TerminalScreen({ route, navigation }: Props) {
   const handleDeleteButton = async () => {
     if (!buttonLayout) return;
 
+    // In horizontal mode, swap coordinates to match storage
+    let storageCol = editButtonCol;
+    let storageRow = editButtonRow;
+    if (isHorizontal) {
+      storageCol = editButtonRow;
+      storageRow = editButtonCol;
+    }
+
     const updated = buttonLayout.buttons.filter(
-      b => !(b.col === editButtonCol && b.row === editButtonRow)
+      b => !(b.col === storageCol && b.row === storageRow)
     );
 
     const newLayout = { buttons: updated };
@@ -853,16 +869,27 @@ export function TerminalScreen({ route, navigation }: Props) {
 
       {/* Alias Wizard Modal */}
       {/* Button Edit Modal */}
-      <ButtonEditModal
-        visible={editButtonVisible}
-        col={editButtonCol}
-        row={editButtonRow}
-        button={buttonLayout?.buttons.find(b => b.col === editButtonCol && b.row === editButtonRow) || null}
-        onSave={handleSaveEditButton}
-        onDelete={handleDeleteButton}
-        onMove={handleMoveButton}
-        onClose={() => setEditButtonVisible(false)}
-      />
+      {(() => {
+        // In horizontal mode, swap col/row to find button in layout storage
+        let searchCol = editButtonCol;
+        let searchRow = editButtonRow;
+        if (isHorizontal) {
+          searchCol = editButtonRow;
+          searchRow = editButtonCol;
+        }
+        return (
+          <ButtonEditModal
+            visible={editButtonVisible}
+            col={editButtonCol}
+            row={editButtonRow}
+            button={buttonLayout?.buttons.find(b => b.col === searchCol && b.row === searchRow) || null}
+            onSave={handleSaveEditButton}
+            onDelete={handleDeleteButton}
+            onMove={handleMoveButton}
+            onClose={() => setEditButtonVisible(false)}
+          />
+        );
+      })()}
 
       {/* Room Search Results */}
       <RoomSearchResults

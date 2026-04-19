@@ -62,7 +62,12 @@ export function ButtonGrid({
     }
 
     if (moveMode && onSwapButtons) {
-      onSwapButtons(col, row);
+      // In horizontal mode, swap coordinates back (col,row) → (row,col) for storage
+      if (horizontalMode) {
+        onSwapButtons(row, col);
+      } else {
+        onSwapButtons(col, row);
+      }
       return;
     }
 
