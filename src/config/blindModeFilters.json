@@ -29,7 +29,7 @@
       "description": "Bloqueos y restricciones",
       "patterns": [
         {
-          "regex": "El bloqueo '([^']+)' termina",
+          "regex": "\\[?El bloqueo '([^']+)' termina\\]?",
           "action": "announce",
           "message": "Bloqueo de {1} terminado",
           "sound": "bloqueos/bloqueo-termina.wav",
