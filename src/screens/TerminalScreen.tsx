@@ -481,7 +481,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     return () => {
       telnet.disconnect();
     };
-  }, [server]);
+  }, [server, uiMode, settingsLoaded]);
 
   const stopWalk = useCallback(() => {
     if (walkTimeoutRef.current) {
