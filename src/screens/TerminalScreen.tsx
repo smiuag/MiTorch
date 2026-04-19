@@ -68,6 +68,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [locateFeedback, setLocateFeedback] = useState<'success' | 'failed' | null>(null);
+  const [toggleState, setToggleState] = useState(false);
 
   const fontSizeRef = useRef(14);
   const linesRef = useRef<MudLine[]>([]);
@@ -109,7 +110,13 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     (async () => {
-      const layout = await loadLayout();
+      let layout = await loadLayout();
+
+      // In Blind Mode, start with empty layout if server has no custom layout
+      if (uiMode === 'blind' && !server.buttonLayout) {
+        layout = { buttons: [] };
+      }
+
       // Replace LOGIN_NAME placeholder with actual server name
       const buttons = layout.buttons.map(btn =>
         btn.command === '__LOGIN_NAME__'
@@ -129,7 +136,7 @@ export function TerminalScreen({ route, navigation }: Props) {
       // Load map for locate command
       await mapServiceRef.current.load();
     })();
-  }, [server]);
+  }, [server, uiMode]);
 
   const addLine = (text: string) => {
     // Skip lines that don't contain any letters or numbers
@@ -735,21 +742,30 @@ export function TerminalScreen({ route, navigation }: Props) {
   const vitalsHeight = 35;
   const inputHeight = uiMode === 'blind' ? 60 : 30;
 
-  // Grid dimensions - change for minimalist mode
+  // Grid dimensions - Blind Mode: 5 cols × 3 rows (vertical), 3 cols × 5 rows (horizontal)
   const isMinimalista = uiMode === 'blind';
-  const gridCols = isMinimalista ? 2 : GRID_COLS;
-  const gridRows = isMinimalista ? 4 : GRID_ROWS;
-  const cellSize = width / gridCols;
+  const gridCols = isMinimalista ? 5 : GRID_COLS;
+  const gridRows = isMinimalista ? 3 : GRID_ROWS;
   const BUTTON_PADDING_VERTICAL = 3 * 2;
   const BUTTON_GAP = 3;
   const BUTTON_GAPS_TOTAL = (gridRows - 1) * BUTTON_GAP;
+
+  // Calculate cell size for square buttons, fill available space
+  const maxCellSizeByWidth = width / gridCols;
+  const maxCellSizeByHeight = (availableHeight - inputHeight) / gridRows;
+  const cellSize = Math.min(maxCellSizeByWidth, maxCellSizeByHeight);
   const buttonGridHeight = gridRows * cellSize + BUTTON_GAPS_TOTAL + BUTTON_PADDING_VERTICAL;
 
   // Horizontal layout dimensions
-  const vitalsWidth = 30;
-  const horizontalCellSize = (availableHeight - inputHeight) / 9; // 9 rows in horizontal, accounting for input
-  const horizontalButtonGridWidth = isMinimalista ? 2 * horizontalCellSize + BUTTON_GAP : 6 * horizontalCellSize + (6 - 1) * BUTTON_GAP;
-  const horizontalRightPanelWidth = isMinimalista ? horizontalButtonGridWidth + 6 : vitalsWidth + horizontalButtonGridWidth + 10;
+  const vitalsWidth = uiMode === 'blind' ? 0 : 30;
+  const horizontalGridCols = isMinimalista ? 3 : 6;
+  const horizontalGridRows = isMinimalista ? 5 : 9;
+  const availableHorizontalWidthForButtons = width - vitalsWidth - insets.left - insets.right - 20;
+  const maxHorizontalCellSizeByWidth = availableHorizontalWidthForButtons / horizontalGridCols;
+  const maxHorizontalCellSizeByHeight = availableHeight / horizontalGridRows;
+  const horizontalCellSize = Math.min(maxHorizontalCellSizeByWidth, maxHorizontalCellSizeByHeight);
+  const horizontalButtonGridWidth = horizontalGridCols * horizontalCellSize + (horizontalGridCols - 1) * BUTTON_GAP;
+  const horizontalRightPanelWidth = horizontalButtonGridWidth + vitalsWidth + 20;
   const horizontalTerminalWidth = width - horizontalRightPanelWidth - insets.left - insets.right;
 
   const handleUpArrow = () => {
@@ -869,19 +885,19 @@ export function TerminalScreen({ route, navigation }: Props) {
 
         {/* Input Row */}
         <View style={[styles.inputSection, { height: inputHeight }]}>
-          <TouchableOpacity
-            style={styles.arrowButton}
-            onPress={handleUpArrow}
-            accessible={true}
-            accessibilityLabel="Previous command"
-            accessibilityRole="button"
-            accessibilityHint="Navigate to previous command in history"
-          >
-            <Text style={styles.arrowText}>▲</Text>
-          </TouchableOpacity>
-
           {connected ? (
             <>
+              <TouchableOpacity
+                style={[styles.sendButton, { flex: 0.4, backgroundColor: toggleState ? '#33cc33' : '#3366cc' }]}
+                onPress={() => setToggleState(!toggleState)}
+                accessible={true}
+                accessibilityLabel={toggleState ? 'Toggle on' : 'Toggle off'}
+                accessibilityRole="button"
+                accessibilityHint={`Current state: ${toggleState ? 'on' : 'off'}. Tap to toggle.`}
+              >
+                <Text style={styles.sendButtonText}>{toggleState ? '●' : '○'}</Text>
+              </TouchableOpacity>
+
               <TextInput
                 ref={textInputRef}
                 style={styles.input}
@@ -923,22 +939,11 @@ export function TerminalScreen({ route, navigation }: Props) {
               <Text style={styles.reconnectText}>Reconectar</Text>
             </TouchableOpacity>
           )}
-
-          <TouchableOpacity
-            style={styles.arrowButton}
-            onPress={handleDownArrow}
-            accessible={true}
-            accessibilityLabel="Next command"
-            accessibilityRole="button"
-            accessibilityHint="Navigate to next command in history"
-          >
-            <Text style={styles.arrowText}>▼</Text>
-          </TouchableOpacity>
         </View>
 
         {/* ButtonGrid - Full size in completo mode, compact in blind mode */}
         {(uiMode === 'completo' || uiMode === 'blind') && (
-          <View style={[styles.buttonGridSection, { height: uiMode === 'blind' ? undefined : buttonGridHeight, paddingBottom: insets.bottom }]}>
+          <View style={[styles.buttonGridSection, { height: buttonGridHeight }]}>
             <ButtonGrid
               buttons={buttonLayout?.buttons || []}
               onSendCommand={sendCommand}
@@ -958,67 +963,132 @@ export function TerminalScreen({ route, navigation }: Props) {
       ) : (
       // HORIZONTAL LAYOUT
       <View style={[styles.container, styles.containerHorizontal]}>
-        {/* Terminal Left */}
-        <View
-          style={[styles.terminalSection, { width: horizontalTerminalWidth, flex: 0 }]}
-          accessible={true}
-          accessibilityLabel="Terminal output"
-          accessibilityRole="text"
-          accessibilityLiveRegion={uiMode === 'blind' ? 'polite' : 'none'}
-          accessibilityHint="Read-only terminal window. Use arrow keys or swipe to navigate."
-        >
-          <FlatList
-            scrollToEndDelay={100}
-            ref={flatListRef}
-            data={lines}
-            keyExtractor={item => String(item.id)}
-            renderItem={({ item }) => (
-              <View style={styles.lineContainer} key={item.id}>
-                <AnsiText spans={item.spans} fontSize={fontSize} lineId={item.id} />
+        {/* Terminal + Input Left Column */}
+        <View style={{ width: horizontalTerminalWidth, flex: 0, flexDirection: 'column' }}>
+          {/* Terminal */}
+          <View
+            style={[styles.terminalSection, { flex: 1 }]}
+            accessible={true}
+            accessibilityLabel="Terminal output"
+            accessibilityRole="text"
+            accessibilityLiveRegion={uiMode === 'blind' ? 'polite' : 'none'}
+            accessibilityHint="Read-only terminal window. Use arrow keys or swipe to navigate."
+          >
+            <FlatList
+              scrollToEndDelay={100}
+              ref={flatListRef}
+              data={lines}
+              keyExtractor={item => String(item.id)}
+              renderItem={({ item }) => (
+                <View style={styles.lineContainer} key={item.id}>
+                  <AnsiText spans={item.spans} fontSize={fontSize} lineId={item.id} />
+                </View>
+              )}
+              scrollEventThrottle={16}
+              onScroll={handleFlatListScroll}
+              onScrollEndDrag={handleFlatListScroll}
+              style={styles.flatList}
+              accessible={true}
+              accessibilityLabel={`Terminal with ${lines.length} lines`}
+            />
+
+            {showScrollToBottom && (
+              <TouchableOpacity style={styles.scrollToBottomButton} onPress={handleScrollToBottom}>
+                <Text style={styles.scrollToBottomText}>↓</Text>
+              </TouchableOpacity>
+            )}
+
+            {uiMode === 'completo' && (
+              <View style={styles.miniMapContainer} pointerEvents="box-none">
+                <MiniMap
+                  currentRoom={currentRoom}
+                  nearbyRooms={nearbyRooms}
+                  visible={mapVisible}
+                  onToggle={() => setMapVisible(!mapVisible)}
+                  walking={walking}
+                  onStop={stopWalk}
+                />
               </View>
             )}
-            scrollEventThrottle={16}
-            onScroll={handleFlatListScroll}
-            onScrollEndDrag={handleFlatListScroll}
-            style={styles.flatList}
-            accessible={true}
-            accessibilityLabel={`Terminal with ${lines.length} lines`}
-          />
+          </View>
 
-          {showScrollToBottom && (
-            <TouchableOpacity style={styles.scrollToBottomButton} onPress={handleScrollToBottom}>
-              <Text style={styles.scrollToBottomText}>↓</Text>
-            </TouchableOpacity>
-          )}
+          {/* Input Row - Horizontal */}
+          <View style={[styles.inputSection, { height: inputHeight }]}>
+            {connected ? (
+              <>
+                <TextInput
+                  ref={textInputRef}
+                  style={styles.input}
+                  placeholder="Comando..."
+                  placeholderTextColor="#888"
+                  value={inputText}
+                  onChangeText={(text) => {
+                    setInputText(text);
+                    setHistoryIndex(-1);
+                  }}
+                  onSubmitEditing={handleSendInput}
+                  returnKeyType="send"
+                  autoCapitalize="none"
+                  accessible={true}
+                  accessibilityLabel="Command input"
+                  accessibilityHint="Type a command and press send or return"
+                />
 
-          <View style={styles.miniMapContainer} pointerEvents="box-none">
-            <MiniMap
-              currentRoom={currentRoom}
-              nearbyRooms={nearbyRooms}
-              visible={mapVisible}
-              onToggle={() => setMapVisible(!mapVisible)}
-              walking={walking}
-              onStop={stopWalk}
-            />
+                <TouchableOpacity
+                  style={styles.sendButton}
+                  onPress={handleSendInput}
+                  accessible={true}
+                  accessibilityLabel="Send command"
+                  accessibilityRole="button"
+                  accessibilityHint="Send the current command to the server"
+                >
+                  <Text style={styles.sendButtonText}>›</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.sendButton, { backgroundColor: toggleState ? '#33cc33' : '#3366cc' }]}
+                  onPress={() => setToggleState(!toggleState)}
+                  accessible={true}
+                  accessibilityLabel={toggleState ? 'Toggle on' : 'Toggle off'}
+                  accessibilityRole="button"
+                  accessibilityHint={`Current state: ${toggleState ? 'on' : 'off'}. Tap to toggle.`}
+                >
+                  <Text style={styles.sendButtonText}>{toggleState ? '●' : '○'}</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={[styles.input, styles.reconnectButton]}
+                onPress={() => telnetRef.current?.connect()}
+                accessible={true}
+                accessibilityLabel="Reconnect"
+                accessibilityRole="button"
+                accessibilityHint="Reconnect to the server"
+              >
+                <Text style={styles.reconnectText}>Reconectar</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
-        {/* VitalBars Vertical */}
-        <View style={{ width: vitalsWidth, height: availableHeight }}>
-          <VitalBars
-            hp={hp}
-            hpMax={hpMax}
-            energy={energy}
-            energyMax={energyMax}
-            orientation="vertical"
-          />
-        </View>
+        {/* VitalBars Vertical - Hidden in blind mode */}
+        {uiMode === 'completo' && (
+          <View style={{ width: vitalsWidth, height: availableHeight }}>
+            <VitalBars
+              hp={hp}
+              hpMax={hpMax}
+              energy={energy}
+              energyMax={energyMax}
+              orientation="vertical"
+            />
+          </View>
+        )}
 
         {/* Right Panel - ButtonGrid - Shown in completo and blind modes */}
         {(uiMode === 'completo' || uiMode === 'blind') && (
           <View style={{ flex: 1, flexDirection: 'column' }}>
             {/* ButtonGrid Horizontal */}
-            <View style={[styles.buttonGridSection, { flex: 1, paddingBottom: insets.bottom }]}>
+            <View style={[styles.buttonGridSection, { flex: 1 }]}>
               <ButtonGrid
                 buttons={buttonLayout?.buttons || []}
                 onSendCommand={sendCommand}

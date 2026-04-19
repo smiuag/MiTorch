@@ -212,8 +212,8 @@ export function ButtonGrid({
       let finalCol = newCol;
       let finalRow = newRow;
 
-      // Apply additional transformations if available
-      if (additionalTransforms[key]) {
+      // Apply additional transformations only for non-blind mode (not 3 cols)
+      if (horizontalMode.cols !== 3 && additionalTransforms[key]) {
         const transform = additionalTransforms[key];
         finalCol = transform.col;
         finalRow = transform.row;
