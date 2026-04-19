@@ -89,6 +89,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     width: '100%',
+    minHeight: 2,
   },
   hpFill: {
     backgroundColor: '#ff3333',
