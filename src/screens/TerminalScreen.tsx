@@ -733,7 +733,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const isHorizontal = width > height;
   const availableHeight = height - insets.top - insets.bottom;
   const vitalsHeight = 35;
-  const inputHeight = 30;
+  const inputHeight = uiMode === 'blind' ? 60 : 30;
 
   // Grid dimensions - change for minimalist mode
   const isMinimalista = uiMode === 'blind';
@@ -781,8 +781,10 @@ export function TerminalScreen({ route, navigation }: Props) {
           style={[styles.terminalSection, { flex: 1 }]}
           accessible={true}
           accessibilityLabel="Terminal output"
-          accessibilityRole="list"
+          accessibilityRole="text"
           accessibilityLiveRegion={uiMode === 'blind' ? 'polite' : 'none'}
+          accessibilityHint="Read-only terminal window. Use arrow keys or swipe to navigate."
+          accessibilityActions={uiMode === 'blind' ? [{ name: 'scroll' }] : undefined}
         >
           <FlatList
             scrollToEndDelay={100}
@@ -798,6 +800,8 @@ export function TerminalScreen({ route, navigation }: Props) {
             onScroll={handleFlatListScroll}
             onScrollEndDrag={handleFlatListScroll}
             style={styles.flatList}
+            accessible={true}
+            accessibilityLabel={`Terminal with ${lines.length} lines`}
           />
 
           {/* Scroll to bottom button */}
@@ -932,9 +936,9 @@ export function TerminalScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* ButtonGrid - Hidden in minimalist mode */}
-        {uiMode === 'completo' && (
-          <View style={[styles.buttonGridSection, { height: buttonGridHeight, paddingBottom: insets.bottom }]}>
+        {/* ButtonGrid - Full size in completo mode, compact in blind mode */}
+        {(uiMode === 'completo' || uiMode === 'blind') && (
+          <View style={[styles.buttonGridSection, { height: uiMode === 'blind' ? undefined : buttonGridHeight, paddingBottom: insets.bottom }]}>
             <ButtonGrid
               buttons={buttonLayout?.buttons || []}
               onSendCommand={sendCommand}
@@ -945,8 +949,8 @@ export function TerminalScreen({ route, navigation }: Props) {
               sourceRow={sourceRow}
               onSwapButtons={handleSwapButtons}
               minimalista={isMinimalista}
-              minCols={gridCols}
-              minRows={gridRows}
+              minCols={uiMode === 'blind' ? 5 : gridCols}
+              minRows={uiMode === 'blind' ? 3 : gridRows}
             />
           </View>
         )}
@@ -955,7 +959,14 @@ export function TerminalScreen({ route, navigation }: Props) {
       // HORIZONTAL LAYOUT
       <View style={[styles.container, styles.containerHorizontal]}>
         {/* Terminal Left */}
-        <View style={[styles.terminalSection, { width: horizontalTerminalWidth, flex: 0 }]}>
+        <View
+          style={[styles.terminalSection, { width: horizontalTerminalWidth, flex: 0 }]}
+          accessible={true}
+          accessibilityLabel="Terminal output"
+          accessibilityRole="text"
+          accessibilityLiveRegion={uiMode === 'blind' ? 'polite' : 'none'}
+          accessibilityHint="Read-only terminal window. Use arrow keys or swipe to navigate."
+        >
           <FlatList
             scrollToEndDelay={100}
             ref={flatListRef}
@@ -970,6 +981,8 @@ export function TerminalScreen({ route, navigation }: Props) {
             onScroll={handleFlatListScroll}
             onScrollEndDrag={handleFlatListScroll}
             style={styles.flatList}
+            accessible={true}
+            accessibilityLabel={`Terminal with ${lines.length} lines`}
           />
 
           {showScrollToBottom && (
@@ -1001,10 +1014,10 @@ export function TerminalScreen({ route, navigation }: Props) {
           />
         </View>
 
-        {/* Right Panel - ButtonGrid only - Hidden in minimalist mode */}
-        {uiMode === 'completo' && (
+        {/* Right Panel - ButtonGrid - Shown in completo and blind modes */}
+        {(uiMode === 'completo' || uiMode === 'blind') && (
           <View style={{ flex: 1, flexDirection: 'column' }}>
-            {/* ButtonGrid Horizontal (5 cols x 9 rows) */}
+            {/* ButtonGrid Horizontal */}
             <View style={[styles.buttonGridSection, { flex: 1, paddingBottom: insets.bottom }]}>
               <ButtonGrid
                 buttons={buttonLayout?.buttons || []}
@@ -1015,7 +1028,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 sourceCol={sourceCol}
                 sourceRow={sourceRow}
                 onSwapButtons={handleSwapButtons}
-                horizontalMode={{cols: isMinimalista ? 2 : 6, cellSize: horizontalCellSize}}
+                horizontalMode={{cols: uiMode === 'blind' ? 3 : (isMinimalista ? 2 : 6), cellSize: horizontalCellSize}}
               />
             </View>
           </View>

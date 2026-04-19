@@ -63,11 +63,10 @@ export function SettingsScreen({ navigation }: Props) {
               style={[styles.fontBtn, settings.fontSize <= 10 && styles.fontBtnDisabled]}
               onPress={() => settings.fontSize > 10 && updateSetting('fontSize', settings.fontSize - 1)}
               accessible={true}
-              accessibilityLabel="Font size"
-              accessibilityRole="slider"
+              accessibilityLabel="Decrease font size"
+              accessibilityRole="button"
               accessibilityState={{ disabled: settings.fontSize <= 10 }}
-              accessibilityValue={{ min: 10, max: 20, now: settings.fontSize }}
-              accessibilityHint={`Current size: ${settings.fontSize}px. Use swipe down to decrease.`}
+              accessibilityHint={`Current size: ${settings.fontSize}px. Tap to decrease.`}
               accessibilityActions={settings.uiMode === 'blind' ? [{ name: 'decrement' }] : undefined}
               onAccessibilityAction={(event) => {
                 if (event.nativeEvent.actionName === 'decrement' && settings.fontSize > 10) {
@@ -88,11 +87,10 @@ export function SettingsScreen({ navigation }: Props) {
               style={[styles.fontBtn, settings.fontSize >= 20 && styles.fontBtnDisabled]}
               onPress={() => settings.fontSize < 20 && updateSetting('fontSize', settings.fontSize + 1)}
               accessible={true}
-              accessibilityLabel="Font size"
-              accessibilityRole="slider"
+              accessibilityLabel="Increase font size"
+              accessibilityRole="button"
               accessibilityState={{ disabled: settings.fontSize >= 20 }}
-              accessibilityValue={{ min: 10, max: 20, now: settings.fontSize }}
-              accessibilityHint={`Current size: ${settings.fontSize}px. Use swipe up to increase.`}
+              accessibilityHint={`Current size: ${settings.fontSize}px. Tap to increase.`}
               accessibilityActions={settings.uiMode === 'blind' ? [{ name: 'increment' }] : undefined}
               onAccessibilityAction={(event) => {
                 if (event.nativeEvent.actionName === 'increment' && settings.fontSize < 20) {

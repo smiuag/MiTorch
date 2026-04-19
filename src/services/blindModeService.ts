@@ -1,5 +1,4 @@
 import { AccessibilityInfo } from 'react-native';
-import { Audio } from 'expo-av';
 import blindModeFiltersData from '../config/blindModeFilters.json';
 
 export interface FilterAction {
@@ -25,6 +24,7 @@ export interface FilterPattern {
 export interface FilterGroup {
   enabled: boolean;
   description: string;
+  class?: string;
   patterns: FilterPattern[];
 }
 
@@ -211,27 +211,14 @@ class BlindModeService {
 
   /**
    * Play a sound file from the assets directory
+   * Disabled for now - sound support requires bundled assets
    */
   async playSound(soundPath: string) {
     try {
       if (!soundPath) return;
-
-      // Set audio mode for playback
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-      });
-
-      // Construct the path to the sound file relative to assets
-      const soundFile = require(`../assets/${blindModeFiltersData.sounds.directory}/${soundPath}`);
-      const { sound } = await Audio.Sound.createAsync(soundFile);
-      await sound.playAsync();
-
-      // Clean up sound object after playing
-      setTimeout(() => {
-        sound.unloadAsync().catch(e => console.warn('[BlindMode] Error unloading sound:', e));
-      }, 5000);
+      console.log(`[BlindMode] Sound trigger (not yet implemented): ${soundPath}`);
     } catch (e) {
-      console.warn(`[BlindMode] Error playing sound ${soundPath}:`, e);
+      console.warn(`[BlindMode] Error in playSound:`, e);
     }
   }
 
@@ -270,7 +257,7 @@ class BlindModeService {
     this.lineHistory.clear();
     // Keep only recent announcements (last 5 minutes)
     const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
-    Object.entries(this.lastAnnouncedTime).forEach(([key, time]) => {
+    Object.entries(this.lastAnnouncedTime).forEach(([key, time]: [string, number]) => {
       if (time < fiveMinutesAgo) {
         delete this.lastAnnouncedTime[key];
       }
