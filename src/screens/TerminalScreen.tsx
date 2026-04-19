@@ -143,11 +143,13 @@ export function TerminalScreen({ route, navigation }: Props) {
   const addMultipleLines = (texts: string[]) => {
     let hasAdded = false;
     texts.forEach(text => {
-      console.log(`[TERMINAL] Línea recibida: "${text}"`);
+      const cleanForLog = text.replace(/\x1b/g, '\\x1b').replace(/\n/g, '\\n');
+      console.log(`[TERMINAL] Recibida (len=${text.length}): "${cleanForLog}"`);
 
-      // Skip lines that don't contain any letters or numbers
-      if (!/[a-z0-9]/i.test(text)) {
-        console.log(`[TERMINAL] ✗ Filtrada (sin letras/números)`);
+      // Remove ANSI codes first, then check if there are letters or numbers
+      const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
+      if (!/[a-z0-9]/i.test(withoutAnsi)) {
+        console.log(`[TERMINAL] ✗ Filtrada: sin letras/números (después remover ANSI)`);
         return;
       }
 
@@ -174,11 +176,11 @@ export function TerminalScreen({ route, navigation }: Props) {
 
       // Skip lines that are only template variables like <VERSION>, <NAME>, etc
       if (/^\s*<[A-Z_]+>\s*$/.test(text)) {
-        console.log(`[TERMINAL] ✗ Filtrada (template variable)`);
+        console.log(`[TERMINAL] ✗ Filtrada: template variable`);
         return;
       }
 
-      console.log(`[TERMINAL] ✓ Línea mostrada: "${text}"`);
+      console.log(`[TERMINAL] ✓ Mostrada (len=${text.length}): "${cleanForLog}"`);
       const spans = parseAnsi(text);
       const newLine: MudLine = { id: lineIdCounter++, spans };
       linesRef.current.push(newLine);
@@ -192,7 +194,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
 
     if (isAtBottomRef.current && hasAdded) {
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 150);
     }
   };
 
@@ -212,7 +214,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         if (isAtBottomRef.current) {
           flatListRef.current?.scrollToEnd({ animated: false });
         }
-      }, 100);
+      }, 200);
     }
   }, [lines.length]);
 

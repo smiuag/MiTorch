@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#fff',
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 11,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
