@@ -57,6 +57,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
   },
   containerVertical: {
+    flex: 1,
     flexDirection: 'row',
     width: 30,
     gap: 2,
@@ -82,6 +83,7 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
+    minWidth: 0,
   },
   barFillVertical: {
     position: 'absolute',

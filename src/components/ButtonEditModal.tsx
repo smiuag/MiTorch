@@ -43,6 +43,7 @@ export function ButtonEditModal({
 }: ButtonEditModalProps) {
   const [label, setLabel] = useState('');
   const [command, setCommand] = useState('');
+  const [secondaryCommand, setSecondaryCommand] = useState('');
   const [color, setColor] = useState('#662222');
   const [addText, setAddText] = useState(false);
 
@@ -50,11 +51,13 @@ export function ButtonEditModal({
     if (button) {
       setLabel(button.label);
       setCommand(button.command);
+      setSecondaryCommand(button.secondaryCommand ?? '');
       setColor(button.color);
       setAddText(button.addText ?? false);
     } else {
       setLabel('');
       setCommand('');
+      setSecondaryCommand('');
       setColor('#662222');
       setAddText(false);
     }
@@ -70,6 +73,7 @@ export function ButtonEditModal({
       color,
       textColor: '#ffffff',
       addText,
+      secondaryCommand: secondaryCommand || undefined,
     };
     onSave(newButton);
     onClose();
@@ -106,6 +110,16 @@ export function ButtonEditModal({
               placeholderTextColor="#888"
               value={command}
               onChangeText={setCommand}
+              autoCapitalize="none"
+            />
+
+            <Text style={styles.label}>Comando Secundario (Swipe)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ej: soltar (opcional)"
+              placeholderTextColor="#888"
+              value={secondaryCommand}
+              onChangeText={setSecondaryCommand}
               autoCapitalize="none"
             />
 

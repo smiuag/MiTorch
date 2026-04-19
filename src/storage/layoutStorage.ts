@@ -9,6 +9,7 @@ export interface LayoutButton {
   color: string;
   textColor: string;
   addText?: boolean;
+  secondaryCommand?: string;
 }
 
 export interface ButtonLayout {

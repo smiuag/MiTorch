@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -7,6 +7,7 @@ import {
   Text,
   useWindowDimensions,
   GestureResponderEvent,
+  PanResponder,
 } from 'react-native';
 import { LayoutButton } from '../storage/layoutStorage';
 
@@ -25,6 +26,134 @@ interface ButtonGridProps {
   horizontalMode?: { cols: number; cellSize: number };
 }
 
+function ButtonCell({
+  col,
+  row,
+  button,
+  cellSize,
+  moveMode,
+  isSource,
+  horizontalMode,
+  onSendCommand,
+  onAddTextButton,
+  onEditButton,
+  onSwapButtons,
+  onSecondaryCommand,
+}: {
+  col: number;
+  row: number;
+  button: LayoutButton | undefined;
+  cellSize: number;
+  moveMode?: boolean;
+  isSource?: boolean;
+  horizontalMode?: any;
+  onSendCommand: (command: string) => void;
+  onAddTextButton: (command: string) => void;
+  onEditButton: (col: number, row: number) => void;
+  onSwapButtons?: (targetCol: number, targetRow: number) => void;
+  onSecondaryCommand: (command: string) => void;
+}) {
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const startPosRef = useRef({ x: 0, y: 0 });
+  const isDraggingRef = useRef(false);
+  const isLongPressTriggeredRef = useRef(false);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => isDraggingRef.current,
+        onPanResponderGrant: (evt) => {
+          startPosRef.current = { x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY };
+          isDraggingRef.current = false;
+          isLongPressTriggeredRef.current = false;
+
+          longPressTimerRef.current = setTimeout(() => {
+            isLongPressTriggeredRef.current = true;
+            onEditButton(col, row);
+          }, 500);
+        },
+        onPanResponderMove: (evt) => {
+          if (isLongPressTriggeredRef.current) return;
+
+          const dx = evt.nativeEvent.pageX - startPosRef.current.x;
+          const dy = evt.nativeEvent.pageY - startPosRef.current.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+
+          if (distance > 8) {
+            isDraggingRef.current = true;
+            if (longPressTimerRef.current) {
+              clearTimeout(longPressTimerRef.current);
+              longPressTimerRef.current = null;
+            }
+          }
+        },
+        onPanResponderRelease: () => {
+          if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+          }
+
+          if (isLongPressTriggeredRef.current) {
+            // Long press already triggered edit, do nothing
+            return;
+          }
+
+          if (isDraggingRef.current) {
+            // Drag gesture - execute secondary command
+            if (button?.secondaryCommand) {
+              onSecondaryCommand(button.secondaryCommand);
+            }
+          } else {
+            // Tap - execute primary command or moveMode swap
+            if (moveMode && onSwapButtons) {
+              if (horizontalMode) {
+                onSwapButtons(row, col);
+              } else {
+                onSwapButtons(col, row);
+              }
+            } else if (button?.command) {
+              if (button.addText) {
+                onAddTextButton(button.command);
+              } else {
+                onSendCommand(button.command);
+              }
+            }
+          }
+        },
+      }),
+    [col, row, button, moveMode, horizontalMode, onSendCommand, onAddTextButton, onEditButton, onSwapButtons, onSecondaryCommand]
+  );
+
+  return (
+    <View
+      {...panResponder.panHandlers}
+      style={[
+        styles.cell,
+        {
+          width: cellSize,
+          height: cellSize,
+          backgroundColor: button ? button.color : '#222',
+          borderWidth: isSource ? 3 : 1,
+          borderColor: isSource ? '#ffff00' : '#444',
+        },
+      ]}
+    >
+      {button && (
+        <Text
+          style={[
+            styles.buttonLabel,
+            { color: button.textColor || '#fff', fontSize: cellSize * 0.25 },
+          ]}
+          numberOfLines={1}
+        >
+          {button.label}
+        </Text>
+      )}
+    </View>
+  );
+}
+
 export function ButtonGrid({
   buttons,
   onSendCommand,
@@ -37,7 +166,6 @@ export function ButtonGrid({
   horizontalMode,
 }: ButtonGridProps) {
   const { width } = useWindowDimensions();
-  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const buttonLookup = new Map<string, LayoutButton>();
   buttons.forEach((btn) => {
@@ -49,35 +177,8 @@ export function ButtonGrid({
     }
   });
 
-  const handleButtonPressIn = (col: number, row: number) => {
-    longPressTimerRef.current = setTimeout(() => {
-      onEditButton(col, row);
-    }, 500);
-  };
-
-  const handleButtonPressOut = (col: number, row: number, button: LayoutButton | undefined) => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-
-    if (moveMode && onSwapButtons) {
-      // In horizontal mode, swap coordinates back (col,row) → (row,col) for storage
-      if (horizontalMode) {
-        onSwapButtons(row, col);
-      } else {
-        onSwapButtons(col, row);
-      }
-      return;
-    }
-
-    if (button && button.command) {
-      if (button.addText) {
-        onAddTextButton(button.command);
-      } else {
-        onSendCommand(button.command);
-      }
-    }
+  const handleSecondaryCommand = (command: string) => {
+    onSendCommand(command);
   };
 
   // Grid dimensions: horizontal mode (5 cols × 9 rows) or vertical (9 cols × 6 rows)
@@ -93,34 +194,21 @@ export function ButtonGrid({
             const button = buttonLookup.get(`${col},${row}`);
             const isSource = moveMode && col === sourceCol && row === sourceRow;
             return (
-              <TouchableOpacity
+              <ButtonCell
                 key={`cell-${col}-${row}`}
-                style={[
-                  styles.cell,
-                  {
-                    width: cellSize,
-                    height: cellSize,
-                    backgroundColor: button ? button.color : '#222',
-                    borderWidth: isSource ? 3 : 1,
-                    borderColor: isSource ? '#ffff00' : '#444',
-                  },
-                ]}
-                onPressIn={() => handleButtonPressIn(col, row)}
-                onPressOut={() => handleButtonPressOut(col, row, button)}
-                activeOpacity={moveMode ? 1 : 0.7}
-              >
-                {button && (
-                  <Text
-                    style={[
-                      styles.buttonLabel,
-                      { color: button.textColor || '#fff', fontSize: cellSize * 0.25 },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {button.label}
-                  </Text>
-                )}
-              </TouchableOpacity>
+                col={col}
+                row={row}
+                button={button}
+                cellSize={cellSize}
+                moveMode={moveMode}
+                isSource={isSource}
+                horizontalMode={horizontalMode}
+                onSendCommand={onSendCommand}
+                onAddTextButton={onAddTextButton}
+                onEditButton={onEditButton}
+                onSwapButtons={onSwapButtons}
+                onSecondaryCommand={handleSecondaryCommand}
+              />
             );
           })}
         </View>
