@@ -22,6 +22,7 @@ interface ButtonGridProps {
   sourceCol?: number;
   sourceRow?: number;
   onSwapButtons?: (targetCol: number, targetRow: number) => void;
+  horizontalMode?: { cols: number; cellSize: number };
 }
 
 export function ButtonGrid({
@@ -33,6 +34,7 @@ export function ButtonGrid({
   sourceCol,
   sourceRow,
   onSwapButtons,
+  horizontalMode,
 }: ButtonGridProps) {
   const { width } = useWindowDimensions();
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -68,13 +70,16 @@ export function ButtonGrid({
     }
   };
 
-  const cellSize = width / GRID_COLS;
+  // Grid dimensions: horizontal mode (9 cols × 5 rows) or vertical (9 cols × 6 rows)
+  const gridCols = horizontalMode ? horizontalMode.cols : GRID_COLS;
+  const gridRows = horizontalMode ? 5 : GRID_ROWS;
+  const cellSize = horizontalMode ? horizontalMode.cellSize : width / GRID_COLS;
 
   return (
     <View style={styles.container}>
-      {Array.from({ length: GRID_ROWS }).map((_, row) => (
+      {Array.from({ length: gridRows }).map((_, row) => (
         <View key={`row-${row}`} style={[styles.row, { height: cellSize }]}>
-          {Array.from({ length: GRID_COLS }).map((_, col) => {
+          {Array.from({ length: gridCols }).map((_, col) => {
             const button = buttonLookup.get(`${col},${row}`);
             const isSource = moveMode && col === sourceCol && row === sourceRow;
             return (
