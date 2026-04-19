@@ -65,6 +65,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const [locateFeedback, setLocateFeedback] = useState<'success' | 'failed' | null>(null);
 
   const fontSizeRef = useRef(14);
   const linesRef = useRef<MudLine[]>([]);
@@ -267,9 +268,13 @@ export function TerminalScreen({ route, navigation }: Props) {
                       setCurrentRoom(room);
                       const nearby = mapSvc.getNearbyRooms(room.x, room.y, room.z, 15);
                       setNearbyRooms(nearby);
+                      setLocateFeedback('success');
+                      setTimeout(() => setLocateFeedback(null), 2000);
                       isLocatingRef.current = false;
                     } else {
                       console.log('[LOCATE] ✗ No encontrada en mapa');
+                      setLocateFeedback('failed');
+                      setTimeout(() => setLocateFeedback(null), 2000);
                     }
                   }
                 }
@@ -613,18 +618,22 @@ export function TerminalScreen({ route, navigation }: Props) {
   const availableHeight = height - insets.top - insets.bottom;
   const vitalsHeight = 35;
   const inputHeight = 30;
-  const cellSize = width / GRID_COLS;
+
+  // Grid dimensions - change for minimalist mode
+  const isMinimalista = uiMode === 'minimalista';
+  const gridCols = isMinimalista ? 2 : GRID_COLS;
+  const gridRows = isMinimalista ? 4 : GRID_ROWS;
+  const cellSize = width / gridCols;
   const BUTTON_PADDING_VERTICAL = 3 * 2;
   const BUTTON_GAP = 3;
-  const BUTTON_GAPS_TOTAL = (GRID_ROWS - 1) * BUTTON_GAP;
-  const buttonGridHeight = GRID_ROWS * cellSize + BUTTON_GAPS_TOTAL + BUTTON_PADDING_VERTICAL;
+  const BUTTON_GAPS_TOTAL = (gridRows - 1) * BUTTON_GAP;
+  const buttonGridHeight = gridRows * cellSize + BUTTON_GAPS_TOTAL + BUTTON_PADDING_VERTICAL;
 
   // Horizontal layout dimensions
   const vitalsWidth = 30;
   const horizontalCellSize = (availableHeight - inputHeight) / 9; // 9 rows in horizontal, accounting for input
-  const BUTTON_GAPS_HORIZONTAL = (6 - 1) * BUTTON_GAP; // 5 gaps for 6 columns
-  const horizontalButtonGridWidth = 6 * horizontalCellSize + BUTTON_GAPS_HORIZONTAL + 6; // 6 columns in horizontal
-  const horizontalRightPanelWidth = vitalsWidth + horizontalButtonGridWidth + 10;
+  const horizontalButtonGridWidth = isMinimalista ? 2 * horizontalCellSize + BUTTON_GAP : 6 * horizontalCellSize + (6 - 1) * BUTTON_GAP;
+  const horizontalRightPanelWidth = isMinimalista ? horizontalButtonGridWidth + 6 : vitalsWidth + horizontalButtonGridWidth + 10;
   const horizontalTerminalWidth = width - horizontalRightPanelWidth - insets.left - insets.right;
 
   const handleUpArrow = () => {
@@ -688,6 +697,28 @@ export function TerminalScreen({ route, navigation }: Props) {
             </TouchableOpacity>
           )}
 
+          {/* Locate Feedback - Show in minimalist mode */}
+          {locateFeedback && (
+            <View
+              style={[
+                styles.locateFeedback,
+                locateFeedback === 'success' ? styles.locateFeedbackSuccess : styles.locateFeedbackFailed,
+              ]}
+              accessible={true}
+              accessibilityLabel={locateFeedback === 'success' ? 'Location found' : 'Location not found'}
+              accessibilityRole="alert"
+            >
+              <Text
+                style={[
+                  styles.locateFeedbackText,
+                  locateFeedback === 'success' ? styles.locateFeedbackTextSuccess : styles.locateFeedbackTextFailed,
+                ]}
+              >
+                {locateFeedback === 'success' ? '✓ Localizado' : '✗ No localizado'}
+              </Text>
+            </View>
+          )}
+
           {/* MiniMap overlay - Hidden in minimalist mode */}
           {uiMode === 'completo' && (
             <View style={styles.miniMapContainer} pointerEvents="box-none">
@@ -703,15 +734,17 @@ export function TerminalScreen({ route, navigation }: Props) {
           )}
         </View>
 
-        {/* VitalBars */}
-        <View style={[styles.vitalsSection, { height: vitalsHeight }]}>
-          <VitalBars
-            hp={hp}
-            hpMax={hpMax}
-            energy={energy}
-            energyMax={energyMax}
-          />
-        </View>
+        {/* VitalBars - Hidden in minimalist mode */}
+        {uiMode === 'completo' && (
+          <View style={[styles.vitalsSection, { height: vitalsHeight }]}>
+            <VitalBars
+              hp={hp}
+              hpMax={hpMax}
+              energy={energy}
+              energyMax={energyMax}
+            />
+          </View>
+        )}
 
         {/* Input Row */}
         <View style={[styles.inputSection, { height: inputHeight }]}>
@@ -794,6 +827,9 @@ export function TerminalScreen({ route, navigation }: Props) {
               sourceCol={sourceCol}
               sourceRow={sourceRow}
               onSwapButtons={handleSwapButtons}
+              minimalista={isMinimalista}
+              minCols={gridCols}
+              minRows={gridRows}
             />
           </View>
         )}
@@ -862,7 +898,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 sourceCol={sourceCol}
                 sourceRow={sourceRow}
                 onSwapButtons={handleSwapButtons}
-                horizontalMode={{cols: 6, cellSize: horizontalCellSize}}
+                horizontalMode={{cols: isMinimalista ? 2 : 6, cellSize: horizontalCellSize}}
               />
             </View>
           </View>
@@ -1022,5 +1058,34 @@ const styles = StyleSheet.create({
   },
   buttonGridSection: {
     overflow: 'hidden',
+  },
+  locateFeedback: {
+    position: 'absolute',
+    bottom: 50,
+    left: 10,
+    right: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 50,
+  },
+  locateFeedbackSuccess: {
+    backgroundColor: '#0c0',
+  },
+  locateFeedbackFailed: {
+    backgroundColor: '#c00',
+  },
+  locateFeedbackText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+  },
+  locateFeedbackTextSuccess: {
+    color: '#000',
+  },
+  locateFeedbackTextFailed: {
+    color: '#fff',
   },
 });

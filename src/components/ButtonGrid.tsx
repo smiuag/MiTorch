@@ -24,6 +24,9 @@ interface ButtonGridProps {
   sourceRow?: number;
   onSwapButtons?: (targetCol: number, targetRow: number) => void;
   horizontalMode?: { cols: number; cellSize: number };
+  minimalista?: boolean;
+  minCols?: number;
+  minRows?: number;
 }
 
 function ButtonCell({
@@ -168,8 +171,15 @@ export function ButtonGrid({
   sourceRow,
   onSwapButtons,
   horizontalMode,
+  minimalista = false,
+  minCols = GRID_COLS,
+  minRows = GRID_ROWS,
 }: ButtonGridProps) {
   const { width } = useWindowDimensions();
+
+  // Use minimalist dimensions if enabled
+  const displayCols = minimalista ? minCols : GRID_COLS;
+  const displayRows = minimalista ? minRows : GRID_ROWS;
 
   // Additional transformations in horizontal mode (after swap col/row and row inversion)
   const additionalTransforms: { [key: string]: { col: number; row: number } } = {
@@ -220,9 +230,9 @@ export function ButtonGrid({
   };
 
   // Grid dimensions: horizontal mode (6 cols × 9 rows) or vertical (9 cols × 6 rows)
-  const gridCols = horizontalMode ? 6 : GRID_COLS;
-  const gridRows = horizontalMode ? 9 : GRID_ROWS;
-  const cellSize = horizontalMode ? horizontalMode.cellSize : width / GRID_COLS;
+  const gridCols = horizontalMode ? horizontalMode.cols : displayCols;
+  const gridRows = horizontalMode ? 9 : displayRows;
+  const cellSize = horizontalMode ? horizontalMode.cellSize : width / displayCols;
 
   return (
     <View style={styles.container}>
