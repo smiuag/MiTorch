@@ -16,13 +16,23 @@ export const GRID_ROWS = 6;
 interface ButtonGridProps {
   buttons: LayoutButton[];
   onSendCommand: (command: string) => void;
+  onAddTextButton: (command: string) => void;
   onEditButton: (col: number, row: number) => void;
+  moveMode?: boolean;
+  sourceCol?: number;
+  sourceRow?: number;
+  onSwapButtons?: (targetCol: number, targetRow: number) => void;
 }
 
 export function ButtonGrid({
   buttons,
   onSendCommand,
+  onAddTextButton,
   onEditButton,
+  moveMode,
+  sourceCol,
+  sourceRow,
+  onSwapButtons,
 }: ButtonGridProps) {
   const { width } = useWindowDimensions();
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -43,8 +53,18 @@ export function ButtonGrid({
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+
+    if (moveMode && onSwapButtons) {
+      onSwapButtons(col, row);
+      return;
+    }
+
     if (button && button.command) {
-      onSendCommand(button.command);
+      if (button.addText) {
+        onAddTextButton(button.command);
+      } else {
+        onSendCommand(button.command);
+      }
     }
   };
 
@@ -56,6 +76,7 @@ export function ButtonGrid({
         <View key={`row-${row}`} style={[styles.row, { height: cellSize }]}>
           {Array.from({ length: GRID_COLS }).map((_, col) => {
             const button = buttonLookup.get(`${col},${row}`);
+            const isSource = moveMode && col === sourceCol && row === sourceRow;
             return (
               <TouchableOpacity
                 key={`cell-${col}-${row}`}
@@ -65,11 +86,13 @@ export function ButtonGrid({
                     width: cellSize,
                     height: cellSize,
                     backgroundColor: button ? button.color : '#222',
+                    borderWidth: isSource ? 3 : 1,
+                    borderColor: isSource ? '#ffff00' : '#444',
                   },
                 ]}
                 onPressIn={() => handleButtonPressIn(col, row)}
                 onPressOut={() => handleButtonPressOut(col, row, button)}
-                activeOpacity={0.7}
+                activeOpacity={moveMode ? 1 : 0.7}
               >
                 {button && (
                   <Text

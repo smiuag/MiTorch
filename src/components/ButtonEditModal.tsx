@@ -17,6 +17,7 @@ interface ButtonEditModalProps {
   button: LayoutButton | null;
   onSave: (btn: LayoutButton) => void;
   onDelete: () => void;
+  onMove: () => void;
   onClose: () => void;
 }
 
@@ -37,21 +38,25 @@ export function ButtonEditModal({
   button,
   onSave,
   onDelete,
+  onMove,
   onClose,
 }: ButtonEditModalProps) {
   const [label, setLabel] = useState('');
   const [command, setCommand] = useState('');
   const [color, setColor] = useState('#662222');
+  const [addText, setAddText] = useState(false);
 
   useEffect(() => {
     if (button) {
       setLabel(button.label);
       setCommand(button.command);
       setColor(button.color);
+      setAddText(button.addText ?? false);
     } else {
       setLabel('');
       setCommand('');
       setColor('#662222');
+      setAddText(false);
     }
   }, [button, visible]);
 
@@ -64,6 +69,7 @@ export function ButtonEditModal({
       command: command || '',
       color,
       textColor: '#ffffff',
+      addText,
     };
     onSave(newButton);
     onClose();
@@ -117,6 +123,16 @@ export function ButtonEditModal({
               ))}
             </View>
 
+            <TouchableOpacity
+              style={styles.checkboxRow}
+              onPress={() => setAddText(!addText)}
+            >
+              <View style={[styles.checkbox, addText && styles.checkboxChecked]}>
+                {addText && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+              <Text style={styles.checkboxLabel}>Añadir texto al input</Text>
+            </TouchableOpacity>
+
             <View style={styles.preview}>
               <Text style={styles.previewLabel}>Preview:</Text>
               <TouchableOpacity
@@ -135,9 +151,14 @@ export function ButtonEditModal({
 
           <View style={styles.actions}>
             {button && (
-              <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={onDelete}>
-                <Text style={styles.buttonText}>Borrar</Text>
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={onDelete}>
+                  <Text style={styles.buttonText}>Borrar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.button, styles.moveButton]} onPress={onMove}>
+                  <Text style={styles.buttonText}>Mover</Text>
+                </TouchableOpacity>
+              </>
             )}
             <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={onClose}>
               <Text style={styles.buttonText}>Cancelar</Text>
@@ -239,6 +260,38 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
     borderRadius: 6,
   },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 18,
+    marginBottom: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderColor: '#3399cc',
+    borderRadius: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    backgroundColor: '#0f0f0f',
+  },
+  checkboxChecked: {
+    backgroundColor: '#3399cc',
+  },
+  checkmark: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  checkboxLabel: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+  },
   preview: {
     marginTop: 18,
     paddingTop: 14,
@@ -301,6 +354,10 @@ const styles = StyleSheet.create({
   deleteButton: {
     backgroundColor: '#cc3333',
     borderColor: '#ff5555',
+  },
+  moveButton: {
+    backgroundColor: '#226622',
+    borderColor: '#44aa44',
   },
   cancelButton: {
     backgroundColor: '#444',

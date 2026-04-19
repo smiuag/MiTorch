@@ -58,6 +58,9 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [editButtonVisible, setEditButtonVisible] = useState(false);
   const [editButtonCol, setEditButtonCol] = useState(0);
   const [editButtonRow, setEditButtonRow] = useState(0);
+  const [moveMode, setMoveMode] = useState(false);
+  const [sourceCol, setSourceCol] = useState(0);
+  const [sourceRow, setSourceRow] = useState(0);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -76,13 +79,25 @@ export function TerminalScreen({ route, navigation }: Props) {
   const lastLineBlankRef = useRef(false);
   const recentLinesRef = useRef<string[]>([]);
   const isLocatingRef = useRef(false);
+  const textInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     (async () => {
       const layout = await loadLayout();
-      setButtonLayout(layout);
+      // Replace LOGIN_NAME placeholder with actual server name
+      const buttons = layout.buttons.map(btn =>
+        btn.command === '__LOGIN_NAME__'
+          ? { ...btn, command: server.name }
+          : btn
+      );
+      setButtonLayout({ buttons });
       if (server.buttonLayout) {
-        setButtonLayout(server.buttonLayout as ButtonLayout);
+        const serverButtons = (server.buttonLayout as ButtonLayout).buttons.map(btn =>
+          btn.command === '__LOGIN_NAME__'
+            ? { ...btn, command: server.name }
+            : btn
+        );
+        setButtonLayout({ buttons: serverButtons });
       }
 
       // Load map for locate command
@@ -91,6 +106,9 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, [server]);
 
   const addLine = (text: string) => {
+    // Skip lines that don't contain any letters or numbers
+    if (!/[a-z0-9]/i.test(text)) return;
+
     // Skip empty lines if last line was also empty
     const isBlank = text.trim().length === 0;
     if (isBlank) {
@@ -123,17 +141,57 @@ export function TerminalScreen({ route, navigation }: Props) {
   };
 
   const addMultipleLines = (texts: string[]) => {
+    let hasAdded = false;
     texts.forEach(text => {
+      console.log(`[TERMINAL] Línea recibida: "${text}"`);
+
+      // Skip lines that don't contain any letters or numbers
+      if (!/[a-z0-9]/i.test(text)) {
+        console.log(`[TERMINAL] ✗ Filtrada (sin letras/números)`);
+        return;
+      }
+
+      // Skip empty lines if last line was also empty
+      const isBlank = text.trim().length === 0;
+      if (isBlank) {
+        if (lastLineBlankRef.current) {
+          console.log(`[TERMINAL] ✗ Filtrada (línea en blanco repetida)`);
+          return;
+        }
+        lastLineBlankRef.current = true;
+      } else {
+        lastLineBlankRef.current = false;
+      }
+
+      // Skip lines that are only ">" or whitespace + ">"
+      const cleanText = text.trim();
+      if (cleanText === '>' || cleanText.endsWith('>')) {
+        if (/^\s*>\s*$/.test(text)) {
+          console.log(`[TERMINAL] ✗ Filtrada (solo ">")`);
+          return;
+        }
+      }
+
+      // Skip lines that are only template variables like <VERSION>, <NAME>, etc
+      if (/^\s*<[A-Z_]+>\s*$/.test(text)) {
+        console.log(`[TERMINAL] ✗ Filtrada (template variable)`);
+        return;
+      }
+
+      console.log(`[TERMINAL] ✓ Línea mostrada: "${text}"`);
       const spans = parseAnsi(text);
       const newLine: MudLine = { id: lineIdCounter++, spans };
       linesRef.current.push(newLine);
+      hasAdded = true;
     });
     if (linesRef.current.length > MAX_LINES) {
       linesRef.current = linesRef.current.slice(-MAX_LINES);
     }
-    setLines([...linesRef.current]);
+    if (hasAdded) {
+      setLines([...linesRef.current]);
+    }
 
-    if (isAtBottomRef.current) {
+    if (isAtBottomRef.current && hasAdded) {
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
     }
   };
@@ -331,6 +389,13 @@ export function TerminalScreen({ route, navigation }: Props) {
     telnetRef.current.send('ojear');
   }, []);
 
+  const handleAddTextButton = useCallback((command: string) => {
+    setInputText(command + ' ');
+    setTimeout(() => {
+      textInputRef.current?.focus();
+    }, 100);
+  }, []);
+
   const sendCommand = useCallback((command: string) => {
     if (!telnetRef.current) return;
 
@@ -453,6 +518,48 @@ export function TerminalScreen({ route, navigation }: Props) {
     setEditButtonVisible(false);
   };
 
+  const handleMoveButton = () => {
+    setSourceCol(editButtonCol);
+    setSourceRow(editButtonRow);
+    setMoveMode(true);
+    setEditButtonVisible(false);
+  };
+
+  const handleSwapButtons = async (targetCol: number, targetRow: number) => {
+    if (moveMode && buttonLayout) {
+      const sourceBtn = buttonLayout.buttons.find(b => b.col === sourceCol && b.row === sourceRow);
+      const targetBtn = buttonLayout.buttons.find(b => b.col === targetCol && b.row === targetRow);
+
+      const updated = buttonLayout.buttons.map(b => {
+        if (b.col === sourceCol && b.row === sourceRow) {
+          return { ...b, col: targetCol, row: targetRow };
+        }
+        if (b.col === targetCol && b.row === targetRow) {
+          return { ...b, col: sourceCol, row: sourceRow };
+        }
+        return b;
+      });
+
+      const newLayout = { buttons: updated };
+      setButtonLayout(newLayout);
+
+      const updatedServer = {
+        ...server,
+        buttonLayout: newLayout,
+      };
+      setServer(updatedServer);
+
+      const servers = await loadServers();
+      const index = servers.findIndex(s => s.id === server.id);
+      if (index >= 0) {
+        servers[index] = updatedServer;
+        await saveServers(servers);
+      }
+
+      setMoveMode(false);
+    }
+  };
+
   const handleFlatListScroll = (event: any) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const isAtEnd = contentOffset.y >= contentSize.height - layoutMeasurement.height - 50;
@@ -559,6 +666,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           {connected ? (
             <>
               <TextInput
+                ref={textInputRef}
                 style={styles.input}
                 placeholder="Comando..."
                 placeholderTextColor="#888"
@@ -601,7 +709,12 @@ export function TerminalScreen({ route, navigation }: Props) {
           <ButtonGrid
             buttons={buttonLayout?.buttons || []}
             onSendCommand={sendCommand}
+            onAddTextButton={handleAddTextButton}
             onEditButton={handleEditButton}
+            moveMode={moveMode}
+            sourceCol={sourceCol}
+            sourceRow={sourceRow}
+            onSwapButtons={handleSwapButtons}
           />
         </View>
       </View>
@@ -615,6 +728,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         button={buttonLayout?.buttons.find(b => b.col === editButtonCol && b.row === editButtonRow) || null}
         onSave={handleSaveEditButton}
         onDelete={handleDeleteButton}
+        onMove={handleMoveButton}
         onClose={() => setEditButtonVisible(false)}
       />
 
