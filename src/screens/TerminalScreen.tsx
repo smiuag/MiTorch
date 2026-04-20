@@ -77,6 +77,10 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [channelMessages, setChannelMessages] = useState<ChannelMessage[]>([]);
   const [channelAliases, setChannelAliases] = useState<Record<string, string>>({});
   const [blindChannelModalVisible, setBlindChannelModalVisible] = useState(false);
+  const [playerXP, setPlayerXP] = useState(0);
+  const [roomEnemies, setRoomEnemies] = useState('');
+  const [roomAllies, setRoomAllies] = useState('');
+  const [hpHistory, setHpHistory] = useState<{ delta: number; label: string }[]>([]);
 
   const fontSizeRef = useRef(14);
   const linesRef = useRef<MudLine[]>([]);
@@ -158,7 +162,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, [server, uiMode]);
 
   // Process a single line with blind mode filters and add to display
-  const processingAndAddLine = (text: string) => {
+  const processingAndAddLine = (text: string, isChannelMessage: boolean = false) => {
     // Auto-login: Try to log in with saved credentials if available and not yet attempted
     if (!autoLoginRef.current && server.username && server.password) {
       const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
@@ -220,12 +224,10 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
 
     if (uiMode === 'blind') {
-      console.log(`[BLIND_PROCESS] Procesando con blind mode: "${text.substring(0, 50)}..."`);
       const result = blindModeService.processLine(text);
 
       // Skip line if filter says to silence it
       if (!result.shouldDisplay) {
-        console.log(`[BLIND_PROCESS] Línea silenciada por filter`);
         return;
       }
 
@@ -242,6 +244,20 @@ export function TerminalScreen({ route, navigation }: Props) {
       if (result.sound) {
         soundPath = result.sound;
         console.log(`[BLIND_PROCESS] Sonido: "${soundPath}"`);
+      }
+
+      // Sync captured data to React state
+      if ((result as any).capturedData) {
+        const captured = (result as any).capturedData;
+        if (captured.playerXP !== undefined) setPlayerXP(captured.playerXP);
+        if (captured.roomEnemies !== undefined) setRoomEnemies(captured.roomEnemies);
+        if (captured.roomAllies !== undefined) setRoomAllies(captured.roomAllies);
+      }
+
+      // Sync HP history from blindModeService
+      const playerVars = blindModeService.getPlayerVariables();
+      if (playerVars.hpHistory.length > 0) {
+        setHpHistory(playerVars.hpHistory);
       }
     }
 
@@ -271,8 +287,17 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
     setLines([...linesRef.current]);
 
-    // Announce filtered content and play sound in blind mode
-    if (shouldAnnounce && uiMode === 'blind') {
+    // Channel messages: always write to terminal, NEVER announce (even if silent mode is off)
+    if (isChannelMessage) {
+      console.log(`[CHANNEL] Escribiendo canal en terminal (sin anunciar)`);
+      if (isAtBottomRef.current) {
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
+      }
+      return;
+    }
+
+    // Non-channel messages: Announce filtered content and play sound in blind mode (only if silent mode is disabled)
+    if (shouldAnnounce && uiMode === 'blind' && !silentModeEnabled) {
       console.log(`[TERMINAL_BLIND] Anunciando: "${announcementText}", sonido: "${soundPath}"`);
       blindModeService.announceMessage(announcementText, 'normal');
       if (soundPath) {
@@ -281,8 +306,8 @@ export function TerminalScreen({ route, navigation }: Props) {
       }
     }
 
-    // Modo Silencio OFF: read all messages (when silent mode is disabled)
-    if (!silentModeEnabled && uiMode === 'blind' && !shouldAnnounce) {
+    // Read all messages when silent mode is disabled (if not already announced by filters and not a channel)
+    if (!silentModeEnabled && uiMode === 'blind' && !shouldAnnounce && !isChannelMessage) {
       // Only read if it's not already announced by blind mode filters
       const cleanText = displayText.replace(/\x1b\[[0-9;]*m/g, '').trim();
       if (cleanText.length > 0) {
@@ -414,6 +439,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         }
       },
       onGMCP: (module: string, data: any) => {
+        console.log(`[GMCP] ${module}:`, data);
         if (module === 'Room.Actual') {
           // Don't auto-locate on Room.Actual. Only manual ojear (locate) can trigger localization.
           // Room.Actual is used to sync movement after successful locate via ojear.
@@ -491,10 +517,8 @@ export function TerminalScreen({ route, navigation }: Props) {
         } else if (module === 'Comm.ApagaCanal' && data?.canal) {
           setChannels(prev => prev.filter(ch => ch !== data.canal));
         } else if ((module === 'Comm.MensajeCanal' || module === 'Comm.MensajeCanalHistorico') && data?.canal && data?.mensaje) {
-          // En blind mode: mostrar mensajes de canal en terminal (sin filtro)
-          if (uiMode === 'blind') {
-            addLine(data.mensaje);
-          }
+          // Mostrar en terminal (todos los modos), pero marcar como canal para que nunca se anuncie
+          addLine(data.mensaje, true);
 
           // Guardar en state para el modal
           setChannelMessages(prev => {
@@ -630,6 +654,67 @@ export function TerminalScreen({ route, navigation }: Props) {
       return;
     }
 
+    // Intercept stat consultation commands (blind mode)
+    if (uiMode === 'blind') {
+      const cmdLower = command.toLowerCase();
+
+      if (cmdLower === 'consultar vida') {
+        const msg = `Vida ${hp} de ${hpMax}`;
+        AccessibilityInfo.announceForAccessibility(msg);
+        setCommandHistory([command, ...commandHistory]);
+        return;
+      }
+
+      if (cmdLower === 'consultar energia') {
+        const msg = `Energía ${energy} de ${energyMax}`;
+        AccessibilityInfo.announceForAccessibility(msg);
+        setCommandHistory([command, ...commandHistory]);
+        return;
+      }
+
+      if (cmdLower === 'consultar salidas' || cmdLower === 'xp') {
+        if (cmdLower === 'consultar salidas') {
+          const playerVars = blindModeService.getPlayerVariables();
+          const exits = playerVars.roomExits || 'ninguna';
+          const msg = `Salidas: ${exits}`;
+          AccessibilityInfo.announceForAccessibility(msg);
+        } else if (cmdLower === 'xp') {
+          const playerVars = blindModeService.getPlayerVariables();
+          const msg = `Experiencia: ${playerVars.playerXP}`;
+          AccessibilityInfo.announceForAccessibility(msg);
+        }
+        setCommandHistory([command, ...commandHistory]);
+        return;
+      }
+
+      if (cmdLower === 'ultimo daño') {
+        const playerVars = blindModeService.getPlayerVariables();
+        if (playerVars.hpHistory.length > 0) {
+          const last = playerVars.hpHistory[playerVars.hpHistory.length - 1];
+          const msg = last.label;
+          AccessibilityInfo.announceForAccessibility(msg);
+        } else {
+          const msg = 'Sin cambios de vida aún';
+          AccessibilityInfo.announceForAccessibility(msg);
+        }
+        setCommandHistory([command, ...commandHistory]);
+        return;
+      }
+
+      if (cmdLower === 'enemigos') {
+        const playerVars = blindModeService.getPlayerVariables();
+        if (playerVars.roomEnemies) {
+          const msg = `Enemigos: ${playerVars.roomEnemies}`;
+          AccessibilityInfo.announceForAccessibility(msg);
+        } else {
+          const msg = 'Sin enemigos aquí';
+          AccessibilityInfo.announceForAccessibility(msg);
+        }
+        setCommandHistory([command, ...commandHistory]);
+        return;
+      }
+    }
+
     if (connected) {
       telnetRef.current.send(command);
       setCommandHistory([command, ...commandHistory]);
@@ -640,7 +725,7 @@ export function TerminalScreen({ route, navigation }: Props) {
       stopWalk();
       addLine('--- Movimiento cancelado ---');
     }
-  }, [connected, commandHistory, walking, stopWalk, walkTo, handleLocate, addLine]);
+  }, [connected, commandHistory, walking, stopWalk, walkTo, handleLocate, addLine, hp, hpMax, uiMode]);
 
   const handleSendInput = () => {
     if (inputText.trim()) {
@@ -787,6 +872,10 @@ export function TerminalScreen({ route, navigation }: Props) {
     setIsAtBottom(true);
     setShowScrollToBottom(false);
     flatListRef.current?.scrollToEnd({ animated: true });
+  };
+
+  const handleScrollToTop = () => {
+    flatListRef.current?.scrollToIndex({ index: 0, animated: true });
   };
 
   const isHorizontal = width > height;
@@ -1100,9 +1189,15 @@ export function TerminalScreen({ route, navigation }: Props) {
               accessibilityLabel={`Terminal con ${lines.length} líneas`}
             />
 
+            {uiMode === 'completo' && !isAtBottom && (
+              <TouchableOpacity style={styles.scrollToTopButton} onPress={handleScrollToTop}>
+                <Text style={styles.scrollButtonText}>⬆</Text>
+              </TouchableOpacity>
+            )}
+
             {showScrollToBottom && (
               <TouchableOpacity style={styles.scrollToBottomButton} onPress={handleScrollToBottom}>
-                <Text style={styles.scrollToBottomText}>↓</Text>
+                <Text style={styles.scrollToBottomText}>⬇</Text>
               </TouchableOpacity>
             )}
 
@@ -1334,6 +1429,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   scrollToBottomText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  scrollToTopButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    backgroundColor: '#3399cc',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scrollButtonText: {
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',

@@ -61,19 +61,23 @@ export function createDefaultLayout(): ButtonLayout {
 export function createBlindModeLayout(): ButtonLayout {
   // 5x4 grid optimized for blind users: directions + vertical movement + controls
   const buttons: LayoutButton[] = [
-    // Row 0: STOP, IR, LOC
+    // Row 0: STOP, IR, LOC, VID, SAL
     { id: genId(), col: 0, row: 0, label: 'STOP', command: 'stop', color: '#662222', textColor: '#fff', locked: true },
     { id: genId(), col: 1, row: 0, label: 'IR', command: 'irsala', color: '#662266', textColor: '#fff', addText: true },
     { id: genId(), col: 2, row: 0, label: 'LOC', command: 'locate', color: '#223366', textColor: '#fff', locked: true },
+    { id: genId(), col: 3, row: 0, label: 'VID', command: 'consultar vida', color: '#336633', textColor: '#fff', secondaryCommand: 'consultar energia' },
+    { id: genId(), col: 4, row: 0, label: 'SAL', command: 'consultar salidas', color: '#336633', textColor: '#fff', secondaryCommand: 'xp' },
     // Row 1: NO, N, NE, AR
     { id: genId(), col: 0, row: 1, label: 'NO', command: 'noroeste', color: '#662222', textColor: '#fff', locked: true },
     { id: genId(), col: 1, row: 1, label: 'N', command: 'norte', color: '#662222', textColor: '#fff', locked: true },
     { id: genId(), col: 2, row: 1, label: 'NE', command: 'noreste', color: '#662222', textColor: '#fff', locked: true },
     { id: genId(), col: 3, row: 1, label: 'AR', command: 'ar', color: '#663322', textColor: '#fff', locked: true },
-    // Row 2: O, E, AB
+    // Row 2: O, DAÑ, E, AB, ENE
     { id: genId(), col: 0, row: 2, label: 'O', command: 'oeste', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 1, row: 2, label: 'DAÑ', command: 'ultimo daño', color: '#cc6633', textColor: '#fff' },
     { id: genId(), col: 2, row: 2, label: 'E', command: 'este', color: '#662222', textColor: '#fff', locked: true },
     { id: genId(), col: 3, row: 2, label: 'AB', command: 'ab', color: '#663322', textColor: '#fff', locked: true },
+    { id: genId(), col: 4, row: 2, label: 'ENE', command: 'enemigos', color: '#994444', textColor: '#fff' },
     // Row 3: SO, S, SE, DE, FU
     { id: genId(), col: 0, row: 3, label: 'SO', command: 'sudoeste', color: '#662222', textColor: '#fff', locked: true },
     { id: genId(), col: 1, row: 3, label: 'S', command: 'sur', color: '#662222', textColor: '#fff', locked: true },

@@ -329,18 +329,18 @@ export function ServerListScreen({ navigation }: Props) {
               accessibilityHint="Ingresa el número de puerto"
             />
 
-            <Text style={[styles.label, { marginTop: 16 }]}>Usuario (opcional)</Text>
+            <Text style={[styles.label, { marginTop: 16 }]}>Personaje (opcional)</Text>
             <TextInput
               style={styles.modalInput}
               value={formUsername}
               onChangeText={setFormUsername}
-              placeholder="Tu nombre de usuario"
+              placeholder="Tu personaje"
               placeholderTextColor="#666"
               autoCapitalize="none"
               autoCorrect={false}
               accessible={true}
-              accessibilityLabel="Usuario del servidor"
-              accessibilityHint="Ingresa tu nombre de usuario para auto-login"
+              accessibilityLabel="Personaje del servidor"
+              accessibilityHint="Ingresa tu personaje para auto-login"
             />
 
             <Text style={styles.label}>Contraseña (opcional)</Text>

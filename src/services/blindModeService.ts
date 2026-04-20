@@ -61,6 +61,17 @@ export interface PlayerVariables {
   playerMaxEnergy: number;
   concentrationActive: boolean;
   inCombat: boolean;
+  playerXP: number;
+  playerImages: number;
+  playerSkins: number;
+  playerInertia: number;
+  playerAstuteness: number;
+  roomEnemies: string;
+  roomAllies: string;
+  roomCombatants: string;
+  roomExits: string;
+  hpHistory: { delta: number; label: string }[];
+  activeHpAlert: 'none' | 'low50' | 'low30' | 'critical10';
 }
 
 class BlindModeService {
@@ -69,6 +80,8 @@ class BlindModeService {
   private lastAnnouncedTime: Record<string, number> = {};
   private playerVariables: PlayerVariables;
   private activeFilters: Set<string>;
+  private hpAlertInterval: ReturnType<typeof setInterval> | null = null;
+  private lastHpPercent: number = 100;
 
   constructor() {
     this.filters = { ...blindModeFiltersData.filters };
@@ -81,6 +94,17 @@ class BlindModeService {
       playerMaxEnergy: 0,
       concentrationActive: false,
       inCombat: false,
+      playerXP: 0,
+      playerImages: 0,
+      playerSkins: 0,
+      playerInertia: 0,
+      playerAstuteness: 0,
+      roomEnemies: '',
+      roomAllies: '',
+      roomCombatants: '',
+      roomExits: '',
+      hpHistory: [],
+      activeHpAlert: 'none',
     };
     this.activeFilters = new Set(
       blindModeFiltersData.classConfigs.generica.enabledFilters
@@ -91,12 +115,76 @@ class BlindModeService {
    * Update player variables from GMCP or status messages
    */
   updatePlayerVariables(variables: Partial<PlayerVariables>) {
+    const oldHP = this.playerVariables.playerHP;
+    const oldMaxHP = this.playerVariables.playerMaxHP;
+
     this.playerVariables = { ...this.playerVariables, ...variables };
 
     // Update active filters based on character class
     if (variables.playerClass && variables.playerClass !== 'desconocida') {
       this.updateActiveFiltersByClass(variables.playerClass);
     }
+
+    // Handle HP threshold alerts
+    if (variables.playerHP !== undefined && variables.playerMaxHP !== undefined) {
+      this.checkHpThresholds(oldHP, variables.playerHP, variables.playerMaxHP);
+    }
+  }
+
+  /**
+   * Check HP thresholds and trigger alerts
+   */
+  private checkHpThresholds(prevHP: number, newHP: number, maxHP: number) {
+    // Record HP change in history
+    if (newHP !== prevHP) {
+      const delta = newHP - prevHP;
+      const label = delta > 0 ? `Vida ganada: ${delta}` : `Vida perdida: ${Math.abs(delta)}`;
+
+      this.playerVariables.hpHistory.push({ delta, label });
+      if (this.playerVariables.hpHistory.length > 10) {
+        this.playerVariables.hpHistory = this.playerVariables.hpHistory.slice(-10);
+      }
+      console.log(`[HP_HISTORY] ${label}`);
+    }
+
+    const newPercent = maxHP > 0 ? (newHP / maxHP) * 100 : 0;
+
+    // Calculate previous percentage
+    const prevPercent = maxHP > 0 ? (prevHP / maxHP) * 100 : 0;
+
+    // Check thresholds and manage alerts
+    if (newPercent <= 10 && prevPercent > 10) {
+      // Entered critical zone (<=10%)
+      this.playerVariables.activeHpAlert = 'critical10';
+      this.playSoundLoop('alertas/hp-10.wav', 8000);
+      this.announceMessage('VIDA CRÍTICA', 'high');
+    } else if (newPercent <= 30 && prevPercent > 30) {
+      // Entered warning zone (<=30%)
+      this.playerVariables.activeHpAlert = 'low30';
+      this.playSound('alertas/hp-30.wav');
+      this.announceMessage('Vida peligrosa', 'normal');
+    } else if (newPercent <= 50 && prevPercent > 50) {
+      // Entered caution zone (<=50%)
+      this.playerVariables.activeHpAlert = 'low50';
+      this.playSound('alertas/hp-50.wav');
+      this.announceMessage('Vida baja', 'normal');
+    } else if (newPercent > 50 && prevPercent <= 50) {
+      // Recovered above 50%
+      this.stopSoundLoop();
+      this.playerVariables.activeHpAlert = 'none';
+      this.announceMessage('Recuperándose', 'low');
+    } else if (newPercent > 30 && prevPercent <= 30) {
+      // Recovered above 30%
+      this.stopSoundLoop();
+      this.playerVariables.activeHpAlert = 'low50';
+    } else if (newPercent > 10 && prevPercent <= 10) {
+      // Recovered above 10%
+      this.stopSoundLoop();
+      this.playerVariables.activeHpAlert = 'none';
+      this.announceMessage('Vida recuperada', 'low');
+    }
+
+    this.lastHpPercent = newPercent;
   }
 
   /**
@@ -161,12 +249,8 @@ class BlindModeService {
           const regex = new RegExp(pattern.regex, 'i');
           const match = regex.exec(cleanText);
           if (match) {
-            if (cleanText.includes('bloqueo')) {
-              console.log(`[BM] ✓ MATCH en ${groupName}: patrón="${pattern.regex}" sonido="${pattern.sound}"`);
-            }
+            console.log(`[BM] ✓ MATCH en ${groupName}: patrón="${pattern.regex}" silence=${pattern.silence}`);
             return this.executeFilterAction(pattern, cleanText, groupName, match);
-          } else if (cleanText.includes('bloqueo')) {
-            console.log(`[BM] ✗ NO MATCH en ${groupName}: patrón="${pattern.regex}"`);
           }
         } catch (e) {
           console.warn(`[BlindMode] Invalid regex in ${groupName}: ${pattern.regex}`);
@@ -195,7 +279,33 @@ class BlindModeService {
     modifiedText: string;
     action?: FilterAction;
     sound?: string;
+    capturedData?: Record<string, any>;
   } {
+    // Handle capture actions
+    if (pattern.action === 'capture' && (pattern as any).captureVars) {
+      const captureVars = (pattern as any).captureVars as string[];
+      const capturedData: Record<string, any> = {};
+
+      for (let i = 0; i < captureVars.length && i + 1 < regexMatch.length; i++) {
+        const varName = captureVars[i];
+        const value = regexMatch[i + 1];
+
+        // Try to convert to number, otherwise keep as string
+        const parsedValue = isNaN(Number(value)) ? value : Number(value);
+        capturedData[varName] = parsedValue;
+
+        // Update internal PlayerVariables
+        (this.playerVariables as any)[varName] = parsedValue;
+        console.log(`[CAPTURE] ${varName} = ${JSON.stringify(parsedValue)}`);
+      }
+
+      return {
+        shouldDisplay: pattern.silence === true ? false : true,
+        modifiedText: text,
+        capturedData,
+      };
+    }
+
     // Interpolate regex groups into message
     let message = pattern.message || text;
     if (regexMatch) {
@@ -301,6 +411,27 @@ class BlindModeService {
   }
 
   /**
+   * Play a sound in loop at regular intervals
+   */
+  playSoundLoop(soundPath: string, intervalMs: number = 8000) {
+    this.stopSoundLoop();
+    this.playSound(soundPath);
+    this.hpAlertInterval = setInterval(() => {
+      this.playSound(soundPath);
+    }, intervalMs);
+  }
+
+  /**
+   * Stop the looping sound
+   */
+  stopSoundLoop() {
+    if (this.hpAlertInterval) {
+      clearInterval(this.hpAlertInterval);
+      this.hpAlertInterval = null;
+    }
+  }
+
+  /**
    * Get all enabled filters for debugging
    */
   getActiveFilters(): string[] {
@@ -340,6 +471,10 @@ class BlindModeService {
         delete this.lastAnnouncedTime[key];
       }
     });
+  }
+
+  getPlayerVariables(): PlayerVariables {
+    return { ...this.playerVariables };
   }
 }
 

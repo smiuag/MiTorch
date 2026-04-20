@@ -259,27 +259,95 @@
           "priority": "normal"
         }
       ]
+    },
+    "prompt_stats": {
+      "enabled": true,
+      "class": "all",
+      "description": "Captura prompt de stats y lo silencia",
+      "patterns": [
+        {
+          "regex": "Pv:(\\d+)[/\\\\](\\d+).*Pe:(\\d+)[/\\\\](\\d+).*Xp:(\\d+).*SL:\\s*\\[?(.+?)\\]?(?=[>]|\\s|$)",
+          "action": "capture",
+          "captureVars": ["playerHP","playerMaxHP","playerEnergy","playerMaxEnergy","playerXP","roomExits"],
+          "silence": true
+        },
+        {
+          "regex": "Pieles:(\\d+)",
+          "action": "capture",
+          "captureVars": ["playerSkins"],
+          "silence": true
+        },
+        {
+          "regex": "Im[aá]genes:(\\d+)",
+          "action": "capture",
+          "captureVars": ["playerImages"],
+          "silence": true
+        },
+        {
+          "regex": "Inercia:(\\d+)",
+          "action": "capture",
+          "captureVars": ["playerInertia"],
+          "silence": true
+        },
+        {
+          "regex": "Astucia:(\\d+)",
+          "action": "capture",
+          "captureVars": ["playerAstuteness"],
+          "silence": true
+        }
+      ]
+    },
+    "sala_entidades": {
+      "enabled": true,
+      "class": "all",
+      "description": "Captura enemigos, aliados y combatientes en sala",
+      "patterns": [
+        {
+          "regex": "NM:(.+?)(?=$|>|\\n|\\s{2})",
+          "action": "capture",
+          "captureVars": ["roomEnemies"],
+          "silence": true
+        },
+        {
+          "regex": "LD:(.+?)(?=$|>|\\n|\\s{2})",
+          "action": "capture",
+          "captureVars": ["roomAllies"],
+          "silence": true
+        },
+        {
+          "regex": "PL:(.+?)(?=$|>|\\n|\\s{2})",
+          "action": "capture",
+          "captureVars": ["roomCombatants"],
+          "silence": true
+        },
+        {
+          "regex": "SL:\\s*[\\[\\(]?(.+?)[\\]\\)]?(?=[>]|\\s|$)",
+          "action": "capture",
+          "captureVars": ["roomExits"],
+          "silence": true
+        }
+      ]
     }
   },
   "classConfigs": {
     "guerreros": {
       "description": "Soldados, Lanceros, Campeones",
-      "enabledFilters": ["combate_fisico", "bloqueos", "movimiento", "eventos_criticos", "stats_y_combate"],
+      "enabledFilters": ["combate_fisico", "bloqueos", "movimiento", "eventos_criticos", "stats_y_combate", "prompt_stats", "sala_entidades"],
       "disabledFilters": ["hechizos"]
     },
     "magos": {
       "description": "Magos, Hechiceros, Brujos",
-      "enabledFilters": ["hechizos", "bloqueos", "movimiento", "eventos_criticos", "stats_y_combate"],
+      "enabledFilters": ["hechizos", "bloqueos", "movimiento", "eventos_criticos", "stats_y_combate", "prompt_stats", "sala_entidades"],
       "disabledFilters": ["combate_fisico"]
     },
     "hibridos": {
       "description": "Paladines, Rangers, Druidas",
-      "enabledFilters": ["combate_fisico", "hechizos", "bloqueos", "movimiento", "eventos_criticos", "stats_y_combate"],
+      "enabledFilters": ["combate_fisico", "hechizos", "bloqueos", "movimiento", "eventos_criticos", "stats_y_combate", "prompt_stats", "sala_entidades"],
       "disabledFilters": []
     },
     "generica": {
       "description": "Configuración por defecto",
-      "enabledFilters": ["bloqueos", "movimiento", "eventos_criticos", "stats_y_combate", "ambiente"],
+      "enabledFilters": ["bloqueos", "movimiento", "eventos_criticos", "stats_y_combate", "ambiente", "prompt_stats", "sala_entidades"],
       "disabledFilters": []
     }
   }
