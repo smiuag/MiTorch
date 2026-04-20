@@ -68,10 +68,10 @@ function ButtonCell({
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: (evt) => {
-          // En blind mode: requiere 2+ dedos para drag-drop (comando secundario)
-          // Esto permite que screen reader use gestos de 1 dedo
+          // En blind mode: aceptar 1+ dedos (longpress para editar, drag solo con 2+)
+          // Esto permite que screen reader use gestos de 1 dedo para otras interacciones
           if (uiMode === 'blind') {
-            return evt.nativeEvent.touches?.length >= 2;
+            return evt.nativeEvent.touches?.length >= 1;
           }
           // Modo normal: 1 dedo funciona
           return true;
@@ -89,6 +89,11 @@ function ButtonCell({
         },
         onPanResponderMove: (evt) => {
           if (isLongPressTriggeredRef.current) return;
+
+          // In blind mode: drag only with 2+ fingers (allow longpress with 1 finger)
+          if (uiMode === 'blind' && evt.nativeEvent.touches?.length < 2) {
+            return;
+          }
 
           const dx = evt.nativeEvent.pageX - startPosRef.current.x;
           const dy = evt.nativeEvent.pageY - startPosRef.current.y;
