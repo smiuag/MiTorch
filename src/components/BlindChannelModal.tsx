@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -61,6 +61,7 @@ export function BlindChannelModal({
   const [editAlias, setEditAlias] = useState('');
   const [askingAliasForChannel, setAskingAliasForChannel] = useState<string | null>(null);
   const [newAlias, setNewAlias] = useState('');
+  const aliasInputRef = useRef<TextInput>(null);
 
   const sortedChannels = useMemo(() => sortChannels(channels), [channels]);
 
@@ -81,6 +82,15 @@ export function BlindChannelModal({
       setNewAlias(ch); // Default: el nombre del canal
     }
   }, [channelAliases]);
+
+  // Open keyboard when asking for alias
+  useEffect(() => {
+    if (askingAliasForChannel && aliasInputRef.current) {
+      setTimeout(() => {
+        aliasInputRef.current?.focus();
+      }, 100);
+    }
+  }, [askingAliasForChannel]);
 
   const handleSendMessage = useCallback(() => {
     if (!inputText.trim() || !activeChannel) return;
@@ -242,6 +252,7 @@ export function BlindChannelModal({
                 Por ejemplo, "ch" en lugar de "chat"
               </Text>
               <TextInput
+                ref={aliasInputRef}
                 style={styles.editModalInput}
                 value={newAlias}
                 onChangeText={setNewAlias}
@@ -249,7 +260,6 @@ export function BlindChannelModal({
                 autoCorrect={false}
                 placeholderTextColor="#555"
                 accessibilityLabel="Alias del canal"
-                autoFocus={true}
               />
               <View style={styles.editModalButtons}>
                 <TouchableOpacity
