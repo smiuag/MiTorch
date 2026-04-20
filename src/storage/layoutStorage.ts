@@ -31,9 +31,10 @@ function genId() {
 export function createDefaultLayout(): ButtonLayout {
   // 9x6 grid with empty row 1, directions from row 2-4, LOC at (8,0)
   const buttons: LayoutButton[] = [
-    // Row 0: Decir, Responder, _, _, _, _, IR, LOC
+    // Row 0: Decir, Responder, _, _, _, STOP, IR, LOC
     { id: genId(), col: 3, row: 0, label: 'Decir', command: 'decir', color: '#662266', textColor: '#fff', addText: true },
     { id: genId(), col: 4, row: 0, label: 'Res', command: 'responder', color: '#662266', textColor: '#fff', addText: true },
+    { id: genId(), col: 6, row: 0, label: 'STOP', command: 'stop', color: '#662222', textColor: '#fff', locked: true },
     { id: genId(), col: 7, row: 0, label: 'IR', command: 'irsala', color: '#662266', textColor: '#fff', addText: true },
     { id: genId(), col: 8, row: 0, label: 'LOC', command: 'locate', color: '#223366', textColor: '#fff' },
     // Row 1: (empty)
