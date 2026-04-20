@@ -724,10 +724,10 @@ export function TerminalScreen({ route, navigation }: Props) {
   const vitalsHeight = 35;
   const inputHeight = uiMode === 'blind' ? 60 : 30;
 
-  // Grid dimensions - Blind Mode: 5 cols × 3 rows (vertical), 3 cols × 5 rows (horizontal)
+  // Grid dimensions - Blind Mode: 5 cols × 4 rows (vertical), 4 cols × 5 rows (horizontal)
   const isMinimalista = uiMode === 'blind';
   const gridCols = isMinimalista ? 5 : GRID_COLS;
-  const gridRows = isMinimalista ? 3 : GRID_ROWS;
+  const gridRows = isMinimalista ? 4 : GRID_ROWS;
   const BUTTON_PADDING_VERTICAL = 3 * 2;
   const BUTTON_GAP = 3;
   const BUTTON_GAPS_TOTAL = (gridRows - 1) * BUTTON_GAP;
@@ -740,7 +740,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   // Horizontal layout dimensions
   const vitalsWidth = uiMode === 'blind' ? 0 : 30;
-  const horizontalGridCols = isMinimalista ? 3 : 6;
+  const horizontalGridCols = isMinimalista ? 4 : 6;
   const horizontalGridRows = isMinimalista ? 5 : 9;
   const availableHorizontalWidthForButtons = width - vitalsWidth - insets.left - insets.right - 20;
   const maxHorizontalCellSizeByWidth = availableHorizontalWidthForButtons / horizontalGridCols;
