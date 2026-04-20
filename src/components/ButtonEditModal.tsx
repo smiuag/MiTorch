@@ -93,8 +93,8 @@ export function ButtonEditModal({
               onChangeText={setLabel}
               autoCapitalize="none"
               accessible={true}
-              accessibilityLabel="Button label"
-              accessibilityHint="Short text displayed on the button"
+              accessibilityLabel="Etiqueta del botón"
+              accessibilityHint="Texto corto que se muestra en el botón"
             />
 
             <Text style={styles.label}>Comando{button?.locked ? ' (protegido)' : ''}</Text>
@@ -107,8 +107,8 @@ export function ButtonEditModal({
               autoCapitalize="none"
               editable={!button?.locked}
               accessible={true}
-              accessibilityLabel="Primary command"
-              accessibilityHint={button?.locked ? 'This command is locked' : 'Command to send on button tap'}
+              accessibilityLabel="Comando primario"
+              accessibilityHint={button?.locked ? 'Este comando está protegido' : 'Comando a enviar al pulsar el botón'}
             />
 
             <Text style={styles.label}>Comando Secundario (Swipe)</Text>
@@ -120,8 +120,8 @@ export function ButtonEditModal({
               onChangeText={setSecondaryCommand}
               autoCapitalize="none"
               accessible={true}
-              accessibilityLabel="Secondary command"
-              accessibilityHint="Command to send on button swipe, optional"
+              accessibilityLabel="Comando secundario"
+              accessibilityHint="Comando a enviar al deslizar el botón, opcional"
             />
 
             <Text style={styles.label}>Color Fondo</Text>
@@ -146,7 +146,7 @@ export function ButtonEditModal({
               style={styles.checkboxRow}
               onPress={() => setAddText(!addText)}
               accessible={true}
-              accessibilityLabel="Add text to input"
+              accessibilityLabel="Añadir texto al input"
               accessibilityRole="checkbox"
               accessibilityState={{ checked: addText }}
             >

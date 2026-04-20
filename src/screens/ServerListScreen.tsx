@@ -202,9 +202,9 @@ export function ServerListScreen({ navigation }: Props) {
           style={styles.addBtn}
           onPress={openAdd}
           accessible={true}
-          accessibilityLabel="Add server"
+          accessibilityLabel="Añadir servidor"
           accessibilityRole="button"
-          accessibilityHint="Create a new server profile"
+          accessibilityHint="Crear un nuevo perfil de servidor"
         >
           <Text style={styles.addText}>+</Text>
         </TouchableOpacity>
