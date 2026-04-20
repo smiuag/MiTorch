@@ -824,7 +824,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 locateFeedback === 'success' ? styles.locateFeedbackSuccess : styles.locateFeedbackFailed,
               ]}
               accessible={true}
-              accessibilityLabel={locateFeedback === 'success' ? 'Location found' : 'Location not found'}
+              accessibilityLabel={locateFeedback === 'success' ? 'Localizado' : 'No localizado'}
               accessibilityRole="alert"
             >
               <Text
