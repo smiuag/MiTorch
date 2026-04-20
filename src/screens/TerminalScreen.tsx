@@ -129,10 +129,13 @@ export function TerminalScreen({ route, navigation }: Props) {
     setLoginFailed(false);
 
     (async () => {
+      console.log(`[LAYOUT_LOAD] uiMode=${uiMode}, server=${server.name}`);
       let layout = await loadLayout();
 
       // In Blind Mode: use createBlindModeLayout as base, merge any custom buttons
       if (uiMode === 'blind') {
+        console.log(`[LAYOUT_LOAD] Cargando blind mode layout`);
+
         const blindLayout = createBlindModeLayout();
         const fixedButtonIds = new Set(blindLayout.buttons.map(b => b.label)); // VID, SAL, etc
 
@@ -151,22 +154,22 @@ export function TerminalScreen({ route, navigation }: Props) {
           ? { ...btn, command: server.name }
           : btn
       );
+      console.log(`[LAYOUT_LOAD] Botones cargados: ${layout.buttons.map(b => b.label).join(', ')}`);
       setButtonLayout({ buttons });
-      if (server.buttonLayout) {
-        let serverButtons = (server.buttonLayout as ButtonLayout).buttons.map(btn =>
+
+      // In Blind Mode: NEVER use server.buttonLayout, always use createBlindModeLayout
+      if (uiMode === 'blind') {
+        const blindLayout = createBlindModeLayout();
+        setButtonLayout({ buttons: blindLayout.buttons });
+        console.log(`[LAYOUT_LOAD] Blind mode: usando createBlindModeLayout (ignorando server.buttonLayout)`);
+      } else if (server.buttonLayout) {
+        // Only use server.buttonLayout in completo mode
+        console.log(`[LAYOUT_LOAD] Modo completo: usando server.buttonLayout personalizado`);
+        const serverButtons = (server.buttonLayout as ButtonLayout).buttons.map(btn =>
           btn.command === '__LOGIN_NAME__'
             ? { ...btn, command: server.name }
             : btn
         );
-
-        // In Blind Mode: preserve fixed buttons from createBlindModeLayout
-        if (uiMode === 'blind') {
-          const blindLayout = createBlindModeLayout();
-          const fixedButtonIds = new Set(blindLayout.buttons.map(b => b.label));
-          const customButtons = serverButtons.filter(btn => !fixedButtonIds.has(btn.label));
-          serverButtons = [...blindLayout.buttons, ...customButtons];
-        }
-
         setButtonLayout({ buttons: serverButtons });
       }
 
