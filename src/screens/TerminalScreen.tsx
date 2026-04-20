@@ -149,15 +149,16 @@ export function TerminalScreen({ route, navigation }: Props) {
   // Process a single line with blind mode filters and add to display
   const processingAndAddLine = (text: string) => {
     // Auto-login: Try to log in with saved credentials if available and not yet attempted
-    if (!autoLoginRef.current && server.username && server.password && connected) {
+    if (!autoLoginRef.current && server.username && server.password) {
       const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
       // Detect login prompt (common patterns: "login:", "usuario:", "nombre:", etc.)
       if (/login|usuario|nombre|account|character/i.test(withoutAnsi) && /[:\?]/i.test(withoutAnsi)) {
+        console.log('[AUTO-LOGIN] Detected login prompt, sending username...');
         autoLoginRef.current = true;
         setTimeout(() => {
+          console.log('[AUTO-LOGIN] Sending username:', server.username);
           telnetRef.current?.send(server.username!);
-        }, 100);
-        return;
+        }, 200);
       }
     }
 
@@ -166,11 +167,12 @@ export function TerminalScreen({ route, navigation }: Props) {
       const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
       // Detect password prompt (common patterns: "password:", "contraseña:", etc.)
       if (/password|contrase|pass|pwd/i.test(withoutAnsi) && /[:\?]/i.test(withoutAnsi)) {
+        console.log('[AUTO-LOGIN] Detected password prompt, sending password...');
         setTimeout(() => {
+          console.log('[AUTO-LOGIN] Sending password');
           telnetRef.current?.send(server.password!);
-        }, 100);
+        }, 200);
         autoLoginRef.current = false; // Mark as completed
-        return;
       }
     }
 
