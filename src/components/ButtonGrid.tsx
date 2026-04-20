@@ -8,6 +8,7 @@ import {
   useWindowDimensions,
   GestureResponderEvent,
   PanResponder,
+  AccessibilityActionEvent,
 } from 'react-native';
 import { LayoutButton } from '../storage/layoutStorage';
 import { NORMAL_MODE, BLIND_MODE } from '../config/gridConfig';
@@ -145,6 +146,35 @@ function ButtonCell({
     [col, row, button, moveMode, horizontalMode, uiMode, onSendCommand, onAddTextButton, onEditButton, onSwapButtons, onSecondaryCommand]
   );
 
+  const handleAccessibilityAction = (event: AccessibilityActionEvent) => {
+    if (!button) return;
+
+    if (event.nativeEvent.actionName === 'activate') {
+      // Primary action
+      if (button.addText) {
+        onAddTextButton(button.command);
+      } else {
+        onSendCommand(button.command);
+      }
+    } else if (event.nativeEvent.actionName === 'secondary' && button.secondaryCommand) {
+      // Secondary action (from accessibilityActions)
+      onSecondaryCommand(button.secondaryCommand);
+    }
+  };
+
+  const accessibilityActions = uiMode === 'blind' && button?.secondaryCommand
+    ? [
+        { name: 'activate', label: `${button.label}` },
+        { name: 'secondary', label: `${button.label} (alternativa)` }
+      ]
+    : undefined;
+
+  const accessibilityHint = button
+    ? uiMode === 'blind' && button.secondaryCommand
+      ? `${button.addText ? 'Escribir' : 'Ejecutar'}: ${button.command}. Alternativa: ${button.secondaryCommand}`
+      : (button.addText ? `Escribir: ${button.command}` : `Ejecutar: ${button.command}`)
+    : 'Ranura de botón vacía';
+
   return (
     <View
       {...panResponder.panHandlers}
@@ -161,7 +191,9 @@ function ButtonCell({
       accessible={!!button}
       accessibilityLabel={button ? button.label : ''}
       accessibilityRole="button"
-      accessibilityHint={button ? (button.addText ? `Escribir: ${button.command}` : `Ejecutar: ${button.command}`) : 'Ranura de botón vacía'}
+      accessibilityHint={accessibilityHint}
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={handleAccessibilityAction}
     >
       {button && (
         <Text
