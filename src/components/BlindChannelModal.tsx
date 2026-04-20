@@ -8,6 +8,7 @@ import {
   Modal,
   StyleSheet,
   ScrollView,
+  InteractionManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AnsiSpan } from '../types';
@@ -86,9 +87,9 @@ export function BlindChannelModal({
   // Open keyboard when asking for alias
   useEffect(() => {
     if (askingAliasForChannel && aliasInputRef.current) {
-      setTimeout(() => {
+      InteractionManager.runAfterInteractions(() => {
         aliasInputRef.current?.focus();
-      }, 100);
+      });
     }
   }, [askingAliasForChannel]);
 
