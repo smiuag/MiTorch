@@ -5,11 +5,13 @@ const SETTINGS_KEY = 'aljhtar_settings';
 export interface AppSettings {
   fontSize: number;
   uiMode: 'completo' | 'blind';
+  onboardingDone: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   fontSize: 14,
   uiMode: 'completo',
+  onboardingDone: false,
 };
 
 export async function loadSettings(): Promise<AppSettings> {

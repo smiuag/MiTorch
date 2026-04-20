@@ -14,6 +14,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, ServerProfile } from '../types';
 import { loadServers, saveServers } from '../storage/serverStorage';
+import { loadSettings, saveSettings } from '../storage/settingsStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ServerList'>;
 
@@ -31,12 +32,28 @@ export function ServerListScreen({ navigation }: Props) {
   const [formUsername, setFormUsername] = useState('');
   const [formPassword, setFormPassword] = useState('');
   const [helpModalVisible, setHelpModalVisible] = useState(false);
+  const [welcomeModalVisible, setWelcomeModalVisible] = useState(false);
+  const [onboardingDone, setOnboardingDone] = useState(true);
 
   useFocusEffect(
     useCallback(() => {
-      loadServers().then(setServers);
+      (async () => {
+        const [loadedServers, settings] = await Promise.all([loadServers(), loadSettings()]);
+        setServers(loadedServers);
+        setOnboardingDone(settings.onboardingDone);
+        if (!settings.onboardingDone) {
+          setWelcomeModalVisible(true);
+        }
+      })();
     }, [])
   );
+
+  const handleSelectMode = async (mode: 'completo' | 'blind') => {
+    const current = await loadSettings();
+    await saveSettings({ ...current, uiMode: mode, onboardingDone: true });
+    setOnboardingDone(true);
+    setWelcomeModalVisible(false);
+  };
 
   const openAdd = () => {
     setEditingServer(null);
@@ -209,16 +226,57 @@ export function ServerListScreen({ navigation }: Props) {
 
       <View style={styles.addButtonContainer}>
         <TouchableOpacity
-          style={styles.addBtn}
-          onPress={openAdd}
+          style={[styles.addBtn, !onboardingDone && { opacity: 0.4 }]}
+          onPress={onboardingDone ? openAdd : () => setWelcomeModalVisible(true)}
           accessible={true}
           accessibilityLabel="Añadir servidor"
           accessibilityRole="button"
-          accessibilityHint="Crear un nuevo perfil de servidor"
+          accessibilityHint={onboardingDone ? "Crear un nuevo perfil de servidor" : "Primero debes elegir el modo de interfaz"}
         >
           <Text style={styles.addText}>+</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Welcome / Onboarding Modal */}
+      <Modal
+        visible={welcomeModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {}}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>¡Bienvenido a TorchZhyla!</Text>
+            <Text style={[styles.label, { marginBottom: 20, lineHeight: 20 }]}>
+              ¿Cómo vas a usar la app? Elige el modo de interfaz:
+            </Text>
+
+            <TouchableOpacity
+              style={styles.modeOptionBtn}
+              onPress={() => handleSelectMode('completo')}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Modo Completo"
+              accessibilityHint="Interfaz visual con mapa, barras de vida y botones"
+            >
+              <Text style={styles.modeOptionTitle}>🖥 Modo Completo</Text>
+              <Text style={styles.modeOptionDesc}>Interfaz visual con mapa, barras de vida y botones</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.modeOptionBtn, { marginTop: 12 }]}
+              onPress={() => handleSelectMode('blind')}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Blind Mode"
+              accessibilityHint="Interfaz accesible optimizada para lector de pantalla"
+            >
+              <Text style={styles.modeOptionTitle}>👁 Blind Mode</Text>
+              <Text style={styles.modeOptionDesc}>Interfaz accesible optimizada para lector de pantalla</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={modalVisible}
@@ -580,6 +638,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginBottom: 4,
     marginTop: 12,
+    fontFamily: 'monospace',
+  },
+  modeOptionBtn: {
+    backgroundColor: '#0a0a0a',
+    borderWidth: 1,
+    borderColor: '#444',
+    borderRadius: 10,
+    padding: 16,
+  },
+  modeOptionTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+    marginBottom: 4,
+  },
+  modeOptionDesc: {
+    color: '#888',
+    fontSize: 12,
     fontFamily: 'monospace',
   },
   modalInput: {
