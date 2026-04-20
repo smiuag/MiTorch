@@ -751,13 +751,8 @@ export function TerminalScreen({ route, navigation }: Props) {
   let maxHorizontalCellSizeByHeight: number;
   const horizontalButtonGapsTotal = (horizontalGridRows - 1) * BUTTON_GAP;
 
-  if (isMinimalista) {
-    // Blind mode: input is on the left with terminal, ButtonGrid uses full available height
-    maxHorizontalCellSizeByHeight = (availableHeight - horizontalButtonGapsTotal - BUTTON_PADDING_VERTICAL) / horizontalGridRows;
-  } else {
-    // Normal mode: ButtonGrid in right panel with flex: 1, uses full available height
-    maxHorizontalCellSizeByHeight = availableHeight / horizontalGridRows;
-  }
+  // Account for internal gaps and padding in ButtonGrid container for both modes
+  maxHorizontalCellSizeByHeight = (availableHeight - horizontalButtonGapsTotal - BUTTON_PADDING_VERTICAL) / horizontalGridRows;
 
   const horizontalCellSize = Math.min(maxHorizontalCellSizeByWidth, maxHorizontalCellSizeByHeight);
   const horizontalButtonGridWidth = horizontalGridCols * horizontalCellSize + (horizontalGridCols - 1) * BUTTON_GAP;
