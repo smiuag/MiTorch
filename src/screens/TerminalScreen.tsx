@@ -160,24 +160,25 @@ export function TerminalScreen({ route, navigation }: Props) {
       // In Blind Mode: use createBlindModeLayout + merge any blind-mode customizations
       if (uiMode === 'blind') {
         const blindLayout = createBlindModeLayout();
-        const blindButtonLabels = new Set(blindLayout.buttons.map(b => b.label)); // VID, SAL, NO, N, etc.
+        const blindButtonPositions = new Set(blindLayout.buttons.map(b => `${b.col},${b.row}`)); // "0,0", "1,0", etc.
 
         if (server.buttonLayout) {
-          // Only keep customizations for buttons that exist in blind mode
+          // Only keep customizations for buttons at positions that exist in blind mode
           const serverButtons = (server.buttonLayout as ButtonLayout).buttons.map(btn =>
             btn.command === '__LOGIN_NAME__'
               ? { ...btn, command: server.name }
               : btn
           );
-          const blindModeCustomizations = serverButtons.filter(btn => blindButtonLabels.has(btn.label));
+          const blindModeCustomizations = serverButtons.filter(btn => blindButtonPositions.has(`${btn.col},${btn.row}`));
 
           if (blindModeCustomizations.length > 0) {
-            // Merge: replace buttons from blindLayout with their customized versions
-            const customizedLayout = blindLayout.buttons.map(btn =>
-              blindModeCustomizations.find(custom => custom.label === btn.label) || btn
-            );
+            // Merge: replace buttons from blindLayout with their customized versions (by position)
+            const customizedLayout = blindLayout.buttons.map(btn => {
+              const custom = blindModeCustomizations.find(c => c.col === btn.col && c.row === btn.row);
+              return custom || btn;
+            });
             setButtonLayout({ buttons: customizedLayout });
-            console.log(`[LAYOUT_LOAD] Blind mode: usando createBlindModeLayout + customizations`);
+            console.log(`[LAYOUT_LOAD] Blind mode: usando createBlindModeLayout + customizations (${blindModeCustomizations.length})`);
           } else {
             setButtonLayout({ buttons: blindLayout.buttons });
             console.log(`[LAYOUT_LOAD] Blind mode: usando createBlindModeLayout (sin customizations)`);
