@@ -227,6 +227,8 @@ export function BlindChannelModal({
               onChangeText={setInputText}
               multiline
               maxLength={200}
+              returnKeyType="send"
+              onSubmitEditing={handleSendMessage}
               accessibilityLabel="Escribir mensaje"
               accessibilityHint={`Mensaje para canal ${activeChannel}`}
             />
