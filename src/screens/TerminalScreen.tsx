@@ -26,7 +26,7 @@ import { ButtonEditModal } from '../components/ButtonEditModal';
 import { RoomSearchResults } from '../components/RoomSearchResults';
 import { loadSettings } from '../storage/settingsStorage';
 import { MapService, MapRoom } from '../services/mapService';
-import { ButtonLayout, createDefaultLayout, loadLayout, saveLayout } from '../storage/layoutStorage';
+import { ButtonLayout, createDefaultLayout, createBlindModeLayout, loadLayout, saveLayout } from '../storage/layoutStorage';
 import { loadServers, saveServers } from '../storage/serverStorage';
 import { blindModeService } from '../services/blindModeService';
 
@@ -113,9 +113,9 @@ export function TerminalScreen({ route, navigation }: Props) {
     (async () => {
       let layout = await loadLayout();
 
-      // In Blind Mode, start with empty layout if server has no custom layout
+      // In Blind Mode, start with optimized blind mode layout if server has no custom layout
       if (uiMode === 'blind' && !server.buttonLayout) {
-        layout = { buttons: [] };
+        layout = createBlindModeLayout();
       }
 
       // Replace LOGIN_NAME placeholder with actual server name

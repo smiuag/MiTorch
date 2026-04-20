@@ -45,10 +45,6 @@ export function createDefaultLayout(): ButtonLayout {
     { id: genId(), col: 3, row: 2, label: 'NO', command: 'noroeste', color: '#662222', textColor: '#fff', locked: true },
     { id: genId(), col: 4, row: 2, label: 'N', command: 'norte', color: '#662222', textColor: '#fff', locked: true },
     { id: genId(), col: 5, row: 2, label: 'NE', command: 'noreste', color: '#662222', textColor: '#fff', locked: true },
-    // Row 2: _, _, _, NO, N, NE, AR, _, _
-    { id: genId(), col: 3, row: 2, label: 'NO', command: 'noroeste', color: '#662222', textColor: '#fff', locked: true },
-    { id: genId(), col: 4, row: 2, label: 'N', command: 'norte', color: '#662222', textColor: '#fff', locked: true },
-    { id: genId(), col: 5, row: 2, label: 'NE', command: 'noreste', color: '#662222', textColor: '#fff', locked: true },
     { id: genId(), col: 6, row: 2, label: 'AR', command: 'ar', color: '#663322', textColor: '#fff', locked: true },
     // Row 3: _, _, _, O, _, E, AB, _, _
     { id: genId(), col: 3, row: 3, label: 'O', command: 'oeste', color: '#662222', textColor: '#fff', locked: true },
@@ -61,6 +57,33 @@ export function createDefaultLayout(): ButtonLayout {
     { id: genId(), col: 6, row: 4, label: 'DE', command: 'dentro', color: '#663322', textColor: '#fff', locked: true },
     // Row 5: _, _, _, _, _, _, FU, _, _
     { id: genId(), col: 6, row: 5, label: 'FU', command: 'fuera', color: '#663322', textColor: '#fff', locked: true },
+  ];
+
+  return { buttons };
+}
+
+export function createBlindModeLayout(): ButtonLayout {
+  // 5x4 grid optimized for blind users: directions + vertical movement + controls
+  const buttons: LayoutButton[] = [
+    // Row 0: STOP, IR, LOC
+    { id: genId(), col: 0, row: 0, label: 'STOP', command: 'stop', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 1, row: 0, label: 'IR', command: 'irsala', color: '#662266', textColor: '#fff', addText: true },
+    { id: genId(), col: 2, row: 0, label: 'LOC', command: 'locate', color: '#223366', textColor: '#fff', locked: true },
+    // Row 1: NO, N, NE, AR
+    { id: genId(), col: 0, row: 1, label: 'NO', command: 'noroeste', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 1, row: 1, label: 'N', command: 'norte', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 2, row: 1, label: 'NE', command: 'noreste', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 3, row: 1, label: 'AR', command: 'ar', color: '#663322', textColor: '#fff', locked: true },
+    // Row 2: O, E, AB
+    { id: genId(), col: 0, row: 2, label: 'O', command: 'oeste', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 2, row: 2, label: 'E', command: 'este', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 3, row: 2, label: 'AB', command: 'ab', color: '#663322', textColor: '#fff', locked: true },
+    // Row 3: SO, S, SE, DE, FU
+    { id: genId(), col: 0, row: 3, label: 'SO', command: 'sudoeste', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 1, row: 3, label: 'S', command: 'sur', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 2, row: 3, label: 'SE', command: 'sudeste', color: '#662222', textColor: '#fff', locked: true },
+    { id: genId(), col: 3, row: 3, label: 'DE', command: 'dentro', color: '#663322', textColor: '#fff', locked: true },
+    { id: genId(), col: 4, row: 3, label: 'FU', command: 'fuera', color: '#663322', textColor: '#fff', locked: true },
   ];
 
   return { buttons };
