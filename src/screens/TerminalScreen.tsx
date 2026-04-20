@@ -70,6 +70,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [locateFeedback, setLocateFeedback] = useState<'success' | 'failed' | null>(null);
   const [silentModeEnabled, setSilentModeEnabled] = useState(false);
+  const [loginFailed, setLoginFailed] = useState(false);
 
   const fontSizeRef = useRef(14);
   const linesRef = useRef<MudLine[]>([]);
@@ -85,6 +86,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const lastLineBlankRef = useRef(false);
   const recentLinesRef = useRef<string[]>([]);
   const intentionalLocateRef = useRef(false);
+  const autoLoginRef = useRef(false);
   const textInputRef = useRef<TextInput>(null);
 
   useFocusEffect(
@@ -142,6 +144,32 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   // Process a single line with blind mode filters and add to display
   const processingAndAddLine = (text: string) => {
+    // Auto-login: Try to log in with saved credentials if available and not yet attempted
+    if (!autoLoginRef.current && server.username && server.password && connected) {
+      const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
+      // Detect login prompt (common patterns: "login:", "usuario:", "nombre:", etc.)
+      if (/login|usuario|nombre|account|character/i.test(withoutAnsi) && /[:\?]/i.test(withoutAnsi)) {
+        autoLoginRef.current = true;
+        setTimeout(() => {
+          telnetRef.current?.send(server.username!);
+        }, 100);
+        return;
+      }
+    }
+
+    // Auto-login: After username sent, detect password prompt
+    if (autoLoginRef.current && server.password && !loginFailed) {
+      const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
+      // Detect password prompt (common patterns: "password:", "contraseña:", etc.)
+      if (/password|contrase|pass|pwd/i.test(withoutAnsi) && /[:\?]/i.test(withoutAnsi)) {
+        setTimeout(() => {
+          telnetRef.current?.send(server.password!);
+        }, 100);
+        autoLoginRef.current = false; // Mark as completed
+        return;
+      }
+    }
+
     // Skip lines that don't contain any letters or numbers
     const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
     if (!/[a-z0-9]/i.test(withoutAnsi)) return;
@@ -844,6 +872,36 @@ export function TerminalScreen({ route, navigation }: Props) {
               >
                 {locateFeedback === 'success' ? '✓ Localizado' : '✗ No localizado'}
               </Text>
+            </View>
+          )}
+
+          {/* Auto-login Failed Feedback */}
+          {loginFailed && (
+            <View
+              style={[styles.locateFeedback, styles.locateFeedbackFailed]}
+              accessible={true}
+              accessibilityLabel="Login automático falló"
+              accessibilityRole="alert"
+            >
+              <TouchableOpacity
+                style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
+                onPress={() => {
+                  setLoginFailed(false);
+                  autoLoginRef.current = false;
+                }}
+                accessible={true}
+                accessibilityLabel="Reintentar login"
+                accessibilityHint="Intenta enviar nuevamente las credenciales"
+              >
+                <Text
+                  style={[
+                    styles.locateFeedbackText,
+                    styles.locateFeedbackTextFailed,
+                  ]}
+                >
+                  ✗ Login falló - Tap para reintentar
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
 

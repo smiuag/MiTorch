@@ -28,6 +28,8 @@ export function ServerListScreen({ navigation }: Props) {
   const [formName, setFormName] = useState('');
   const [formHost, setFormHost] = useState('');
   const [formPort, setFormPort] = useState('');
+  const [formUsername, setFormUsername] = useState('');
+  const [formPassword, setFormPassword] = useState('');
   const [helpModalVisible, setHelpModalVisible] = useState(false);
 
   useFocusEffect(
@@ -41,6 +43,8 @@ export function ServerListScreen({ navigation }: Props) {
     setFormName('');
     setFormHost('rlmud.org');
     setFormPort('5001');
+    setFormUsername('');
+    setFormPassword('');
     setModalVisible(true);
   };
 
@@ -49,6 +53,8 @@ export function ServerListScreen({ navigation }: Props) {
     setFormName(server.name);
     setFormHost(server.host);
     setFormPort(String(server.port));
+    setFormUsername(server.username || '');
+    setFormPassword(server.password || '');
     setModalVisible(true);
   };
 
@@ -66,6 +72,8 @@ export function ServerListScreen({ navigation }: Props) {
               name: formName.trim(),
               host: formHost.trim(),
               port,
+              username: formUsername.trim() || undefined,
+              password: formPassword.trim() || undefined,
             }
           : s
       );
@@ -75,6 +83,8 @@ export function ServerListScreen({ navigation }: Props) {
         name: formName.trim(),
         host: formHost.trim(),
         port,
+        username: formUsername.trim() || undefined,
+        password: formPassword.trim() || undefined,
       };
       updated = [...servers, newServer];
     }
@@ -259,6 +269,35 @@ export function ServerListScreen({ navigation }: Props) {
               accessible={true}
               accessibilityLabel="Puerto del servidor"
               accessibilityHint="Ingresa el número de puerto"
+            />
+
+            <Text style={[styles.label, { marginTop: 16 }]}>Usuario (opcional)</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={formUsername}
+              onChangeText={setFormUsername}
+              placeholder="Tu nombre de usuario"
+              placeholderTextColor="#666"
+              autoCapitalize="none"
+              autoCorrect={false}
+              accessible={true}
+              accessibilityLabel="Usuario del servidor"
+              accessibilityHint="Ingresa tu nombre de usuario para auto-login"
+            />
+
+            <Text style={styles.label}>Contraseña (opcional)</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={formPassword}
+              onChangeText={setFormPassword}
+              placeholder="Tu contraseña"
+              placeholderTextColor="#666"
+              secureTextEntry={true}
+              autoCapitalize="none"
+              autoCorrect={false}
+              accessible={true}
+              accessibilityLabel="Contraseña del servidor"
+              accessibilityHint="Ingresa tu contraseña para auto-login"
             />
 
             <View style={styles.modalButtons}>

@@ -4,6 +4,8 @@ export interface ServerProfile {
   host: string;
   port: number;
   encoding?: string;
+  username?: string;
+  password?: string;
   buttonLayout?: {
     buttons: Array<{
       id: string;
