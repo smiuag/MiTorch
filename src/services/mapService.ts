@@ -109,12 +109,9 @@ export class MapService {
       }
     }
 
-    // Fall back to first candidate
-    const fallback = this.rooms.get(candidates[0]);
-    if (fallback) {
-      this.currentRoomId = fallback.id;
-    }
-    return fallback ?? null;
+    // Multiple candidates and cannot disambiguate: fail rather than guess
+    console.log('[MAP] Ambigua: ' + candidates.length + ' coincidencias, sin datos suficientes');
+    return null;
   }
 
   /**
