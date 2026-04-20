@@ -943,7 +943,7 @@ export function TerminalScreen({ route, navigation }: Props) {
               uiMode={uiMode}
               minimalista={isMinimalista}
               minCols={uiMode === 'blind' ? 5 : gridCols}
-              minRows={uiMode === 'blind' ? 3 : gridRows}
+              minRows={uiMode === 'blind' ? 4 : gridRows}
             />
           </View>
         )}
@@ -1091,7 +1091,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 sourceCol={sourceCol}
                 sourceRow={sourceRow}
                 onSwapButtons={handleSwapButtons}
-                horizontalMode={{cols: uiMode === 'blind' ? 3 : (isMinimalista ? 2 : 6), cellSize: horizontalCellSize}}
+                horizontalMode={{cols: uiMode === 'blind' ? 4 : (isMinimalista ? 2 : 6), cellSize: horizontalCellSize}}
                 uiMode={uiMode}
                 minRows={uiMode === 'blind' ? 5 : 9}
               />
