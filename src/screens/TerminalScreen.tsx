@@ -1095,6 +1095,8 @@ export function TerminalScreen({ route, navigation }: Props) {
                 onSwapButtons={handleSwapButtons}
                 horizontalMode={{cols: horizontalGridCols, cellSize: horizontalCellSize}}
                 uiMode={uiMode}
+                minimalista={isMinimalista}
+                minCols={gridCols}
                 minRows={horizontalGridRows}
               />
             </View>
