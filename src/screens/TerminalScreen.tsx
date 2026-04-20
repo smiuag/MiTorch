@@ -321,8 +321,6 @@ export function TerminalScreen({ route, navigation }: Props) {
                           `Localización encontrada. Sala: ${room.n}. Salidas: ${exits || 'ninguna'}`
                         );
                       }
-
-                      intentionalLocateRef.current = false;
                     } else {
                       console.log('[LOCATE] ✗ No encontrada en mapa');
                       setLocateFeedback('failed');
@@ -335,6 +333,8 @@ export function TerminalScreen({ route, navigation }: Props) {
                         );
                       }
                     }
+                    // Deactivate locate after attempting (success or failure)
+                    intentionalLocateRef.current = false;
                   }
                 }
               }
