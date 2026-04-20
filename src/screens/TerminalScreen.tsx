@@ -113,6 +113,10 @@ export function TerminalScreen({ route, navigation }: Props) {
 
 
   useEffect(() => {
+    // Reset auto-login state when server changes
+    autoLoginRef.current = false;
+    setLoginFailed(false);
+
     (async () => {
       let layout = await loadLayout();
 
@@ -374,6 +378,8 @@ export function TerminalScreen({ route, navigation }: Props) {
       },
       onConnect: () => {
         setConnected(true);
+        autoLoginRef.current = false;
+        setLoginFailed(false);
         if (uiMode === 'blind') {
           AccessibilityInfo.announceForAccessibility(
             `Conectado a ${server.name}. Comando listo para enviar.`
@@ -382,6 +388,8 @@ export function TerminalScreen({ route, navigation }: Props) {
       },
       onClose: () => {
         setConnected(false);
+        autoLoginRef.current = false;
+        setLoginFailed(false);
         if (uiMode === 'blind') {
           AccessibilityInfo.announceForAccessibility('Desconectado del servidor');
         }
