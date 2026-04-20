@@ -151,9 +151,9 @@ export function TerminalScreen({ route, navigation }: Props) {
     // Auto-login: Try to log in with saved credentials if available and not yet attempted
     if (!autoLoginRef.current && server.username && server.password) {
       const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
-      // Detect login prompt (common patterns: "login:", "usuario:", "nombre:", etc.)
-      if (/login|usuario|nombre|account|character/i.test(withoutAnsi) && /[:\?]/i.test(withoutAnsi)) {
-        console.log('[AUTO-LOGIN] Detected login prompt, sending username...');
+      // Detect username prompt: "Introduce el nombre de tu personaje:"
+      if (/introduce el nombre de tu personaje/i.test(withoutAnsi)) {
+        console.log('[AUTO-LOGIN] Detected username prompt, sending username...');
         autoLoginRef.current = 'waiting-for-password';
         setTimeout(() => {
           console.log('[AUTO-LOGIN] Sending username:', server.username);
@@ -165,8 +165,8 @@ export function TerminalScreen({ route, navigation }: Props) {
     // Auto-login: After username sent, detect password prompt
     if (autoLoginRef.current === 'waiting-for-password' && server.password && !loginFailed) {
       const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
-      // Detect password prompt (common patterns: "password:", "contraseña:", "clave:", etc.)
-      if (/password|contrase|clave|pass|pwd|contrña/i.test(withoutAnsi)) {
+      // Detect password prompt: "Introduce la clave de tu ficha o de tu cuenta:"
+      if (/introduce la clave de tu ficha o de tu cuenta/i.test(withoutAnsi)) {
         console.log('[AUTO-LOGIN] Detected password prompt, sending password...');
         autoLoginRef.current = false; // Mark as completed before sending
         setTimeout(() => {
