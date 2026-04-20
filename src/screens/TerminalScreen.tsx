@@ -154,25 +154,25 @@ export function TerminalScreen({ route, navigation }: Props) {
       // Detect login prompt (common patterns: "login:", "usuario:", "nombre:", etc.)
       if (/login|usuario|nombre|account|character/i.test(withoutAnsi) && /[:\?]/i.test(withoutAnsi)) {
         console.log('[AUTO-LOGIN] Detected login prompt, sending username...');
-        autoLoginRef.current = true;
+        autoLoginRef.current = 'waiting-for-password';
         setTimeout(() => {
           console.log('[AUTO-LOGIN] Sending username:', server.username);
           telnetRef.current?.send(server.username!);
-        }, 200);
+        }, 500);
       }
     }
 
     // Auto-login: After username sent, detect password prompt
-    if (autoLoginRef.current && server.password && !loginFailed) {
+    if (autoLoginRef.current === 'waiting-for-password' && server.password && !loginFailed) {
       const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
-      // Detect password prompt (common patterns: "password:", "contraseña:", etc.)
-      if (/password|contrase|pass|pwd/i.test(withoutAnsi) && /[:\?]/i.test(withoutAnsi)) {
+      // Detect password prompt (common patterns: "password:", "contraseña:", "clave:", etc.)
+      if (/password|contrase|clave|pass|pwd|contrña/i.test(withoutAnsi)) {
         console.log('[AUTO-LOGIN] Detected password prompt, sending password...');
+        autoLoginRef.current = false; // Mark as completed before sending
         setTimeout(() => {
           console.log('[AUTO-LOGIN] Sending password');
           telnetRef.current?.send(server.password!);
-        }, 200);
-        autoLoginRef.current = false; // Mark as completed
+        }, 800);
       }
     }
 
