@@ -787,10 +787,10 @@ export function TerminalScreen({ route, navigation }: Props) {
         <View
           style={[styles.terminalSection, { flex: 1 }]}
           accessible={true}
-          accessibilityLabel="Terminal output"
+          accessibilityLabel="Salida del terminal"
           accessibilityRole="text"
           accessibilityLiveRegion={uiMode === 'blind' ? 'polite' : 'none'}
-          accessibilityHint="Read-only terminal window. Use arrow keys or swipe to navigate."
+          accessibilityHint="Ventana de terminal de solo lectura. Usa las flechas o desliza para navegar."
           accessibilityActions={uiMode === 'blind' ? [{ name: 'scroll' }] : undefined}
         >
           <FlatList
@@ -808,7 +808,7 @@ export function TerminalScreen({ route, navigation }: Props) {
             onScrollEndDrag={handleFlatListScroll}
             style={styles.flatList}
             accessible={true}
-            accessibilityLabel={`Terminal with ${lines.length} lines`}
+            accessibilityLabel={`Terminal con ${lines.length} líneas`}
           />
 
           {/* Scroll to bottom button */}
@@ -817,9 +817,9 @@ export function TerminalScreen({ route, navigation }: Props) {
               style={styles.scrollToBottomButton}
               onPress={handleScrollToBottom}
               accessible={true}
-              accessibilityLabel="Scroll to bottom"
+              accessibilityLabel="Ir al final"
               accessibilityRole="button"
-              accessibilityHint="Scroll terminal to latest message"
+              accessibilityHint="Desplázate al último mensaje del terminal"
             >
               <Text style={styles.scrollToBottomText}>↓</Text>
             </TouchableOpacity>
@@ -905,8 +905,8 @@ export function TerminalScreen({ route, navigation }: Props) {
                 returnKeyType="send"
                 autoCapitalize="none"
                 accessible={true}
-                accessibilityLabel="Command input"
-                accessibilityHint="Type a command and press send or return"
+                accessibilityLabel="Entrada de comando"
+                accessibilityHint="Escribe un comando y presiona enviar o enter"
               />
 
               <TouchableOpacity
@@ -916,9 +916,9 @@ export function TerminalScreen({ route, navigation }: Props) {
                 ]}
                 onPress={handleSendInput}
                 accessible={true}
-                accessibilityLabel="Send command"
+                accessibilityLabel="Enviar comando"
                 accessibilityRole="button"
-                accessibilityHint="Send the current command to the server"
+                accessibilityHint="Envía el comando actual al servidor"
               >
                 <Text style={[styles.sendButtonText, uiMode === 'blind' && { fontSize: 28 }]}>›</Text>
               </TouchableOpacity>
@@ -928,9 +928,9 @@ export function TerminalScreen({ route, navigation }: Props) {
               style={[styles.input, styles.reconnectButton]}
               onPress={() => telnetRef.current?.connect()}
               accessible={true}
-              accessibilityLabel="Reconnect"
+              accessibilityLabel="Reconectar"
               accessibilityRole="button"
-              accessibilityHint="Reconnect to the server"
+              accessibilityHint="Reconéctate al servidor"
             >
               <Text style={styles.reconnectText}>Reconectar</Text>
             </TouchableOpacity>
@@ -966,10 +966,10 @@ export function TerminalScreen({ route, navigation }: Props) {
           <View
             style={[styles.terminalSection, { flex: 1 }]}
             accessible={true}
-            accessibilityLabel="Terminal output"
+            accessibilityLabel="Salida del terminal"
             accessibilityRole="text"
             accessibilityLiveRegion={uiMode === 'blind' ? 'polite' : 'none'}
-            accessibilityHint="Read-only terminal window. Use arrow keys or swipe to navigate."
+            accessibilityHint="Ventana de terminal de solo lectura. Usa las flechas o desliza para navegar."
           >
             <FlatList
               scrollToEndDelay={100}
@@ -986,7 +986,7 @@ export function TerminalScreen({ route, navigation }: Props) {
               onScrollEndDrag={handleFlatListScroll}
               style={styles.flatList}
               accessible={true}
-              accessibilityLabel={`Terminal with ${lines.length} lines`}
+              accessibilityLabel={`Terminal con ${lines.length} líneas`}
             />
 
             {showScrollToBottom && (
@@ -1040,8 +1040,8 @@ export function TerminalScreen({ route, navigation }: Props) {
                   returnKeyType="send"
                   autoCapitalize="none"
                   accessible={true}
-                  accessibilityLabel="Command input"
-                  accessibilityHint="Type a command and press send or return"
+                  accessibilityLabel="Entrada de comando"
+                  accessibilityHint="Escribe un comando y presiona enviar o enter"
                 />
 
                 <TouchableOpacity
@@ -1051,9 +1051,9 @@ export function TerminalScreen({ route, navigation }: Props) {
                   ]}
                   onPress={handleSendInput}
                   accessible={true}
-                  accessibilityLabel="Send command"
+                  accessibilityLabel="Enviar comando"
                   accessibilityRole="button"
-                  accessibilityHint="Send the current command to the server"
+                  accessibilityHint="Envía el comando actual al servidor"
                 >
                   <Text style={[styles.sendButtonText, uiMode === 'blind' && { fontSize: 28 }]}>›</Text>
                 </TouchableOpacity>
@@ -1063,9 +1063,9 @@ export function TerminalScreen({ route, navigation }: Props) {
                 style={[styles.input, styles.reconnectButton]}
                 onPress={() => telnetRef.current?.connect()}
                 accessible={true}
-                accessibilityLabel="Reconnect"
+                accessibilityLabel="Reconectar"
                 accessibilityRole="button"
-                accessibilityHint="Reconnect to the server"
+                accessibilityHint="Reconéctate al servidor"
               >
                 <Text style={styles.reconnectText}>Reconectar</Text>
               </TouchableOpacity>

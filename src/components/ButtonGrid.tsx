@@ -161,7 +161,7 @@ function ButtonCell({
       accessible={!!button}
       accessibilityLabel={button ? button.label : ''}
       accessibilityRole="button"
-      accessibilityHint={button ? (button.addText ? `Type: ${button.command}` : `Execute: ${button.command}`) : 'Empty button slot'}
+      accessibilityHint={button ? (button.addText ? `Escribir: ${button.command}` : `Ejecutar: ${button.command}`) : 'Ranura de botón vacía'}
     >
       {button && (
         <Text

@@ -230,8 +230,8 @@ export function ServerListScreen({ navigation }: Props) {
               placeholder="Mi personaje"
               placeholderTextColor="#666"
               accessible={true}
-              accessibilityLabel="Server name"
-              accessibilityHint="Enter a name for this server"
+              accessibilityLabel="Nombre del servidor"
+              accessibilityHint="Ingresa un nombre para este servidor"
             />
 
             <Text style={styles.label}>Host</Text>
@@ -244,8 +244,8 @@ export function ServerListScreen({ navigation }: Props) {
               autoCapitalize="none"
               autoCorrect={false}
               accessible={true}
-              accessibilityLabel="Server host"
-              accessibilityHint="Enter the server hostname or IP address"
+              accessibilityLabel="Host del servidor"
+              accessibilityHint="Ingresa el nombre del servidor o dirección IP"
             />
 
             <Text style={styles.label}>Puerto</Text>
@@ -257,8 +257,8 @@ export function ServerListScreen({ navigation }: Props) {
               placeholderTextColor="#666"
               keyboardType="number-pad"
               accessible={true}
-              accessibilityLabel="Server port"
-              accessibilityHint="Enter the port number"
+              accessibilityLabel="Puerto del servidor"
+              accessibilityHint="Ingresa el número de puerto"
             />
 
             <View style={styles.modalButtons}>
@@ -266,9 +266,9 @@ export function ServerListScreen({ navigation }: Props) {
                 style={styles.cancelBtn}
                 onPress={() => setModalVisible(false)}
                 accessible={true}
-                accessibilityLabel="Cancel"
+                accessibilityLabel="Cancelar"
                 accessibilityRole="button"
-                accessibilityHint="Close without saving"
+                accessibilityHint="Cierra sin guardar"
               >
                 <Text style={styles.cancelText}>Cancelar</Text>
               </TouchableOpacity>
@@ -276,9 +276,9 @@ export function ServerListScreen({ navigation }: Props) {
                 style={styles.saveBtn}
                 onPress={handleSave}
                 accessible={true}
-                accessibilityLabel="Save"
+                accessibilityLabel="Guardar"
                 accessibilityRole="button"
-                accessibilityHint="Save server configuration"
+                accessibilityHint="Guarda la configuración del servidor"
               >
                 <Text style={styles.saveText}>Guardar</Text>
               </TouchableOpacity>
