@@ -245,7 +245,14 @@ export function BlindChannelModal({
             setNewAlias('');
           }}
         >
-          <View style={styles.editModalOverlay}>
+          <TouchableOpacity
+            style={styles.editModalOverlay}
+            activeOpacity={1}
+            onPress={() => {
+              setAskingAliasForChannel(null);
+              setNewAlias('');
+            }}
+          >
             <View style={styles.editModalContent}>
               <Text style={styles.editModalTitle}>Introduce el alias que utilizas para el canal</Text>
               <Text style={styles.editModalHint}>{askingAliasForChannel}</Text>
@@ -272,7 +279,7 @@ export function BlindChannelModal({
                 </TouchableOpacity>
               </View>
             </View>
-          </View>
+          </TouchableOpacity>
         </Modal>
 
         {/* Alias edit modal */}
