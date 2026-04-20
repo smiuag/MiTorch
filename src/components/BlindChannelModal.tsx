@@ -467,6 +467,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.8)',
     justifyContent: 'center',
+    alignItems: 'center',
     padding: 20,
   },
   editModalContent: {
@@ -475,6 +476,8 @@ const styles = StyleSheet.create({
     padding: 20,
     borderWidth: 1,
     borderColor: '#333',
+    maxWidth: 400,
+    width: '90%',
   },
   editModalTitle: {
     color: '#fff',
@@ -511,6 +514,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 10,
+    marginRight: 0,
   },
   editCancelBtn: {
     paddingHorizontal: 16,
