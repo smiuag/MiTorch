@@ -139,7 +139,7 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMod
       style={styles.wrapperOpen}
       accessible={true}
       accessibilityLabel="Mini map"
-      accessibilityRole="region"
+      accessibilityRole="none"
     >
       <View style={styles.container}>
         <Text

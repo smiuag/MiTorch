@@ -17,7 +17,7 @@ export function RoomSearchResults({ rooms, visible, onSelect, onClose }: RoomSea
       style={styles.container}
       accessible={true}
       accessibilityLabel="Room search results"
-      accessibilityRole="region"
+      accessibilityRole="none"
     >
       <View style={styles.header}>
         <Text
