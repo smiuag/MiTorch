@@ -131,9 +131,18 @@ export function TerminalScreen({ route, navigation }: Props) {
     (async () => {
       let layout = await loadLayout();
 
-      // In Blind Mode, start with optimized blind mode layout if server has no custom layout
-      if (uiMode === 'blind' && !server.buttonLayout) {
-        layout = createBlindModeLayout();
+      // In Blind Mode: use createBlindModeLayout as base, merge any custom buttons
+      if (uiMode === 'blind') {
+        const blindLayout = createBlindModeLayout();
+        const fixedButtonIds = new Set(blindLayout.buttons.map(b => b.label)); // VID, SAL, etc
+
+        // Keep only non-fixed custom buttons from saved layout
+        const customButtons = layout.buttons.filter(btn => !fixedButtonIds.has(btn.label));
+
+        // Merge: fixed buttons from blind layout + custom buttons
+        layout = {
+          buttons: [...blindLayout.buttons, ...customButtons]
+        };
       }
 
       // Replace LOGIN_NAME placeholder with actual server name

@@ -92,10 +92,26 @@ export function createBlindModeLayout(): ButtonLayout {
   return { buttons };
 }
 
+function migrateLayout(layout: ButtonLayout): ButtonLayout {
+  // Migrate secondaryCommand to alternativeCommands
+  const migratedButtons = layout.buttons.map(btn => {
+    if (btn.secondaryCommand && !btn.alternativeCommands) {
+      return {
+        ...btn,
+        alternativeCommands: [btn.secondaryCommand],
+        secondaryCommand: undefined
+      };
+    }
+    return btn;
+  });
+  return { buttons: migratedButtons };
+}
+
 export async function loadLayout(): Promise<ButtonLayout> {
   const json = await AsyncStorage.getItem(LAYOUT_KEY);
   if (!json) return createDefaultLayout();
-  return JSON.parse(json);
+  const layout = JSON.parse(json);
+  return migrateLayout(layout);
 }
 
 export async function saveLayout(layout: ButtonLayout): Promise<void> {
