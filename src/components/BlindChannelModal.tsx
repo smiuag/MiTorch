@@ -9,6 +9,7 @@ import {
   StyleSheet,
   ScrollView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AnsiSpan } from '../types';
 
 export interface ChannelMessage {
@@ -58,6 +59,8 @@ export function BlindChannelModal({
   const [inputText, setInputText] = useState('');
   const [editingChannel, setEditingChannel] = useState<string | null>(null);
   const [editAlias, setEditAlias] = useState('');
+  const [askingAliasForChannel, setAskingAliasForChannel] = useState<string | null>(null);
+  const [newAlias, setNewAlias] = useState('');
 
   const sortedChannels = useMemo(() => sortChannels(channels), [channels]);
 
@@ -71,7 +74,13 @@ export function BlindChannelModal({
   const handleSelectChannel = useCallback((ch: string) => {
     setActiveChannel(ch);
     setInputText('');
-  }, []);
+
+    // Si no tiene alias configurado, pedir que lo configure
+    if (!channelAliases[ch]) {
+      setAskingAliasForChannel(ch);
+      setNewAlias(ch); // Default: el nombre del canal
+    }
+  }, [channelAliases]);
 
   const handleSendMessage = useCallback(() => {
     if (!inputText.trim() || !activeChannel) return;
@@ -86,6 +95,14 @@ export function BlindChannelModal({
     }
     setEditingChannel(null);
   }, [editingChannel, editAlias, onAliasChange]);
+
+  const handleSaveNewAlias = useCallback(() => {
+    if (askingAliasForChannel && newAlias.trim()) {
+      onAliasChange(askingAliasForChannel, newAlias.trim());
+    }
+    setAskingAliasForChannel(null);
+    setNewAlias('');
+  }, [askingAliasForChannel, newAlias, onAliasChange]);
 
   const renderChannelButton = useCallback(({ item: ch }: { item: string }) => (
     <TouchableOpacity
@@ -131,7 +148,7 @@ export function BlindChannelModal({
 
   return (
     <Modal visible={true} animationType="slide" onRequestClose={onClose} transparent={false}>
-      <View style={styles.container}>
+      <SafeAreaView style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Canales</Text>
@@ -207,6 +224,46 @@ export function BlindChannelModal({
           </View>
         ) : null}
 
+        {/* New alias prompt modal */}
+        <Modal
+          visible={askingAliasForChannel !== null}
+          transparent
+          animationType="fade"
+          onRequestClose={() => {
+            setAskingAliasForChannel(null);
+            setNewAlias('');
+          }}
+        >
+          <View style={styles.editModalOverlay}>
+            <View style={styles.editModalContent}>
+              <Text style={styles.editModalTitle}>Introduce el alias que utilizas para el canal</Text>
+              <Text style={styles.editModalHint}>{askingAliasForChannel}</Text>
+              <Text style={styles.editModalSubhint}>
+                Por ejemplo, "ch" en lugar de "chat"
+              </Text>
+              <TextInput
+                style={styles.editModalInput}
+                value={newAlias}
+                onChangeText={setNewAlias}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholderTextColor="#555"
+                accessibilityLabel="Alias del canal"
+                autoFocus={true}
+              />
+              <View style={styles.editModalButtons}>
+                <TouchableOpacity
+                  style={styles.editSaveBtn}
+                  onPress={handleSaveNewAlias}
+                  accessibilityLabel="Guardar"
+                >
+                  <Text style={styles.editSaveText}>Guardar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
         {/* Alias edit modal */}
         <Modal
           visible={editingChannel !== null}
@@ -248,7 +305,7 @@ export function BlindChannelModal({
             </View>
           </View>
         </Modal>
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 }
@@ -416,6 +473,13 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
   },
   editModalHint: {
+    color: '#aaf',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    fontFamily: 'monospace',
+  },
+  editModalSubhint: {
     color: '#888',
     fontSize: 12,
     marginBottom: 12,
