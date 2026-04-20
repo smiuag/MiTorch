@@ -157,13 +157,37 @@ export function TerminalScreen({ route, navigation }: Props) {
       console.log(`[LAYOUT_LOAD] Botones cargados: ${layout.buttons.map(b => b.label).join(', ')}`);
       setButtonLayout({ buttons });
 
-      // In Blind Mode: NEVER use server.buttonLayout, always use createBlindModeLayout
+      // In Blind Mode: use createBlindModeLayout + merge any blind-mode customizations
       if (uiMode === 'blind') {
         const blindLayout = createBlindModeLayout();
-        setButtonLayout({ buttons: blindLayout.buttons });
-        console.log(`[LAYOUT_LOAD] Blind mode: usando createBlindModeLayout (ignorando server.buttonLayout)`);
+        const blindButtonLabels = new Set(blindLayout.buttons.map(b => b.label)); // VID, SAL, NO, N, etc.
+
+        if (server.buttonLayout) {
+          // Only keep customizations for buttons that exist in blind mode
+          const serverButtons = (server.buttonLayout as ButtonLayout).buttons.map(btn =>
+            btn.command === '__LOGIN_NAME__'
+              ? { ...btn, command: server.name }
+              : btn
+          );
+          const blindModeCustomizations = serverButtons.filter(btn => blindButtonLabels.has(btn.label));
+
+          if (blindModeCustomizations.length > 0) {
+            // Merge: replace buttons from blindLayout with their customized versions
+            const customizedLayout = blindLayout.buttons.map(btn =>
+              blindModeCustomizations.find(custom => custom.label === btn.label) || btn
+            );
+            setButtonLayout({ buttons: customizedLayout });
+            console.log(`[LAYOUT_LOAD] Blind mode: usando createBlindModeLayout + customizations`);
+          } else {
+            setButtonLayout({ buttons: blindLayout.buttons });
+            console.log(`[LAYOUT_LOAD] Blind mode: usando createBlindModeLayout (sin customizations)`);
+          }
+        } else {
+          setButtonLayout({ buttons: blindLayout.buttons });
+          console.log(`[LAYOUT_LOAD] Blind mode: usando createBlindModeLayout (sin server.buttonLayout)`);
+        }
       } else if (server.buttonLayout) {
-        // Only use server.buttonLayout in completo mode
+        // Modo completo: usar server.buttonLayout personalizado
         console.log(`[LAYOUT_LOAD] Modo completo: usando server.buttonLayout personalizado`);
         const serverButtons = (server.buttonLayout as ButtonLayout).buttons.map(btn =>
           btn.command === '__LOGIN_NAME__'
