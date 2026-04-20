@@ -365,14 +365,21 @@ export function TerminalScreen({ route, navigation }: Props) {
       },
       onGMCP: (module: string, data: any) => {
         if (module === 'Room.Actual') {
+          // Don't auto-locate on Room.Actual. Only manual ojear (locate) can trigger localization.
+          // Room.Actual is used to sync movement after successful locate via ojear.
           const roomName = typeof data === 'string' ? data : String(data);
-          const room = mapServiceRef.current.findRoom(roomName);
-          if (room) {
-            mapServiceRef.current.setCurrentRoom(room.id);
-            setCurrentRoom(room);
-            const nearby = mapServiceRef.current.getNearbyRooms(room.x, room.y, room.z, 15);
-            setNearbyRooms(nearby);
+          const currentRoom = mapServiceRef.current.getCurrentRoom();
+          if (currentRoom) {
+            // Already localized: try to verify we're still in a known location
+            const room = mapServiceRef.current.findRoom(roomName);
+            if (room) {
+              mapServiceRef.current.setCurrentRoom(room.id);
+              setCurrentRoom(room);
+              const nearby = mapServiceRef.current.getNearbyRooms(room.x, room.y, room.z, 15);
+              setNearbyRooms(nearby);
+            }
           }
+          // If not localized yet: ignore Room.Actual, wait for manual ojear
         } else if (module === 'Room.Movimiento') {
           const dir = typeof data === 'string' ? data : String(data);
           const room = mapServiceRef.current.moveByDirection(dir);
