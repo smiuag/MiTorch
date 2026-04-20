@@ -29,6 +29,7 @@ import { MapService, MapRoom } from '../services/mapService';
 import { ButtonLayout, createDefaultLayout, createBlindModeLayout, loadLayout, saveLayout } from '../storage/layoutStorage';
 import { loadServers, saveServers } from '../storage/serverStorage';
 import { blindModeService } from '../services/blindModeService';
+import { NORMAL_MODE, BLIND_MODE } from '../config/gridConfig';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Terminal'>;
 
@@ -724,10 +725,11 @@ export function TerminalScreen({ route, navigation }: Props) {
   const vitalsHeight = 35;
   const inputHeight = uiMode === 'blind' ? 60 : 30;
 
-  // Grid dimensions - Blind Mode: 5 cols × 4 rows (vertical), 4 cols × 5 rows (horizontal)
+  // Grid dimensions from config
   const isMinimalista = uiMode === 'blind';
-  const gridCols = isMinimalista ? 5 : GRID_COLS;
-  const gridRows = isMinimalista ? 4 : GRID_ROWS;
+  const modeConfig = isMinimalista ? BLIND_MODE : NORMAL_MODE;
+  const gridCols = modeConfig.vertical.cols;
+  const gridRows = modeConfig.vertical.rows;
   const BUTTON_PADDING_VERTICAL = 3 * 2;
   const BUTTON_GAP = 3;
   const BUTTON_GAPS_TOTAL = (gridRows - 1) * BUTTON_GAP;
@@ -740,8 +742,8 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   // Horizontal layout dimensions
   const vitalsWidth = uiMode === 'blind' ? 0 : 30;
-  const horizontalGridCols = isMinimalista ? 4 : 6;
-  const horizontalGridRows = isMinimalista ? 5 : 9;
+  const horizontalGridCols = modeConfig.horizontal.cols;
+  const horizontalGridRows = modeConfig.horizontal.rows;
   const availableHorizontalWidthForButtons = width - vitalsWidth - insets.left - insets.right - 20;
   const maxHorizontalCellSizeByWidth = availableHorizontalWidthForButtons / horizontalGridCols;
   const maxHorizontalCellSizeByHeight = availableHeight / horizontalGridRows;
@@ -942,8 +944,8 @@ export function TerminalScreen({ route, navigation }: Props) {
               onSwapButtons={handleSwapButtons}
               uiMode={uiMode}
               minimalista={isMinimalista}
-              minCols={uiMode === 'blind' ? 5 : gridCols}
-              minRows={uiMode === 'blind' ? 4 : gridRows}
+              minCols={gridCols}
+              minRows={gridRows}
             />
           </View>
         )}
@@ -1091,9 +1093,9 @@ export function TerminalScreen({ route, navigation }: Props) {
                 sourceCol={sourceCol}
                 sourceRow={sourceRow}
                 onSwapButtons={handleSwapButtons}
-                horizontalMode={{cols: uiMode === 'blind' ? 4 : (isMinimalista ? 2 : 6), cellSize: horizontalCellSize}}
+                horizontalMode={{cols: horizontalGridCols, cellSize: horizontalCellSize}}
                 uiMode={uiMode}
-                minRows={uiMode === 'blind' ? 5 : 9}
+                minRows={horizontalGridRows}
               />
             </View>
           </View>

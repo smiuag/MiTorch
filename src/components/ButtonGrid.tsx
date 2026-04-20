@@ -10,9 +10,10 @@ import {
   PanResponder,
 } from 'react-native';
 import { LayoutButton } from '../storage/layoutStorage';
+import { NORMAL_MODE, BLIND_MODE } from '../config/gridConfig';
 
-export const GRID_COLS = 9;
-export const GRID_ROWS = 6;
+export const GRID_COLS = NORMAL_MODE.vertical.cols;
+export const GRID_ROWS = NORMAL_MODE.vertical.rows;
 
 interface ButtonGridProps {
   buttons: LayoutButton[];
@@ -194,9 +195,10 @@ export function ButtonGrid({
 }: ButtonGridProps) {
   const { width } = useWindowDimensions();
 
-  // Use minimalist dimensions if enabled
-  const displayCols = minimalista ? minCols : GRID_COLS;
-  const displayRows = minimalista ? minRows : GRID_ROWS;
+  // Use blind mode dimensions if enabled, otherwise use normal mode
+  const blindConfig = BLIND_MODE.vertical;
+  const displayCols = minimalista ? blindConfig.cols : GRID_COLS;
+  const displayRows = minimalista ? blindConfig.rows : GRID_ROWS;
 
   // Additional transformations in horizontal mode (after swap col/row and row inversion)
   const additionalTransforms: { [key: string]: { col: number; row: number } } = {
@@ -223,9 +225,9 @@ export function ButtonGrid({
     // In horizontal mode, swap col/row for lookup (rotate 90°) and reverse row order
     if (horizontalMode) {
       const newCol = btn.row;
-      // Invert row order based on vertical grid width (9 for normal, 5 for blind)
-      const maxVerticalCols = minimalista ? minCols : GRID_COLS;
-      const newRow = (maxVerticalCols - 1) - btn.col;
+      // Invert row order based on vertical grid width
+      const verticalCols = minimalista ? BLIND_MODE.vertical.cols : NORMAL_MODE.vertical.cols;
+      const newRow = (verticalCols - 1) - btn.col;
       const key = `${newCol},${newRow}`;
 
       let finalCol = newCol;
