@@ -29,15 +29,11 @@ function genId() {
 }
 
 export function createDefaultLayout(): ButtonLayout {
-  // 9x6 grid with empty row 1, directions from row 2-4, STOP at (0,0), LOC at (8,0)
+  // 9x6 grid with empty row 1, directions from row 2-4, LOC at (8,0)
   const buttons: LayoutButton[] = [
-    // Row 0: STOP, Login, Pass, Decir, Responder, _, _, _, LOC
-    { id: genId(), col: 0, row: 0, label: 'STOP', command: 'parar', color: '#662222', textColor: '#fff' },
-    { id: genId(), col: 1, row: 0, label: 'Login', command: '__LOGIN_NAME__', color: '#662266', textColor: '#fff' },
-    { id: genId(), col: 2, row: 0, label: 'Pass', command: '', color: '#662266', textColor: '#fff' },
+    // Row 0: Decir, Responder, _, _, _, _, IR, LOC
     { id: genId(), col: 3, row: 0, label: 'Decir', command: 'decir', color: '#662266', textColor: '#fff', addText: true },
     { id: genId(), col: 4, row: 0, label: 'Res', command: 'responder', color: '#662266', textColor: '#fff', addText: true },
-    { id: genId(), col: 6, row: 0, label: 'STOP', command: 'stop', color: '#662222', textColor: '#fff' },
     { id: genId(), col: 7, row: 0, label: 'IR', command: 'irsala', color: '#662266', textColor: '#fff', addText: true },
     { id: genId(), col: 8, row: 0, label: 'LOC', command: 'locate', color: '#223366', textColor: '#fff' },
     // Row 1: (empty)
