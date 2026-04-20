@@ -24,6 +24,7 @@ interface ButtonGridProps {
   sourceRow?: number;
   onSwapButtons?: (targetCol: number, targetRow: number) => void;
   horizontalMode?: { cols: number; cellSize: number };
+  uiMode?: 'completo' | 'blind';
   minimalista?: boolean;
   minCols?: number;
   minRows?: number;
@@ -37,6 +38,7 @@ function ButtonCell({
   moveMode,
   isSource,
   horizontalMode,
+  uiMode,
   onSendCommand,
   onAddTextButton,
   onEditButton,
@@ -50,6 +52,7 @@ function ButtonCell({
   moveMode?: boolean;
   isSource?: boolean;
   horizontalMode?: any;
+  uiMode?: 'completo' | 'blind';
   onSendCommand: (command: string) => void;
   onAddTextButton: (command: string) => void;
   onEditButton: (col: number, row: number) => void;
@@ -64,7 +67,15 @@ function ButtonCell({
   const panResponder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponder: (evt) => {
+          // En blind mode: requiere 2+ dedos para drag-drop (comando secundario)
+          // Esto permite que screen reader use gestos de 1 dedo
+          if (uiMode === 'blind') {
+            return evt.nativeEvent.touches?.length >= 2;
+          }
+          // Modo normal: 1 dedo funciona
+          return true;
+        },
         onMoveShouldSetPanResponder: () => isDraggingRef.current,
         onPanResponderGrant: (evt) => {
           startPosRef.current = { x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY };
@@ -125,7 +136,7 @@ function ButtonCell({
           }
         },
       }),
-    [col, row, button, moveMode, horizontalMode, onSendCommand, onAddTextButton, onEditButton, onSwapButtons, onSecondaryCommand]
+    [col, row, button, moveMode, horizontalMode, uiMode, onSendCommand, onAddTextButton, onEditButton, onSwapButtons, onSecondaryCommand]
   );
 
   return (
@@ -171,6 +182,7 @@ export function ButtonGrid({
   sourceRow,
   onSwapButtons,
   horizontalMode,
+  uiMode,
   minimalista = false,
   minCols = GRID_COLS,
   minRows = GRID_ROWS,
@@ -251,6 +263,7 @@ export function ButtonGrid({
                 moveMode={moveMode}
                 isSource={isSource}
                 horizontalMode={horizontalMode}
+                uiMode={uiMode}
                 onSendCommand={onSendCommand}
                 onAddTextButton={onAddTextButton}
                 onEditButton={onEditButton}
