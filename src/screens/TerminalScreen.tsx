@@ -746,7 +746,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const horizontalGridRows = modeConfig.horizontal.rows;
   const availableHorizontalWidthForButtons = width - vitalsWidth - insets.left - insets.right - 20;
   const maxHorizontalCellSizeByWidth = availableHorizontalWidthForButtons / horizontalGridCols;
-  const maxHorizontalCellSizeByHeight = availableHeight / horizontalGridRows;
+  const maxHorizontalCellSizeByHeight = (availableHeight - inputHeight) / horizontalGridRows;
   const horizontalCellSize = Math.min(maxHorizontalCellSizeByWidth, maxHorizontalCellSizeByHeight);
   const horizontalButtonGridWidth = horizontalGridCols * horizontalCellSize + (horizontalGridCols - 1) * BUTTON_GAP;
   const horizontalRightPanelWidth = horizontalButtonGridWidth + vitalsWidth + 20;
