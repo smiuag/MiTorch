@@ -30,6 +30,8 @@ import { ButtonLayout, createDefaultLayout, createBlindModeLayout, loadLayout, s
 import { loadServers, saveServers } from '../storage/serverStorage';
 import { blindModeService } from '../services/blindModeService';
 import { NORMAL_MODE, BLIND_MODE } from '../config/gridConfig';
+import { BlindChannelModal, ChannelMessage, nextMsgId } from '../components/BlindChannelModal';
+import { loadChannelAliases, saveChannelAliases } from '../storage/channelStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Terminal'>;
 
@@ -71,6 +73,10 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [locateFeedback, setLocateFeedback] = useState<'success' | 'failed' | null>(null);
   const [silentModeEnabled, setSilentModeEnabled] = useState(false);
   const [loginFailed, setLoginFailed] = useState(false);
+  const [channels, setChannels] = useState<string[]>([]);
+  const [channelMessages, setChannelMessages] = useState<ChannelMessage[]>([]);
+  const [channelAliases, setChannelAliases] = useState<Record<string, string>>({});
+  const [blindChannelModalVisible, setBlindChannelModalVisible] = useState(false);
 
   const fontSizeRef = useRef(14);
   const linesRef = useRef<MudLine[]>([]);
@@ -88,6 +94,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const intentionalLocateRef = useRef(false);
   const autoLoginRef = useRef(false);
   const textInputRef = useRef<TextInput>(null);
+  const lastSentChannelTime = useRef(0);
 
   useFocusEffect(
     useCallback(() => {
@@ -140,6 +147,10 @@ export function TerminalScreen({ route, navigation }: Props) {
         );
         setButtonLayout({ buttons: serverButtons });
       }
+
+      // Load channel aliases for this server
+      const aliases = await loadChannelAliases(server.id);
+      setChannelAliases(aliases);
 
       // Load map for locate command
       await mapServiceRef.current.load();
@@ -473,6 +484,26 @@ export function TerminalScreen({ route, navigation }: Props) {
           // Player class from GMCP
           const playerClass = typeof data === 'string' ? data : String(data);
           blindModeService.updatePlayerVariables({ playerClass });
+        } else if (module === 'Comm.Canales' && data && typeof data === 'object') {
+          setChannels(Object.keys(data));
+        } else if (module === 'Comm.EnciendeCanal' && data?.canal) {
+          setChannels(prev => prev.includes(data.canal) ? prev : [...prev, data.canal]);
+        } else if (module === 'Comm.ApagaCanal' && data?.canal) {
+          setChannels(prev => prev.filter(ch => ch !== data.canal));
+        } else if ((module === 'Comm.MensajeCanal' || module === 'Comm.MensajeCanalHistorico') && data?.canal && data?.mensaje) {
+          // En blind mode: mostrar mensajes de canal en terminal (sin filtro)
+          if (uiMode === 'blind') {
+            addLine(data.mensaje);
+          }
+
+          // Guardar en state para el modal
+          setChannelMessages(prev => {
+            const updated = [...prev, { id: nextMsgId(), channel: data.canal, spans: parseAnsi(data.mensaje) }];
+            return updated.length > 500 ? updated.slice(-500) : updated;
+          });
+
+          // Timestamp para evitar eco propio
+          lastSentChannelTime.current = Date.now();
         }
       },
     });
@@ -959,6 +990,18 @@ export function TerminalScreen({ route, navigation }: Props) {
                 </TouchableOpacity>
               )}
 
+              {uiMode === 'blind' && channels.length > 0 && (
+                <TouchableOpacity
+                  style={[styles.sendButton, { flex: 0.4, backgroundColor: '#336699' }]}
+                  onPress={() => setBlindChannelModalVisible(true)}
+                  accessible={true}
+                  accessibilityLabel="Abrir canales"
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.sendButtonText, { fontSize: 28 }]}>💬</Text>
+                </TouchableOpacity>
+              )}
+
               <TextInput
                 ref={textInputRef}
                 style={styles.input}
@@ -1094,6 +1137,18 @@ export function TerminalScreen({ route, navigation }: Props) {
                   </TouchableOpacity>
                 )}
 
+                {uiMode === 'blind' && channels.length > 0 && (
+                  <TouchableOpacity
+                    style={[styles.sendButton, { flex: 0.4, backgroundColor: '#336699' }]}
+                    onPress={() => setBlindChannelModalVisible(true)}
+                    accessible={true}
+                    accessibilityLabel="Abrir canales"
+                    accessibilityRole="button"
+                  >
+                    <Text style={[styles.sendButtonText, { fontSize: 28 }]}>💬</Text>
+                  </TouchableOpacity>
+                )}
+
                 <TextInput
                   ref={textInputRef}
                   style={styles.input}
@@ -1203,6 +1258,27 @@ export function TerminalScreen({ route, navigation }: Props) {
           />
         );
       })()}
+
+      {/* Blind Channel Modal */}
+      {uiMode === 'blind' && (
+        <BlindChannelModal
+          visible={blindChannelModalVisible}
+          onClose={() => setBlindChannelModalVisible(false)}
+          channels={channels}
+          channelAliases={channelAliases}
+          channelMessages={channelMessages}
+          onSendMessage={(cmd) => {
+            telnetRef.current?.send(cmd);
+            lastSentChannelTime.current = Date.now();
+          }}
+          onAliasChange={(ch, alias) => {
+            const updated = { ...channelAliases, [ch]: alias };
+            setChannelAliases(updated);
+            saveChannelAliases(server.id, updated);
+          }}
+          fontSize={fontSize}
+        />
+      )}
 
       {/* Room Search Results */}
       <RoomSearchResults
