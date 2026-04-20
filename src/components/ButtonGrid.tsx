@@ -223,14 +223,16 @@ export function ButtonGrid({
     // In horizontal mode, swap col/row for lookup (rotate 90°) and reverse row order
     if (horizontalMode) {
       const newCol = btn.row;
-      const newRow = 8 - btn.col; // Invert row order (9 rows: 0-8)
+      // Invert row order based on vertical grid width (9 for normal, 5 for blind)
+      const maxVerticalCols = minimalista ? minCols : GRID_COLS;
+      const newRow = (maxVerticalCols - 1) - btn.col;
       const key = `${newCol},${newRow}`;
 
       let finalCol = newCol;
       let finalRow = newRow;
 
-      // Apply additional transformations only for non-blind mode (not 3 cols)
-      if (horizontalMode.cols !== 3 && additionalTransforms[key]) {
+      // Apply additional transformations only for normal mode (not blind/minimalist)
+      if (!minimalista && additionalTransforms[key]) {
         const transform = additionalTransforms[key];
         finalCol = transform.col;
         finalRow = transform.row;
