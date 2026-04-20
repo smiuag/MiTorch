@@ -68,7 +68,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [locateFeedback, setLocateFeedback] = useState<'success' | 'failed' | null>(null);
-  const [toggleState, setToggleState] = useState(false);
+  const [silentModeEnabled, setSilentModeEnabled] = useState(false);
 
   const fontSizeRef = useRef(14);
   const linesRef = useRef<MudLine[]>([]);
@@ -232,6 +232,16 @@ export function TerminalScreen({ route, navigation }: Props) {
       if (soundPath) {
         console.log(`[TERMINAL_BLIND] Reproduciendo sonido: "${soundPath}"`);
         blindModeService.playSound(soundPath);
+      }
+    }
+
+    // Modo Silencio: read all messages if enabled
+    if (silentModeEnabled && uiMode === 'blind' && !shouldAnnounce) {
+      // Only read if it's not already announced by blind mode filters
+      const cleanText = displayText.replace(/\x1b\[[0-9;]*m/g, '').trim();
+      if (cleanText.length > 0) {
+        console.log(`[SILENT_MODE] Leyendo: "${cleanText.substring(0, 50)}..."`);
+        blindModeService.announceMessage(cleanText, 'low');
       }
     }
 
@@ -854,14 +864,14 @@ export function TerminalScreen({ route, navigation }: Props) {
             <>
               {uiMode === 'blind' && (
                 <TouchableOpacity
-                  style={[styles.sendButton, { flex: 0.4, backgroundColor: toggleState ? '#33cc33' : '#3366cc' }]}
-                  onPress={() => setToggleState(!toggleState)}
+                  style={[styles.sendButton, { flex: 0.4, backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
+                  onPress={() => setSilentModeEnabled(!silentModeEnabled)}
                   accessible={true}
-                  accessibilityLabel={toggleState ? 'Toggle on' : 'Toggle off'}
+                  accessibilityLabel={`Modo Silencio ${silentModeEnabled ? 'activado' : 'desactivado'}`}
                   accessibilityRole="button"
-                  accessibilityHint={`Current state: ${toggleState ? 'on' : 'off'}. Tap to toggle.`}
+                  accessibilityHint={`Lee los mensajes en voz alta. Estado: ${silentModeEnabled ? 'ON' : 'OFF'}`}
                 >
-                  <Text style={[styles.sendButtonText, { fontSize: 28 }]}>{toggleState ? '●' : '○'}</Text>
+                  <Text style={[styles.sendButtonText, { fontSize: 28 }]}>{silentModeEnabled ? '🔊' : '🔇'}</Text>
                 </TouchableOpacity>
               )}
 
@@ -988,14 +998,14 @@ export function TerminalScreen({ route, navigation }: Props) {
               <>
                 {uiMode === 'blind' && (
                   <TouchableOpacity
-                    style={[styles.sendButton, { flex: 0.4, backgroundColor: toggleState ? '#33cc33' : '#3366cc' }]}
-                    onPress={() => setToggleState(!toggleState)}
+                    style={[styles.sendButton, { flex: 0.4, backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
+                    onPress={() => setSilentModeEnabled(!silentModeEnabled)}
                     accessible={true}
-                    accessibilityLabel={toggleState ? 'Toggle on' : 'Toggle off'}
+                    accessibilityLabel={`Modo Silencio ${silentModeEnabled ? 'activado' : 'desactivado'}`}
                     accessibilityRole="button"
-                    accessibilityHint={`Current state: ${toggleState ? 'on' : 'off'}. Tap to toggle.`}
+                    accessibilityHint={`Lee los mensajes en voz alta. Estado: ${silentModeEnabled ? 'ON' : 'OFF'}`}
                   >
-                    <Text style={[styles.sendButtonText, { fontSize: 28 }]}>{toggleState ? '●' : '○'}</Text>
+                    <Text style={[styles.sendButtonText, { fontSize: 28 }]}>{silentModeEnabled ? '🔊' : '🔇'}</Text>
                   </TouchableOpacity>
                 )}
 
