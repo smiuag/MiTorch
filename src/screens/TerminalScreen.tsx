@@ -83,7 +83,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const flatListRef = useRef<FlatList<MudLine>>(null);
   const lastLineBlankRef = useRef(false);
   const recentLinesRef = useRef<string[]>([]);
-  const isLocatingRef = useRef(false);
+  const intentionalLocateRef = useRef(false);
   const textInputRef = useRef<TextInput>(null);
 
   useFocusEffect(
@@ -298,7 +298,7 @@ export function TerminalScreen({ route, navigation }: Props) {
               }
 
               // Check if we're locating and found the room
-              if (isLocatingRef.current) {
+              if (intentionalLocateRef.current) {
                 if (clean.match(/\[.*\]\s*$/)) {
                   let roomName = clean.replace(/^[>\]]\s*/, '');
                   console.log('[LOCATE] Buscando:', roomName);
@@ -322,7 +322,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                         );
                       }
 
-                      isLocatingRef.current = false;
+                      intentionalLocateRef.current = false;
                     } else {
                       console.log('[LOCATE] ✗ No encontrada en mapa');
                       setLocateFeedback('failed');
@@ -513,7 +513,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const handleLocate = useCallback(() => {
     if (!telnetRef.current) return;
     recentLinesRef.current = [];
-    isLocatingRef.current = true;
+    intentionalLocateRef.current = true;
     telnetRef.current.send('ojear');
   }, []);
 
