@@ -77,6 +77,7 @@ export class MapService {
       return null;
     }
 
+    // Single match by name: localize
     if (candidates.length === 1) {
       const room = this.rooms.get(candidates[0]);
       if (room) {
@@ -85,32 +86,36 @@ export class MapService {
       }
     }
 
-    // Multiple candidates: disambiguate by exits
+    // Multiple candidates: try to disambiguate by exits
     if (gmcpExits && candidates.length > 1) {
+      const exitsMatches: number[] = [];
       for (const id of candidates) {
         const room = this.rooms.get(id);
         if (room && this.exitsMatch(Object.keys(room.e), gmcpExits)) {
+          exitsMatches.push(id);
+        }
+      }
+
+      // Only localize if exits disambiguation gives exactly 1 match
+      if (exitsMatches.length === 1) {
+        const room = this.rooms.get(exitsMatches[0]);
+        if (room) {
           this.currentRoomId = room.id;
           return room;
         }
       }
-    }
 
-    // If we have a current room, prefer a candidate reachable from it
-    if (this.currentRoomId) {
-      const current = this.rooms.get(this.currentRoomId);
-      if (current) {
-        for (const destId of Object.values(current.e)) {
-          if (candidates.includes(destId)) {
-            this.currentRoomId = destId;
-            return this.rooms.get(destId) ?? null;
-          }
-        }
+      // 0 or 2+ exits matches: ambiguous
+      if (exitsMatches.length === 0) {
+        console.log('[MAP] Ambigua: sin salidas coincidentes de ' + candidates.length + ' candidatas');
+      } else {
+        console.log('[MAP] Ambigua: ' + exitsMatches.length + ' candidatas coinciden por salidas');
       }
+      return null;
     }
 
-    // Multiple candidates and cannot disambiguate: fail rather than guess
-    console.log('[MAP] Ambigua: ' + candidates.length + ' coincidencias, sin datos suficientes');
+    // Multiple candidates but no exit info to disambiguate
+    console.log('[MAP] Ambigua: ' + candidates.length + ' coincidencias, sin info de salidas');
     return null;
   }
 
