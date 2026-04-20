@@ -158,7 +158,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         setTimeout(() => {
           console.log('[AUTO-LOGIN] Sending username:', server.username);
           telnetRef.current?.send(server.username!);
-        }, 500);
+        }, 200);
       }
     }
 
@@ -172,7 +172,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         setTimeout(() => {
           console.log('[AUTO-LOGIN] Sending password');
           telnetRef.current?.send(server.password!);
-        }, 800);
+        }, 200);
       }
     }
 
