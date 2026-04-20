@@ -235,8 +235,8 @@ export function TerminalScreen({ route, navigation }: Props) {
       }
     }
 
-    // Modo Silencio: read all messages if enabled
-    if (silentModeEnabled && uiMode === 'blind' && !shouldAnnounce) {
+    // Modo Silencio OFF: read all messages (when silent mode is disabled)
+    if (!silentModeEnabled && uiMode === 'blind' && !shouldAnnounce) {
       // Only read if it's not already announced by blind mode filters
       const cleanText = displayText.replace(/\x1b\[[0-9;]*m/g, '').trim();
       if (cleanText.length > 0) {
@@ -871,7 +871,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                   accessibilityRole="button"
                   accessibilityHint={`Lee los mensajes en voz alta. Estado: ${silentModeEnabled ? 'ON' : 'OFF'}`}
                 >
-                  <Text style={[styles.sendButtonText, { fontSize: 28 }]}>{silentModeEnabled ? '🔊' : '🔇'}</Text>
+                  <Text style={[styles.sendButtonText, { fontSize: 28 }]}>{silentModeEnabled ? '🔇' : '🔊'}</Text>
                 </TouchableOpacity>
               )}
 
@@ -1005,7 +1005,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                     accessibilityRole="button"
                     accessibilityHint={`Lee los mensajes en voz alta. Estado: ${silentModeEnabled ? 'ON' : 'OFF'}`}
                   >
-                    <Text style={[styles.sendButtonText, { fontSize: 28 }]}>{silentModeEnabled ? '🔊' : '🔇'}</Text>
+                    <Text style={[styles.sendButtonText, { fontSize: 28 }]}>{silentModeEnabled ? '🔇' : '🔊'}</Text>
                   </TouchableOpacity>
                 )}
 
