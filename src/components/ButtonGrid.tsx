@@ -86,7 +86,10 @@ function ButtonCell({
 
           longPressTimerRef.current = setTimeout(() => {
             isLongPressTriggeredRef.current = true;
-            onEditButton(col, row);
+            // Don't allow editing fixed buttons
+            if (!button?.fixed) {
+              onEditButton(col, row);
+            }
           }, 500);
         },
         onPanResponderMove: (evt) => {
@@ -149,31 +152,57 @@ function ButtonCell({
   const handleAccessibilityAction = (event: AccessibilityActionEvent) => {
     if (!button) return;
 
-    if (event.nativeEvent.actionName === 'activate') {
-      // Primary action
+    const actionNames = ['activate', 'secondary', 'tertiary', 'quaternary', 'quinary'];
+    const allCommands = [
+      button.command,
+      ...(button.alternativeCommands || (button.secondaryCommand ? [button.secondaryCommand] : []))
+    ];
+
+    const actionIndex = actionNames.indexOf(event.nativeEvent.actionName);
+    if (actionIndex >= 0 && actionIndex < allCommands.length) {
+      const command = allCommands[actionIndex];
       if (button.addText) {
-        onAddTextButton(button.command);
+        onAddTextButton(command);
       } else {
-        onSendCommand(button.command);
+        onSecondaryCommand(command);
       }
-    } else if (event.nativeEvent.actionName === 'secondary' && button.secondaryCommand) {
-      // Secondary action (from accessibilityActions)
-      onSecondaryCommand(button.secondaryCommand);
     }
   };
 
-  const accessibilityActions = uiMode === 'blind' && button?.secondaryCommand
-    ? [
-        { name: 'activate', label: `${button.label}` },
-        { name: 'secondary', label: `${button.label} (alternativa)` }
-      ]
-    : undefined;
+  const buildAccessibilityActions = () => {
+    if (uiMode !== 'blind') return undefined;
 
-  const accessibilityHint = button
-    ? uiMode === 'blind' && button.secondaryCommand
-      ? `${button.addText ? 'Escribir' : 'Ejecutar'}: ${button.command}. Alternativa: ${button.secondaryCommand}`
-      : (button.addText ? `Escribir: ${button.command}` : `Ejecutar: ${button.command}`)
-    : 'Ranura de botón vacía';
+    const allCommands = [
+      button?.command,
+      ...(button?.alternativeCommands || (button?.secondaryCommand ? [button?.secondaryCommand] : []))
+    ].filter(Boolean);
+
+    if (allCommands.length <= 1) return undefined;
+
+    const actionNames = ['activate', 'secondary', 'tertiary', 'quaternary', 'quinary'];
+    return allCommands.map((cmd, idx) => ({
+      name: actionNames[idx],
+      label: idx === 0 ? button?.label : `${button?.label} (${idx})`
+    }));
+  };
+
+  const accessibilityActions = buildAccessibilityActions();
+
+  const buildAccessibilityHint = () => {
+    if (!button) return 'Ranura de botón vacía';
+
+    const allCommands = [
+      button.command,
+      ...(button.alternativeCommands || (button.secondaryCommand ? [button.secondaryCommand] : []))
+    ];
+
+    if (uiMode === 'blind' && allCommands.length > 1) {
+      return `${button.addText ? 'Escribir' : 'Ejecutar'}: ${allCommands.join(', ')}`;
+    }
+    return button.addText ? `Escribir: ${button.command}` : `Ejecutar: ${button.command}`;
+  };
+
+  const accessibilityHint = buildAccessibilityHint();
 
   return (
     <View

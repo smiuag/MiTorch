@@ -10,7 +10,9 @@ export interface LayoutButton {
   textColor: string;
   addText?: boolean;
   secondaryCommand?: string;
+  alternativeCommands?: string[];
   locked?: boolean;
+  fixed?: boolean; // No editable, fixed functionality (blind mode only)
 }
 
 export interface ButtonLayout {
@@ -66,8 +68,8 @@ export function createBlindModeLayout(): ButtonLayout {
     { id: genId(), col: 0, row: 0, label: 'STOP', command: 'stop', color: '#662222', textColor: '#fff', locked: true },
     { id: genId(), col: 1, row: 0, label: 'IR', command: 'irsala', color: '#662266', textColor: '#fff', addText: true },
     { id: genId(), col: 2, row: 0, label: 'LOC', command: 'locate', color: '#223366', textColor: '#fff', locked: true },
-    { id: genId(), col: 3, row: 0, label: 'VID', command: 'consultar vida', color: '#336633', textColor: '#fff', secondaryCommand: 'consultar energia' },
-    { id: genId(), col: 4, row: 0, label: 'SAL', command: 'consultar salidas', color: '#336633', textColor: '#fff', secondaryCommand: 'xp' },
+    { id: genId(), col: 3, row: 0, label: 'VID', command: 'consultar vida', color: '#336633', textColor: '#fff', alternativeCommands: ['consultar energia', 'xp'], fixed: true },
+    { id: genId(), col: 4, row: 0, label: 'SAL', command: 'consultar salidas', color: '#336633', textColor: '#fff', alternativeCommands: ['enemigos', 'ultimo daño'], fixed: true },
     // Row 1: NO, N, NE, AR
     { id: genId(), col: 0, row: 1, label: 'NO', command: 'noroeste', color: '#662222', textColor: '#fff', locked: true },
     { id: genId(), col: 1, row: 1, label: 'N', command: 'norte', color: '#662222', textColor: '#fff', locked: true },
