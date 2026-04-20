@@ -81,7 +81,7 @@ export function BlindChannelModal({
     // Si no tiene alias configurado, pedir que lo configure
     if (!channelAliases[ch]) {
       setAskingAliasForChannel(ch);
-      setNewAlias(ch); // Default: el nombre del canal
+      setNewAlias(''); // Input vacío
     }
   }, [channelAliases]);
 
