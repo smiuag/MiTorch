@@ -153,11 +153,20 @@ export function TerminalScreen({ route, navigation }: Props) {
       );
       setButtonLayout({ buttons });
       if (server.buttonLayout) {
-        const serverButtons = (server.buttonLayout as ButtonLayout).buttons.map(btn =>
+        let serverButtons = (server.buttonLayout as ButtonLayout).buttons.map(btn =>
           btn.command === '__LOGIN_NAME__'
             ? { ...btn, command: server.name }
             : btn
         );
+
+        // In Blind Mode: preserve fixed buttons from createBlindModeLayout
+        if (uiMode === 'blind') {
+          const blindLayout = createBlindModeLayout();
+          const fixedButtonIds = new Set(blindLayout.buttons.map(b => b.label));
+          const customButtons = serverButtons.filter(btn => !fixedButtonIds.has(btn.label));
+          serverButtons = [...blindLayout.buttons, ...customButtons];
+        }
+
         setButtonLayout({ buttons: serverButtons });
       }
 
