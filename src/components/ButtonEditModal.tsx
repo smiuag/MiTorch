@@ -19,6 +19,7 @@ interface ButtonEditModalProps {
   onDelete: () => void;
   onMove: () => void;
   onClose: () => void;
+  uiMode?: 'completo' | 'blind';
 }
 
 const PRESET_COLORS = [
@@ -40,40 +41,55 @@ export function ButtonEditModal({
   onDelete,
   onMove,
   onClose,
+  uiMode,
 }: ButtonEditModalProps) {
   const [label, setLabel] = useState('');
-  const [command, setCommand] = useState('');
-  const [secondaryCommand, setSecondaryCommand] = useState('');
+  const [commands, setCommands] = useState<string[]>([]);
   const [color, setColor] = useState('#662222');
   const [addText, setAddText] = useState(false);
+  const [textColor, setTextColor] = useState('#ffffff');
+
+  // In blind mode: 1 command (simple config), in completo mode: 2 commands
+  const maxCommands = uiMode === 'blind' ? 1 : 2;
 
   useEffect(() => {
     if (button) {
       setLabel(button.label);
-      setCommand(button.command);
-      setSecondaryCommand(button.secondaryCommand ?? '');
+      const allCmds = [button.command, ...(button.alternativeCommands ?? [])];
+      // Pad to max slots
+      while (allCmds.length < maxCommands) {
+        allCmds.push('');
+      }
+      setCommands(allCmds.slice(0, maxCommands));
       setColor(button.color);
+      setTextColor(button.textColor ?? '#ffffff');
       setAddText(button.addText ?? false);
     } else {
       setLabel('');
-      setCommand('');
-      setSecondaryCommand('');
+      setCommands(Array(maxCommands).fill(''));
       setColor('#662222');
+      setTextColor('#ffffff');
       setAddText(false);
     }
-  }, [button, visible]);
+  }, [button, visible, uiMode, maxCommands]);
 
   const handleSave = () => {
+    // Filter out empty commands
+    const nonEmptyCommands = commands.filter(cmd => cmd.trim() !== '');
+
     const newButton: LayoutButton = {
       id: button?.id || `btn_${Date.now()}`,
       col,
       row,
       label: label || '—',
-      command: command || '',
+      command: nonEmptyCommands[0] || '',
       color,
-      textColor: '#ffffff',
+      textColor,
       addText,
-      secondaryCommand: secondaryCommand || undefined,
+      alternativeCommands: nonEmptyCommands.length > 1 ? nonEmptyCommands.slice(1) : undefined,
+      // Preserve fixed and locked flags from original button
+      fixed: button?.fixed,
+      locked: button?.locked,
     };
     onSave(newButton);
     onClose();
@@ -97,32 +113,36 @@ export function ButtonEditModal({
               accessibilityHint="Texto corto que se muestra en el botón"
             />
 
-            <Text style={styles.label}>Comando{button?.locked ? ' (protegido)' : ''}</Text>
-            <TextInput
-              style={[styles.input, button?.locked && { opacity: 0.5 }]}
-              placeholder="Ej: enterrar"
-              placeholderTextColor="#888"
-              value={command}
-              onChangeText={setCommand}
-              autoCapitalize="none"
-              editable={!button?.locked}
-              accessible={true}
-              accessibilityLabel="Comando primario"
-              accessibilityHint={button?.locked ? 'Este comando está protegido' : 'Comando a enviar al pulsar el botón'}
-            />
+            <Text style={styles.label}>Comando</Text>
+            <Text style={styles.hint}>{uiMode === 'blind'
+              ? 'Comando que se ejecuta al pulsar el botón'
+              : 'El primero se ejecuta al pulsar. El segundo aparece como alternativa.'
+            }</Text>
 
-            <Text style={styles.label}>Comando Secundario (Swipe)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ej: soltar (opcional)"
-              placeholderTextColor="#888"
-              value={secondaryCommand}
-              onChangeText={setSecondaryCommand}
-              autoCapitalize="none"
-              accessible={true}
-              accessibilityLabel="Comando secundario"
-              accessibilityHint="Comando a enviar al deslizar el botón, opcional"
-            />
+            {commands.map((cmd, idx) => (
+              <View key={idx}>
+                <TextInput
+                  style={[
+                    styles.input,
+                    styles.commandInput,
+                    button?.locked && idx === 0 && { opacity: 0.5 }
+                  ]}
+                  placeholder={idx === 0 ? 'Comando principal' : `Opción ${idx} (opcional)`}
+                  placeholderTextColor="#888"
+                  value={cmd}
+                  onChangeText={(text) => {
+                    const newCmds = [...commands];
+                    newCmds[idx] = text;
+                    setCommands(newCmds);
+                  }}
+                  autoCapitalize="none"
+                  editable={!(button?.locked && idx === 0)}
+                  accessible={true}
+                  accessibilityLabel={idx === 0 ? 'Comando primario' : `Comando alternativo ${idx}`}
+                  accessibilityHint={idx === 0 ? 'Comando que se ejecuta al pulsar' : 'Comando alternativo que aparece en el modal'}
+                />
+              </View>
+            ))}
 
             <Text style={styles.label}>Color Fondo</Text>
             <View style={styles.colorGrid}>
@@ -142,19 +162,21 @@ export function ButtonEditModal({
               ))}
             </View>
 
-            <TouchableOpacity
-              style={styles.checkboxRow}
-              onPress={() => setAddText(!addText)}
-              accessible={true}
-              accessibilityLabel="Añadir texto al input"
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: addText }}
-            >
-              <View style={[styles.checkbox, addText && styles.checkboxChecked]}>
-                {addText && <Text style={styles.checkmark}>✓</Text>}
-              </View>
-              <Text style={styles.checkboxLabel}>Añadir texto al input</Text>
-            </TouchableOpacity>
+            {uiMode !== 'blind' && (
+              <TouchableOpacity
+                style={styles.checkboxRow}
+                onPress={() => setAddText(!addText)}
+                accessible={true}
+                accessibilityLabel="Añadir texto al input"
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: addText }}
+              >
+                <View style={[styles.checkbox, addText && styles.checkboxChecked]}>
+                  {addText && <Text style={styles.checkmark}>✓</Text>}
+                </View>
+                <Text style={styles.checkboxLabel}>Añadir texto al input</Text>
+              </TouchableOpacity>
+            )}
 
             <View style={styles.preview}>
               <Text style={styles.previewLabel}>Preview:</Text>
@@ -173,7 +195,7 @@ export function ButtonEditModal({
           </ScrollView>
 
           <View style={styles.actions}>
-            {button && !button.locked && (
+            {button && !button.locked && uiMode !== 'blind' && (
               <>
                 <TouchableOpacity
                   style={[styles.button, styles.deleteButton]}
@@ -287,6 +309,16 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 14,
     fontWeight: '500',
+  },
+  commandInput: {
+    marginBottom: 8,
+    fontSize: 13,
+  },
+  hint: {
+    fontSize: 12,
+    color: '#888',
+    fontStyle: 'italic',
+    marginBottom: 10,
   },
   colorGrid: {
     flexDirection: 'row',

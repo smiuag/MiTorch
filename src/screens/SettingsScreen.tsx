@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
@@ -8,7 +8,8 @@ import { loadSettings, saveSettings, AppSettings } from '../storage/settingsStor
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export function SettingsScreen({ navigation }: Props) {
-  const [settings, setSettings] = useState<AppSettings>({ fontSize: 14 });
+  const [settings, setSettings] = useState<AppSettings>({ fontSize: 14, encoding: 'utf8', uiMode: 'completo', onboardingDone: false });
+  const [encodingModalVisible, setEncodingModalVisible] = useState(false);
 
   useEffect(() => {
     loadSettings().then(setSettings);
@@ -16,7 +17,13 @@ export function SettingsScreen({ navigation }: Props) {
 
 
   const updateSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
-    const updated = { ...settings, [key]: value };
+    let updated = { ...settings, [key]: value };
+
+    // When switching to blind mode, auto-set encoding to latin1 (ISO-8859-1)
+    if (key === 'uiMode' && value === 'blind') {
+      updated = { ...updated, encoding: 'latin1' };
+    }
+
     setSettings(updated);
     saveSettings(updated);
   };
@@ -161,7 +168,90 @@ export function SettingsScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
 
+        {/* Encoding Section */}
+        <View style={[styles.sectionHeader, styles.marginTop]}>
+          <Text style={styles.sectionTitle}>Codificación de caracteres</Text>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Codificación</Text>
+            <Text style={styles.rowDesc}>
+              {settings.uiMode === 'blind' ? 'Automáticamente ISO-8859-1 en blind mode' : 'Selecciona la codificación para la conexión'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.encodingBtn}
+            onPress={() => setEncodingModalVisible(true)}
+          >
+            <Text style={styles.encodingBtnText}>
+              {settings.encoding === 'utf8' ? 'UTF-8' : settings.encoding.toUpperCase()}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
       </ScrollView>
+
+      {/* Encoding Selector Modal */}
+      <Modal
+        visible={encodingModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEncodingModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.encodingModalContent}>
+            <Text style={styles.encodingModalTitle}>Selecciona codificación</Text>
+            <FlatList
+              data={[
+                { label: 'UTF-8 (recomendado)', value: 'utf8' },
+                { label: 'ISO-8859-1 / Latin1', value: 'latin1' },
+                { label: 'ASCII', value: 'ascii' },
+                { label: 'CP437', value: 'cp437' },
+                { label: 'CP869', value: 'cp869' },
+                { label: 'ISO-8859-2', value: 'iso-8859-2' },
+                { label: 'ISO-8859-3', value: 'iso-8859-3' },
+                { label: 'ISO-8859-4', value: 'iso-8859-4' },
+                { label: 'ISO-8859-15', value: 'iso-8859-15' },
+                { label: 'ISO-8859-16', value: 'iso-8859-16' },
+                { label: 'Windows-1250', value: 'windows-1250' },
+                { label: 'Windows-1252', value: 'windows-1252' },
+                { label: 'MACINTOSH', value: 'macintosh' },
+              ]}
+              keyExtractor={(item) => item.value}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.encodingOption,
+                    settings.encoding === item.value && styles.encodingOptionSelected,
+                  ]}
+                  onPress={() => {
+                    updateSetting('encoding', item.value);
+                    setEncodingModalVisible(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.encodingOptionText,
+                      settings.encoding === item.value && styles.encodingOptionTextSelected,
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              scrollEnabled={true}
+              nestedScrollEnabled={true}
+            />
+            <TouchableOpacity
+              style={styles.encodingModalCloseBtn}
+              onPress={() => setEncodingModalVisible(false)}
+            >
+              <Text style={styles.encodingModalCloseBtnText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
     </SafeAreaView>
   );
@@ -312,5 +402,79 @@ const styles = StyleSheet.create({
   },
   modeButtonTextActive: {
     color: '#0c0',
+  },
+  encodingBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 6,
+    backgroundColor: '#0a3a0a',
+    borderWidth: 1,
+    borderColor: '#0c0',
+  },
+  encodingBtnDisabled: {
+    backgroundColor: '#1a1a1a',
+    borderColor: '#333',
+  },
+  encodingBtnText: {
+    color: '#0c0',
+    fontSize: 13,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+  },
+  encodingBtnTextDisabled: {
+    color: '#333',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  encodingModalContent: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    maxHeight: '80%',
+    borderWidth: 1,
+    borderColor: '#333',
+    overflow: 'hidden',
+  },
+  encodingModalTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    padding: 16,
+    fontFamily: 'monospace',
+  },
+  encodingOption: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a2a2a',
+  },
+  encodingOptionSelected: {
+    backgroundColor: '#0a3a0a',
+  },
+  encodingOptionText: {
+    color: '#888',
+    fontSize: 14,
+    fontFamily: 'monospace',
+  },
+  encodingOptionTextSelected: {
+    color: '#0c0',
+    fontWeight: 'bold',
+  },
+  encodingModalCloseBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#0c0',
+    borderTopWidth: 1,
+    borderTopColor: '#2a2a2a',
+  },
+  encodingModalCloseBtnText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    fontFamily: 'monospace',
   },
 });

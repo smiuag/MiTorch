@@ -1,6 +1,7 @@
 import { AccessibilityInfo } from 'react-native';
 import { Audio } from 'expo-av';
 import blindModeFiltersData from '../config/blindModeFilters.json';
+import { playerStatsService, PlayerVariables } from './playerStatsService';
 
 const soundModules = {
   'bloqueos/bloqueo-termina.wav': require('../../assets/sounds/bloqueos/bloqueo-termina.wav'),
@@ -52,25 +53,7 @@ export interface FilterGroup {
   patterns: FilterPattern[];
 }
 
-export interface PlayerVariables {
-  playerClass: string;
-  playerLevel: number;
-  playerHP: number;
-  playerMaxHP: number;
-  playerEnergy: number;
-  playerMaxEnergy: number;
-  concentrationActive: boolean;
-  inCombat: boolean;
-  playerXP: number;
-  playerImages: number;
-  playerSkins: number;
-  playerInertia: number;
-  playerAstuteness: number;
-  roomEnemies: string;
-  roomAllies: string;
-  roomCombatants: string;
-  roomExits: string;
-  hpHistory: { delta: number; label: string }[];
+export interface BlindModePlayerVariables extends PlayerVariables {
   activeHpAlert: 'none' | 'low50' | 'low30' | 'critical10';
 }
 
@@ -78,47 +61,175 @@ class BlindModeService {
   private filters: Record<string, FilterGroup>;
   private lineHistory: Map<string, number> = new Map();
   private lastAnnouncedTime: Record<string, number> = {};
-  private playerVariables: PlayerVariables;
+  private activeHpAlert: 'none' | 'low50' | 'low30' | 'critical10' = 'none';
   private activeFilters: Set<string>;
   private hpAlertInterval: ReturnType<typeof setInterval> | null = null;
   private lastHpPercent: number = 100;
+  private promptFilterRegexes: RegExp[] = [];
 
   constructor() {
     this.filters = { ...blindModeFiltersData.filters };
-    this.playerVariables = {
-      playerClass: 'desconocida',
-      playerLevel: 0,
-      playerHP: 0,
-      playerMaxHP: 0,
-      playerEnergy: 0,
-      playerMaxEnergy: 0,
-      concentrationActive: false,
-      inCombat: false,
-      playerXP: 0,
-      playerImages: 0,
-      playerSkins: 0,
-      playerInertia: 0,
-      playerAstuteness: 0,
-      roomEnemies: '',
-      roomAllies: '',
-      roomCombatants: '',
-      roomExits: '',
-      hpHistory: [],
-      activeHpAlert: 'none',
-    };
     this.activeFilters = new Set(
       blindModeFiltersData.classConfigs.generica.enabledFilters
     );
+
+    // Load and process prompt filters on initialization
+    this.loadPromptFilters();
+  }
+
+  /**
+   * Load and process blind mode prompt filters from raw alias_macros patterns
+   * Includes both "prompt" and "promptcombate" patterns
+   */
+  private loadPromptFilters() {
+    try {
+      // Pre-defined prompt patterns from alias_macros.set
+      // Both normal prompt and combat prompt patterns
+      const rawPatterns = [
+        // configurarpromptB
+        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lNM:$k$lLD:$K$l',
+        // configurarpromptBM
+        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lNM:$k$lLD:$K$lImágenes:$e$lPieles:$p$l',
+        // configurarpromptBI
+        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lNM:$k$lLD:$K$lInercia:$n$l',
+        // configurarpromptBMA
+        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lNM:$k$lLD:$K$lImágenes:$e$lPieles:$p$lAstucia:$t$l',
+        // configurarpromptA
+        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lNM:$b$lLD:$K$l',
+        // configurarpromptAM
+        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lNM:$b$lLD:$K$lImágenes:$e$lPieles:$p$l',
+        // configurarpromptAA
+        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lNM:$b$lLD:$K$lAstucia:$t$l',
+        // configurarpromptAMA
+        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lNM:$b$lLD:$K$lImágenes:$e$lPieles:$p$lAstucia:$t$l',
+        // configurarpromptX
+        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lJgd:$j$l',
+        // configurarpromptXM
+        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lJgd:$j$lImágenes:$e$lPieles:$p$l',
+        // configurarpromptXA
+        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lJgd:$j$lAstucia:$t$l',
+        // configurarpromptXMA
+        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lJgd:$j$lImágenes:$e$lPieles:$p$lAstucia:$t$l',
+      ];
+
+      // Note: Both prompt and promptcombate patterns are identical in alias_macros.set,
+      // so the same patterns apply to both normal and combat prompts
+      // Flatten all regex arrays into a single array
+      this.promptFilterRegexes = rawPatterns
+        .flatMap(pattern => this.convertPromptPatternToRegexArray(pattern));
+
+      console.log(`[BlindMode] Loaded ${this.promptFilterRegexes.length} prompt filter regex patterns (from ${rawPatterns.length} prompt patterns)`);
+    } catch (e) {
+      console.warn('[BlindMode] Error loading prompt filters:', e);
+      this.promptFilterRegexes = [];
+    }
+  }
+
+  /**
+   * Convert a prompt pattern to multiple regexes (one per line)
+   * Example: "$lPv:$v\$V Pe:$g\$G Xp:$x$lSL:$s" → [regex for "Pv:...", regex for "SL:..."]
+   * Returns array of regexes instead of a single one
+   * Handles character encoding issues (like corrupted accented characters)
+   */
+  private convertPromptPatternToRegexArray(pattern: string): RegExp[] {
+    try {
+      // Split pattern by $l to get individual lines
+      const lines = pattern.split(/\$l/).filter(line => line.trim().length > 0);
+      const regexes: RegExp[] = [];
+
+      for (const line of lines) {
+        const variables = /\$[vVgGxsakhKnepbtj]/g;
+
+        // FIRST: Normalize accented characters BEFORE any processing
+        // This ensures "Imágenes" becomes "Imagenes" in the pattern
+        let normalizedLine = line
+          .replace(/[áÁ]/g, 'a')  // á, Á → a
+          .replace(/[éÉ]/g, 'e')  // é, É → e
+          .replace(/[íÍ]/g, 'i')  // í, Í → i
+          .replace(/[óÓ]/g, 'o')  // ó, Ó → o
+          .replace(/[úÚ]/g, 'u')  // ú, Ú → u
+          .replace(/[üÜ]/g, 'u')  // ü, Ü → u
+          .replace(/[ñÑ]/g, 'n'); // ñ, Ñ → n
+
+        // SECOND: Replace variables with placeholder so they don't get escaped
+        let regexStr = normalizedLine
+          .replace(variables, '___DIGIT___');  // Temporarily replace variables
+
+        // THIRD: Escape special regex characters
+        regexStr = regexStr
+          .replace(/[\\^$.|?*+(){}\[\]]/g, '\\$&');  // Escape special regex chars
+
+        // FOURTH: Replace placeholders with digit pattern (zero or more digits)
+        // Using \d* instead of \d+ to match cases where value might be missing
+        regexStr = regexStr
+          .replace(/___DIGIT___/g, '\\d*');
+
+        // Make the pattern more flexible to match varying whitespace
+        regexStr = regexStr.replace(/\s+/g, '\\s*');
+
+        try {
+          regexes.push(new RegExp(regexStr, 'i'));
+        } catch (e) {
+          console.warn('[BlindMode] Failed to create regex for line:', line, e);
+        }
+      }
+
+      return regexes;
+    } catch (e) {
+      console.warn('[BlindMode] Failed to convert prompt pattern:', e);
+      return [];
+    }
+  }
+
+  /**
+   * Check if a line matches any prompt filter pattern
+   * Normalizes text to handle encoding issues with accented characters
+   */
+  private isPromptLine(text: string): boolean {
+    let cleanText = this.stripAnsiCodes(text);
+    const originalText = cleanText;
+
+    // Normalize accented characters to handle corruption issues
+    // This helps match lines even if they arrive with encoding issues
+    cleanText = cleanText
+      .replace(/[áÁa?]/g, 'a')  // á, Á, a, or corrupted → a
+      .replace(/[éÉe?]/g, 'e')  // é, É, e, or corrupted → e
+      .replace(/[íÍi?]/g, 'i')  // í, Í, i, or corrupted → i
+      .replace(/[óÓo?]/g, 'o')  // ó, Ó, o, or corrupted → o
+      .replace(/[úÚu?]/g, 'u')  // ú, Ú, u, or corrupted → u
+      .replace(/[üÜu?]/g, 'u')  // ü, Ü, u, or corrupted → u
+      .replace(/[ñÑn?]/g, 'n'); // ñ, Ñ, n, or corrupted → n
+
+    const isPrompt = this.promptFilterRegexes.some(regex => regex.test(cleanText));
+
+    // Log PL: and Jgd: lines for debugging
+    if (originalText.includes('PL:') || originalText.includes('Jgd:')) {
+      console.log(`[PROMPT_DEBUG] Original: "${originalText}"`);
+      console.log(`[PROMPT_DEBUG] Normalized: "${cleanText}"`);
+      console.log(`[PROMPT_DEBUG] IsPrompt: ${isPrompt}`);
+      if (!isPrompt) {
+        console.log(`[PROMPT_DEBUG] ⚠️ NOT FILTERED - checking regexes...`);
+        this.promptFilterRegexes.forEach((regex, idx) => {
+          if (regex.test(cleanText)) {
+            console.log(`[PROMPT_DEBUG] ✓ Matched regex #${idx}: ${regex}`);
+          }
+        });
+      }
+    }
+
+    return isPrompt;
   }
 
   /**
    * Update player variables from GMCP or status messages
    */
   updatePlayerVariables(variables: Partial<PlayerVariables>) {
-    const oldHP = this.playerVariables.playerHP;
-    const oldMaxHP = this.playerVariables.playerMaxHP;
+    const currentStats = playerStatsService.getPlayerVariables();
+    const oldHP = currentStats.playerHP;
+    const oldMaxHP = currentStats.playerMaxHP;
 
-    this.playerVariables = { ...this.playerVariables, ...variables };
+    // Update the unified service
+    playerStatsService.updatePlayerVariables(variables);
 
     // Update active filters based on character class
     if (variables.playerClass && variables.playerClass !== 'desconocida') {
@@ -140,10 +251,13 @@ class BlindModeService {
       const delta = newHP - prevHP;
       const label = delta > 0 ? `Vida ganada: ${delta}` : `Vida perdida: ${Math.abs(delta)}`;
 
-      this.playerVariables.hpHistory.push({ delta, label });
-      if (this.playerVariables.hpHistory.length > 10) {
-        this.playerVariables.hpHistory = this.playerVariables.hpHistory.slice(-10);
+      const currentStats = playerStatsService.getPlayerVariables();
+      const updatedHistory = [...currentStats.hpHistory, { delta, label }];
+      if (updatedHistory.length > 10) {
+        updatedHistory.splice(0, updatedHistory.length - 10);
       }
+
+      playerStatsService.updatePlayerVariables({ hpHistory: updatedHistory });
       console.log(`[HP_HISTORY] ${label}`);
     }
 
@@ -155,32 +269,32 @@ class BlindModeService {
     // Check thresholds and manage alerts
     if (newPercent <= 10 && prevPercent > 10) {
       // Entered critical zone (<=10%)
-      this.playerVariables.activeHpAlert = 'critical10';
+      this.activeHpAlert = 'critical10';
       this.playSoundLoop('alertas/hp-10.wav', 8000);
       this.announceMessage('VIDA CRÍTICA', 'high');
     } else if (newPercent <= 30 && prevPercent > 30) {
       // Entered warning zone (<=30%)
-      this.playerVariables.activeHpAlert = 'low30';
+      this.activeHpAlert = 'low30';
       this.playSound('alertas/hp-30.wav');
       this.announceMessage('Vida peligrosa', 'normal');
     } else if (newPercent <= 50 && prevPercent > 50) {
       // Entered caution zone (<=50%)
-      this.playerVariables.activeHpAlert = 'low50';
+      this.activeHpAlert = 'low50';
       this.playSound('alertas/hp-50.wav');
       this.announceMessage('Vida baja', 'normal');
     } else if (newPercent > 50 && prevPercent <= 50) {
       // Recovered above 50%
       this.stopSoundLoop();
-      this.playerVariables.activeHpAlert = 'none';
+      this.activeHpAlert = 'none';
       this.announceMessage('Recuperándose', 'low');
     } else if (newPercent > 30 && prevPercent <= 30) {
       // Recovered above 30%
       this.stopSoundLoop();
-      this.playerVariables.activeHpAlert = 'low50';
+      this.activeHpAlert = 'low50';
     } else if (newPercent > 10 && prevPercent <= 10) {
       // Recovered above 10%
       this.stopSoundLoop();
-      this.playerVariables.activeHpAlert = 'none';
+      this.activeHpAlert = 'none';
       this.announceMessage('Vida recuperada', 'low');
     }
 
@@ -238,6 +352,15 @@ class BlindModeService {
       console.log(`[BM] BLOQUEO DETECTADO: "${cleanText}"`);
     }
 
+    // First: Check if this is a prompt line (suppress prompt output from terminal)
+    if (this.isPromptLine(cleanText)) {
+      console.log(`[BM] ✓ PROMPT suppressed: "${cleanText}"`);
+      return {
+        shouldDisplay: false,
+        modifiedText: text,
+      };
+    }
+
     // Check all filter groups that are enabled
     for (const [groupName, group] of Object.entries(this.filters)) {
       if (!group.enabled) {
@@ -285,6 +408,7 @@ class BlindModeService {
     if (pattern.action === 'capture' && (pattern as any).captureVars) {
       const captureVars = (pattern as any).captureVars as string[];
       const capturedData: Record<string, any> = {};
+      const updates: Partial<PlayerVariables> = {};
 
       for (let i = 0; i < captureVars.length && i + 1 < regexMatch.length; i++) {
         const varName = captureVars[i];
@@ -294,9 +418,13 @@ class BlindModeService {
         const parsedValue = isNaN(Number(value)) ? value : Number(value);
         capturedData[varName] = parsedValue;
 
-        // Update internal PlayerVariables
-        (this.playerVariables as any)[varName] = parsedValue;
+        // Update unified PlayerVariables service
+        (updates as any)[varName] = parsedValue;
         console.log(`[CAPTURE] ${varName} = ${JSON.stringify(parsedValue)}`);
+      }
+
+      if (Object.keys(updates).length > 0) {
+        playerStatsService.updatePlayerVariables(updates);
       }
 
       return {
@@ -386,10 +514,12 @@ class BlindModeService {
 
       console.log(`[SOUND] ✓ soundPath encontrado en soundModules`);
 
-      // Set audio mode for playback
+      // Set audio mode for playback - compatible with both iOS and Android
       await Audio.setAudioModeAsync({
         playsInSilentModeIOS: true,
         staysActiveInBackground: false,
+        shouldDuckAndroid: false, // Don't lower volume when other audio is playing
+        interruptionModeAndroid: 1, // INTERRUPTION_MODE_DO_NOT_MIX - don't mix with other audio
       });
 
       // Get the module directly from require
@@ -439,10 +569,14 @@ class BlindModeService {
   }
 
   /**
-   * Get current player variables
+   * Get current player variables with blind-mode-specific alert status
    */
-  getPlayerVariables(): PlayerVariables {
-    return { ...this.playerVariables };
+  getPlayerVariables(): BlindModePlayerVariables {
+    const baseStats = playerStatsService.getPlayerVariables();
+    return {
+      ...baseStats,
+      activeHpAlert: this.activeHpAlert,
+    };
   }
 
   /**
@@ -471,10 +605,6 @@ class BlindModeService {
         delete this.lastAnnouncedTime[key];
       }
     });
-  }
-
-  getPlayerVariables(): PlayerVariables {
-    return { ...this.playerVariables };
   }
 }
 

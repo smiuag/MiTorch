@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -46,6 +46,7 @@ function ButtonCell({
   onEditButton,
   onSwapButtons,
   onSecondaryCommand,
+  onOpenActionModal,
 }: {
   col: number;
   row: number;
@@ -70,12 +71,7 @@ function ButtonCell({
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: (evt) => {
-          // En blind mode: aceptar 1+ dedos (longpress para editar, drag solo con 2+)
-          // Esto permite que screen reader use gestos de 1 dedo para otras interacciones
-          if (uiMode === 'blind') {
-            return evt.nativeEvent.touches?.length >= 1;
-          }
-          // Modo normal: 1 dedo funciona
+          // Enable PanResponder in all modes (needed for longpress)
           return true;
         },
         onMoveShouldSetPanResponder: () => isDraggingRef.current,
@@ -90,7 +86,7 @@ function ButtonCell({
             if (!button?.fixed) {
               onEditButton(col, row);
             }
-          }, 500);
+          }, 800);
         },
         onPanResponderMove: (evt) => {
           if (isLongPressTriggeredRef.current) return;
@@ -125,8 +121,9 @@ function ButtonCell({
 
           if (isDraggingRef.current) {
             // Drag gesture - execute secondary command
-            if (button?.secondaryCommand) {
-              onSecondaryCommand(button.secondaryCommand);
+            const secondaryCmd = button?.secondaryCommand || button?.alternativeCommands?.[0];
+            if (secondaryCmd) {
+              onSecondaryCommand(secondaryCmd);
             }
           } else {
             // Tap - execute primary command or moveMode swap
@@ -137,6 +134,8 @@ function ButtonCell({
                 onSwapButtons(col, row);
               }
             } else if (button?.command) {
+              // In blind mode: execute primary command directly (longpress for config)
+              // In completo mode: execute primary command (drag handles secondary)
               if (button.addText) {
                 onAddTextButton(button.command);
               } else {
@@ -150,59 +149,37 @@ function ButtonCell({
   );
 
   const handleAccessibilityAction = (event: AccessibilityActionEvent) => {
-    if (!button) return;
+    if (!button || !button.command) return;
 
-    const actionNames = ['activate', 'secondary', 'tertiary', 'quaternary', 'quinary'];
-    const allCommands = [
-      button.command,
-      ...(button.alternativeCommands || (button.secondaryCommand ? [button.secondaryCommand] : []))
-    ];
-
-    const actionIndex = actionNames.indexOf(event.nativeEvent.actionName);
-    if (actionIndex >= 0 && actionIndex < allCommands.length) {
-      const command = allCommands[actionIndex];
-      if (button.addText) {
-        onAddTextButton(command);
-      } else {
-        onSecondaryCommand(command);
-      }
+    // Execute primary command (same as tap)
+    if (button.addText) {
+      onAddTextButton(button.command);
+    } else {
+      onSendCommand(button.command);
     }
   };
-
-  const buildAccessibilityActions = () => {
-    if (uiMode !== 'blind') return undefined;
-
-    const allCommands = [
-      button?.command,
-      ...(button?.alternativeCommands || (button?.secondaryCommand ? [button?.secondaryCommand] : []))
-    ].filter(Boolean);
-
-    if (allCommands.length <= 1) return undefined;
-
-    const actionNames = ['activate', 'secondary', 'tertiary', 'quaternary', 'quinary'];
-    return allCommands.map((cmd, idx) => ({
-      name: actionNames[idx],
-      label: idx === 0 ? button?.label : `${button?.label} (${idx})`
-    }));
-  };
-
-  const accessibilityActions = buildAccessibilityActions();
 
   const buildAccessibilityHint = () => {
     if (!button) return 'Ranura de botón vacía';
 
+    // In blind mode: only announce the label
+    if (uiMode === 'blind') {
+      return button.label;
+    }
+
     const allCommands = [
       button.command,
       ...(button.alternativeCommands || (button.secondaryCommand ? [button.secondaryCommand] : []))
     ];
 
-    if (uiMode === 'blind' && allCommands.length > 1) {
-      return `${button.addText ? 'Escribir' : 'Ejecutar'}: ${allCommands.join(', ')}`;
+    if (uiMode === 'completo' && allCommands.length > 1) {
+      return `${button.addText ? 'Escribir' : 'Ejecutar'}: ${button.command}. Arrastra para: ${allCommands[1]}`;
     }
     return button.addText ? `Escribir: ${button.command}` : `Ejecutar: ${button.command}`;
   };
 
   const accessibilityHint = buildAccessibilityHint();
+
 
   return (
     <View
@@ -221,8 +198,8 @@ function ButtonCell({
       accessibilityLabel={button ? button.label : ''}
       accessibilityRole="button"
       accessibilityHint={accessibilityHint}
-      accessibilityActions={accessibilityActions}
       onAccessibilityAction={handleAccessibilityAction}
+      importantForAccessibility={button ? 'yes' : 'no'}
     >
       {button && (
         <Text
@@ -253,6 +230,7 @@ export function ButtonGrid({
   minimalista = false,
   minCols = GRID_COLS,
   minRows = GRID_ROWS,
+  onOpenActionModal,
 }: ButtonGridProps) {
   const { width } = useWindowDimensions();
 
@@ -358,6 +336,7 @@ export function ButtonGrid({
                 onEditButton={onEditButton}
                 onSwapButtons={onSwapButtons}
                 onSecondaryCommand={handleSecondaryCommand}
+                onOpenActionModal={onOpenActionModal}
               />
             );
           })}

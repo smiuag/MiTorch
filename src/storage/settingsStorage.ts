@@ -6,12 +6,14 @@ export interface AppSettings {
   fontSize: number;
   uiMode: 'completo' | 'blind';
   onboardingDone: boolean;
+  encoding: string;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   fontSize: 14,
   uiMode: 'completo',
   onboardingDone: false,
+  encoding: 'utf8',
 };
 
 export async function loadSettings(): Promise<AppSettings> {

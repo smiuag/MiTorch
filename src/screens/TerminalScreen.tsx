@@ -26,9 +26,10 @@ import { ButtonEditModal } from '../components/ButtonEditModal';
 import { RoomSearchResults } from '../components/RoomSearchResults';
 import { loadSettings } from '../storage/settingsStorage';
 import { MapService, MapRoom } from '../services/mapService';
-import { ButtonLayout, createDefaultLayout, createBlindModeLayout, loadLayout, saveLayout } from '../storage/layoutStorage';
+import { ButtonLayout, createDefaultLayout, createBlindModeLayout, loadLayout, saveLayout, loadServerLayout, saveServerLayout } from '../storage/layoutStorage';
 import { loadServers, saveServers } from '../storage/serverStorage';
 import { blindModeService } from '../services/blindModeService';
+import { playerStatsService } from '../services/playerStatsService';
 import { NORMAL_MODE, BLIND_MODE } from '../config/gridConfig';
 import { BlindChannelModal, ChannelMessage, nextMsgId } from '../components/BlindChannelModal';
 import { loadChannelAliases, saveChannelAliases } from '../storage/channelStorage';
@@ -60,6 +61,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [walking, setWalking] = useState(false);
   const [fontSize, setFontSize] = useState(14);
   const [uiMode, setUiMode] = useState<'completo' | 'blind'>('completo');
+  const [encoding, setEncoding] = useState('utf8');
   const [buttonLayout, setButtonLayout] = useState<ButtonLayout | null>(null);
   const [editButtonVisible, setEditButtonVisible] = useState(false);
   const [editButtonCol, setEditButtonCol] = useState(0);
@@ -71,6 +73,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [locateFeedback, setLocateFeedback] = useState<'success' | 'failed' | null>(null);
+  const [statFeedback, setStatFeedback] = useState<{ type: string; message: string } | null>(null);
   const [silentModeEnabled, setSilentModeEnabled] = useState(false);
   const [loginFailed, setLoginFailed] = useState(false);
   const [channels, setChannels] = useState<string[]>([]);
@@ -81,8 +84,10 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [roomEnemies, setRoomEnemies] = useState('');
   const [roomAllies, setRoomAllies] = useState('');
   const [hpHistory, setHpHistory] = useState<{ delta: number; label: string }[]>([]);
+  const [currentBlindPanel, setCurrentBlindPanel] = useState(1);
 
   const fontSizeRef = useRef(14);
+  const telnetRef = useRef<TelnetService | null>(null);
   const linesRef = useRef<MudLine[]>([]);
   const isCapturingAliasRef = useRef(false);
   const aliasBufferRef = useRef<string[]>([]);
@@ -96,9 +101,11 @@ export function TerminalScreen({ route, navigation }: Props) {
   const lastLineBlankRef = useRef(false);
   const recentLinesRef = useRef<string[]>([]);
   const intentionalLocateRef = useRef(false);
+  const waitingForIrsalaAfterLocateRef = useRef(false);
   const autoLoginRef = useRef(false);
   const textInputRef = useRef<TextInput>(null);
   const lastSentChannelTime = useRef(0);
+  const silentModeEnabledRef = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -110,6 +117,9 @@ export function TerminalScreen({ route, navigation }: Props) {
         }
         if (settings.uiMode) {
           setUiMode(settings.uiMode);
+        }
+        if (settings.encoding) {
+          setEncoding(settings.encoding);
         }
       })();
 
@@ -123,29 +133,56 @@ export function TerminalScreen({ route, navigation }: Props) {
   );
 
 
+  // Update button "IR" label dynamically in blind mode
+  useEffect(() => {
+    if (uiMode !== 'blind' || !buttonLayout) return;
+
+    const updatedButtons = buttonLayout.buttons.map((btn) => {
+      // Find IR button at col=1, row=0
+      if (btn.col === 1 && btn.row === 0 && btn.command === 'irsala') {
+        return {
+          ...btn,
+          label: walking ? 'STOP' : 'IR',
+          color: walking ? '#662222' : '#662266', // Red when stopping, purple when moving
+        };
+      }
+      return btn;
+    });
+
+    setButtonLayout({ buttons: updatedButtons });
+  }, [walking, uiMode]);
+
   useEffect(() => {
     // Reset auto-login state when server changes
     autoLoginRef.current = false;
     setLoginFailed(false);
 
     (async () => {
-      console.log(`[LAYOUT_LOAD] uiMode=${uiMode}, server=${server.name}`);
-      let layout = await loadLayout();
+      // Load server-specific button layout from storage
+      const serverLayout = await loadServerLayout(server.id);
 
-      // In Blind Mode: use createBlindModeLayout as base, merge any custom buttons
+      let layout: ButtonLayout;
+
       if (uiMode === 'blind') {
-        console.log(`[LAYOUT_LOAD] Cargando blind mode layout`);
-
+        // In Blind Mode: use createBlindModeLayout as base + merge any server customizations
         const blindLayout = createBlindModeLayout();
-        const fixedButtonIds = new Set(blindLayout.buttons.map(b => b.label)); // VID, SAL, etc
 
-        // Keep only non-fixed custom buttons from saved layout
-        const customButtons = layout.buttons.filter(btn => !fixedButtonIds.has(btn.label));
-
-        // Merge: fixed buttons from blind layout + custom buttons
-        layout = {
-          buttons: [...blindLayout.buttons, ...customButtons]
-        };
+        if (serverLayout.buttons.length > 0) {
+          // Merge: replace buttons from blindLayout with their customized versions (by position + panel)
+          layout = {
+            buttons: blindLayout.buttons.map(btn => {
+              const custom = serverLayout.buttons.find(c =>
+                c.col === btn.col && c.row === btn.row && c.blindPanel === btn.blindPanel
+              );
+              return custom || btn;
+            })
+          };
+        } else {
+          layout = blindLayout;
+        }
+      } else {
+        // Completo mode: use server-specific layout or default
+        layout = serverLayout.buttons.length > 0 ? serverLayout : createDefaultLayout();
       }
 
       // Replace LOGIN_NAME placeholder with actual server name
@@ -154,49 +191,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           ? { ...btn, command: server.name }
           : btn
       );
-      console.log(`[LAYOUT_LOAD] Botones cargados: ${layout.buttons.map(b => b.label).join(', ')}`);
       setButtonLayout({ buttons });
-
-      // In Blind Mode: use createBlindModeLayout + merge any blind-mode customizations
-      if (uiMode === 'blind') {
-        const blindLayout = createBlindModeLayout();
-        const blindButtonPositions = new Set(blindLayout.buttons.map(b => `${b.col},${b.row}`)); // "0,0", "1,0", etc.
-
-        if (server.buttonLayout) {
-          // Only keep customizations for buttons at positions that exist in blind mode
-          const serverButtons = (server.buttonLayout as ButtonLayout).buttons.map(btn =>
-            btn.command === '__LOGIN_NAME__'
-              ? { ...btn, command: server.name }
-              : btn
-          );
-          const blindModeCustomizations = serverButtons.filter(btn => blindButtonPositions.has(`${btn.col},${btn.row}`));
-
-          if (blindModeCustomizations.length > 0) {
-            // Merge: replace buttons from blindLayout with their customized versions (by position)
-            const customizedLayout = blindLayout.buttons.map(btn => {
-              const custom = blindModeCustomizations.find(c => c.col === btn.col && c.row === btn.row);
-              return custom || btn;
-            });
-            setButtonLayout({ buttons: customizedLayout });
-            console.log(`[LAYOUT_LOAD] Blind mode: usando createBlindModeLayout + customizations (${blindModeCustomizations.length})`);
-          } else {
-            setButtonLayout({ buttons: blindLayout.buttons });
-            console.log(`[LAYOUT_LOAD] Blind mode: usando createBlindModeLayout (sin customizations)`);
-          }
-        } else {
-          setButtonLayout({ buttons: blindLayout.buttons });
-          console.log(`[LAYOUT_LOAD] Blind mode: usando createBlindModeLayout (sin server.buttonLayout)`);
-        }
-      } else if (server.buttonLayout) {
-        // Modo completo: usar server.buttonLayout personalizado
-        console.log(`[LAYOUT_LOAD] Modo completo: usando server.buttonLayout personalizado`);
-        const serverButtons = (server.buttonLayout as ButtonLayout).buttons.map(btn =>
-          btn.command === '__LOGIN_NAME__'
-            ? { ...btn, command: server.name }
-            : btn
-        );
-        setButtonLayout({ buttons: serverButtons });
-      }
 
       // Load channel aliases for this server
       const aliases = await loadChannelAliases(server.id);
@@ -283,21 +278,34 @@ export function TerminalScreen({ route, navigation }: Props) {
       if (result.announcement) {
         shouldAnnounce = true;
         announcementText = result.announcement;
-        console.log(`[BLIND_PROCESS] Anuncio: "${announcementText}"`);
       }
 
       // Get sound from filter if present
       if (result.sound) {
         soundPath = result.sound;
-        console.log(`[BLIND_PROCESS] Sonido: "${soundPath}"`);
       }
 
-      // Sync captured data to React state
+      // Sync captured data to React state and playerStatsService
       if ((result as any).capturedData) {
         const captured = (result as any).capturedData;
-        if (captured.playerXP !== undefined) setPlayerXP(captured.playerXP);
-        if (captured.roomEnemies !== undefined) setRoomEnemies(captured.roomEnemies);
-        if (captured.roomAllies !== undefined) setRoomAllies(captured.roomAllies);
+        const updates: any = {};
+
+        if (captured.playerXP !== undefined) {
+          setPlayerXP(captured.playerXP);
+          updates.playerXP = captured.playerXP;
+        }
+        if (captured.roomEnemies !== undefined) {
+          setRoomEnemies(captured.roomEnemies);
+          updates.roomEnemies = captured.roomEnemies;
+        }
+        if (captured.roomAllies !== undefined) {
+          setRoomAllies(captured.roomAllies);
+          updates.roomAllies = captured.roomAllies;
+        }
+
+        if (Object.keys(updates).length > 0) {
+          playerStatsService.updatePlayerVariables(updates);
+        }
       }
 
       // Sync HP history from blindModeService
@@ -335,7 +343,6 @@ export function TerminalScreen({ route, navigation }: Props) {
 
     // Channel messages: always write to terminal, NEVER announce (even if silent mode is off)
     if (isChannelMessage) {
-      console.log(`[CHANNEL] Escribiendo canal en terminal (sin anunciar)`);
       if (isAtBottomRef.current) {
         setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
       }
@@ -343,21 +350,18 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
 
     // Non-channel messages: Announce filtered content and play sound in blind mode (only if silent mode is disabled)
-    if (shouldAnnounce && uiMode === 'blind' && !silentModeEnabled) {
-      console.log(`[TERMINAL_BLIND] Anunciando: "${announcementText}", sonido: "${soundPath}"`);
+    if (shouldAnnounce && uiMode === 'blind' && !silentModeEnabledRef.current) {
       blindModeService.announceMessage(announcementText, 'normal');
       if (soundPath) {
-        console.log(`[TERMINAL_BLIND] Reproduciendo sonido: "${soundPath}"`);
         blindModeService.playSound(soundPath);
       }
     }
 
     // Read all messages when silent mode is disabled (if not already announced by filters and not a channel)
-    if (!silentModeEnabled && uiMode === 'blind' && !shouldAnnounce && !isChannelMessage) {
+    if (!silentModeEnabledRef.current && uiMode === 'blind' && !shouldAnnounce && !isChannelMessage) {
       // Only read if it's not already announced by blind mode filters
       const cleanText = displayText.replace(/\x1b\[[0-9;]*m/g, '').trim();
       if (cleanText.length > 0) {
-        console.log(`[SILENT_MODE] Leyendo: "${cleanText.substring(0, 50)}..."`);
         blindModeService.announceMessage(cleanText, 'low');
       }
     }
@@ -374,8 +378,6 @@ export function TerminalScreen({ route, navigation }: Props) {
       processingAndAddLine(text);
     });
   };
-
-  const telnetRef = useRef<TelnetService | null>(null);
 
   const mapServiceRef = useRef(new MapService());
 
@@ -394,6 +396,11 @@ export function TerminalScreen({ route, navigation }: Props) {
       }, 200);
     }
   }, [lines.length]);
+
+  // Keep silentModeEnabled ref in sync so processingAndAddLine can read current value
+  useEffect(() => {
+    silentModeEnabledRef.current = silentModeEnabled;
+  }, [silentModeEnabled]);
 
   useEffect(() => {
     const telnet = new TelnetService(server, {
@@ -435,7 +442,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                       if (uiMode === 'blind') {
                         const exits = Object.keys(room.e || {}).sort().join(', ');
                         AccessibilityInfo.announceForAccessibility(
-                          `Localización encontrada. Sala: ${room.n}. Salidas: ${exits || 'ninguna'}`
+                          `${room.n}. Salidas: ${exits || 'ninguna'}`
                         );
                       }
                     } else {
@@ -445,9 +452,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
                       // Blind mode: announce failure
                       if (uiMode === 'blind') {
-                        AccessibilityInfo.announceForAccessibility(
-                          `No se encontró la sala: ${roomName}`
-                        );
+                        AccessibilityInfo.announceForAccessibility('No localizado');
                       }
                     }
                     // Deactivate locate after attempting (success or failure)
@@ -465,9 +470,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         autoLoginRef.current = false;
         setLoginFailed(false);
         if (uiMode === 'blind') {
-          AccessibilityInfo.announceForAccessibility(
-            `Conectado a ${server.name}. Comando listo para enviar.`
-          );
+          AccessibilityInfo.announceForAccessibility('Conectado');
         }
       },
       onClose: () => {
@@ -475,7 +478,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         autoLoginRef.current = false;
         setLoginFailed(false);
         if (uiMode === 'blind') {
-          AccessibilityInfo.announceForAccessibility('Desconectado del servidor');
+          AccessibilityInfo.announceForAccessibility('Desconectado');
         }
       },
       onError: (err: string) => {
@@ -485,7 +488,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         }
       },
       onGMCP: (module: string, data: any) => {
-        console.log(`[GMCP] ${module}:`, data);
+        console.log(`[GMCP] ${module}:`, JSON.stringify(data, null, 2));
         if (module === 'Room.Actual') {
           // Don't auto-locate on Room.Actual. Only manual ojear (locate) can trigger localization.
           // Room.Actual is used to sync movement after successful locate via ojear.
@@ -514,7 +517,7 @@ export function TerminalScreen({ route, navigation }: Props) {
             if (uiMode === 'blind') {
               const exits = Object.keys(room.e || {}).sort().join(', ');
               AccessibilityInfo.announceForAccessibility(
-                `Entraste a ${room.n}. Salidas disponibles: ${exits || 'ninguna'}`
+                `${room.n}. ${exits || 'ninguna'}`
               );
             }
           }
@@ -576,7 +579,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           lastSentChannelTime.current = Date.now();
         }
       },
-    });
+    }, encoding);
 
     telnetRef.current = telnet;
     telnet.connect();
@@ -584,7 +587,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     return () => {
       telnet.disconnect();
     };
-  }, [server, uiMode]);
+  }, [server, uiMode, encoding]);
 
   const stopWalk = useCallback(() => {
     if (walkTimeoutRef.current) {
@@ -643,19 +646,23 @@ export function TerminalScreen({ route, navigation }: Props) {
     processNextStep();
   }, []);
 
-  const updateMapPosition = useCallback((room: MapRoom) => {
-    setCurrentRoom(room);
-    mapServiceRef.current.setCurrentRoom(room.id);
-    const nearby = mapServiceRef.current.getNearbyRooms(room.x, room.y, room.z, 15);
-    setNearbyRooms(nearby);
-  }, []);
-
   const handleLocate = useCallback(() => {
     if (!telnetRef.current) return;
     recentLinesRef.current = [];
     intentionalLocateRef.current = true;
     telnetRef.current.send('ojear');
   }, []);
+
+  // When locate completes and we're waiting for irsala setup, do it now
+  useEffect(() => {
+    if (waitingForIrsalaAfterLocateRef.current && currentRoom) {
+      waitingForIrsalaAfterLocateRef.current = false;
+      setInputText('irsala ');
+      setTimeout(() => {
+        textInputRef.current?.focus();
+      }, 100);
+    }
+  }, [currentRoom]);
 
   const handleAddTextButton = useCallback((command: string) => {
     setInputText(command + ' ');
@@ -670,6 +677,31 @@ export function TerminalScreen({ route, navigation }: Props) {
     // Intercept "parar" or "stop" to stop walking
     if ((command.toLowerCase() === 'parar' || command.toLowerCase() === 'stop') && walking) {
       stopWalk();
+      return;
+    }
+
+    // Smart IR button in blind mode: locate → irsala flow
+    if (uiMode === 'blind' && command.toLowerCase() === 'irsala') {
+      if (walking) {
+        // If walking, stop
+        stopWalk();
+        return;
+      }
+
+      // If not localized, try to locate first
+      if (!currentRoom) {
+        waitingForIrsalaAfterLocateRef.current = true;
+        handleLocate();
+        setCommandHistory([command, ...commandHistory]);
+        return;
+      }
+
+      // If localized, open input with "irsala " pre-filled (same as completo mode)
+      setInputText('irsala ');
+      setTimeout(() => {
+        textInputRef.current?.focus();
+      }, 100);
+      setCommandHistory([command, ...commandHistory]);
       return;
     }
 
@@ -700,65 +732,94 @@ export function TerminalScreen({ route, navigation }: Props) {
       return;
     }
 
-    // Intercept stat consultation commands (blind mode)
-    if (uiMode === 'blind') {
-      const cmdLower = command.toLowerCase();
+    // Intercept stat consultation commands
+    const cmdLower = command.toLowerCase();
 
-      if (cmdLower === 'consultar vida') {
-        const msg = `Vida ${hp} de ${hpMax}`;
-        AccessibilityInfo.announceForAccessibility(msg);
-        setCommandHistory([command, ...commandHistory]);
-        return;
+    if (cmdLower === 'consultar vida') {
+      const message = `Vida: ${hp}/${hpMax}`;
+      if (uiMode === 'blind') {
+        AccessibilityInfo.announceForAccessibility(message);
+      } else {
+        setStatFeedback({ type: 'vida', message });
+        setTimeout(() => setStatFeedback(null), 2000);
       }
+      setCommandHistory([command, ...commandHistory]);
+      return;
+    }
 
-      if (cmdLower === 'consultar energia') {
-        const msg = `Energía ${energy} de ${energyMax}`;
-        AccessibilityInfo.announceForAccessibility(msg);
-        setCommandHistory([command, ...commandHistory]);
-        return;
+    if (cmdLower === 'consultar energia') {
+      const message = `Energía: ${energy}/${energyMax}`;
+      if (uiMode === 'blind') {
+        AccessibilityInfo.announceForAccessibility(message);
+      } else {
+        setStatFeedback({ type: 'energia', message });
+        setTimeout(() => setStatFeedback(null), 2000);
       }
+      setCommandHistory([command, ...commandHistory]);
+      return;
+    }
 
-      if (cmdLower === 'consultar salidas' || cmdLower === 'xp') {
-        if (cmdLower === 'consultar salidas') {
-          const playerVars = blindModeService.getPlayerVariables();
-          const exits = playerVars.roomExits || 'ninguna';
-          const msg = `Salidas: ${exits}`;
-          AccessibilityInfo.announceForAccessibility(msg);
-        } else if (cmdLower === 'xp') {
-          const playerVars = blindModeService.getPlayerVariables();
-          const msg = `Experiencia: ${playerVars.playerXP}`;
-          AccessibilityInfo.announceForAccessibility(msg);
-        }
-        setCommandHistory([command, ...commandHistory]);
-        return;
+    if (cmdLower === 'consultar salidas') {
+      const playerVars = blindModeService.getPlayerVariables();
+      const exits = playerVars.roomExits || 'ninguna';
+      if (uiMode === 'blind') {
+        AccessibilityInfo.announceForAccessibility(exits);
+      } else {
+        setStatFeedback({ type: 'salidas', message: `Salidas: ${exits}` });
+        setTimeout(() => setStatFeedback(null), 2000);
       }
+      setCommandHistory([command, ...commandHistory]);
+      return;
+    }
 
-      if (cmdLower === 'ultimo daño') {
-        const playerVars = blindModeService.getPlayerVariables();
+    if (cmdLower === 'xp') {
+      const playerVars = blindModeService.getPlayerVariables();
+      const xpMessage = `XP: ${playerVars.playerXP}`;
+      if (uiMode === 'blind') {
+        AccessibilityInfo.announceForAccessibility(String(playerVars.playerXP));
+      } else {
+        setStatFeedback({ type: 'xp', message: xpMessage });
+        setTimeout(() => setStatFeedback(null), 2000);
+      }
+      setCommandHistory([command, ...commandHistory]);
+      return;
+    }
+
+    if (cmdLower === 'ultimo daño') {
+      const playerVars = blindModeService.getPlayerVariables();
+      const damageMessage = playerVars.hpHistory.length > 0 ? playerVars.hpHistory[playerVars.hpHistory.length - 1].label : 'Sin registro';
+      if (uiMode === 'blind') {
         if (playerVars.hpHistory.length > 0) {
           const last = playerVars.hpHistory[playerVars.hpHistory.length - 1];
-          const msg = last.label;
-          AccessibilityInfo.announceForAccessibility(msg);
-        } else {
-          const msg = 'Sin cambios de vida aún';
-          AccessibilityInfo.announceForAccessibility(msg);
+          AccessibilityInfo.announceForAccessibility(last.label);
         }
-        setCommandHistory([command, ...commandHistory]);
-        return;
+      } else {
+        setStatFeedback({ type: 'daño', message: damageMessage });
+        setTimeout(() => setStatFeedback(null), 2000);
       }
+      setCommandHistory([command, ...commandHistory]);
+      return;
+    }
 
-      if (cmdLower === 'enemigos') {
-        const playerVars = blindModeService.getPlayerVariables();
-        if (playerVars.roomEnemies) {
-          const msg = `Enemigos: ${playerVars.roomEnemies}`;
-          AccessibilityInfo.announceForAccessibility(msg);
-        } else {
-          const msg = 'Sin enemigos aquí';
-          AccessibilityInfo.announceForAccessibility(msg);
-        }
-        setCommandHistory([command, ...commandHistory]);
-        return;
+    if (cmdLower === 'enemigos') {
+      const playerVars = blindModeService.getPlayerVariables();
+      const enemiesMessage = playerVars.roomEnemies || 'ninguno';
+      if (uiMode === 'blind') {
+        AccessibilityInfo.announceForAccessibility(enemiesMessage);
+      } else {
+        setStatFeedback({ type: 'enemigos', message: `Enemigos: ${enemiesMessage}` });
+        setTimeout(() => setStatFeedback(null), 2000);
       }
+      setCommandHistory([command, ...commandHistory]);
+      return;
+    }
+
+    // Handle panel switch in blind mode
+    if (command === '__SWITCH_PANEL__') {
+      const nextPanel = currentBlindPanel === 1 ? 2 : 1;
+      setCurrentBlindPanel(nextPanel);
+      AccessibilityInfo.announceForAccessibility(`Panel ${nextPanel}`);
+      return;
     }
 
     if (connected) {
@@ -771,7 +832,7 @@ export function TerminalScreen({ route, navigation }: Props) {
       stopWalk();
       addLine('--- Movimiento cancelado ---');
     }
-  }, [connected, commandHistory, walking, stopWalk, walkTo, handleLocate, addLine, hp, hpMax, uiMode]);
+  }, [connected, commandHistory, walking, stopWalk, walkTo, handleLocate, addLine, hp, hpMax, energy, energyMax, uiMode, currentBlindPanel]);
 
   const handleSendInput = () => {
     if (inputText.trim()) {
@@ -780,13 +841,19 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
   };
 
-  const handleCaptureAliases = () => {
-    isCapturingAliasRef.current = true;
-    aliasBufferRef.current = [];
-    sendCommand('alias');
-  };
-
   const handleEditButton = (col: number, row: number) => {
+    // Don't allow editing fixed buttons (like SWITCH and IR)
+    // In blind mode, filter by current panel
+    const button = buttonLayout?.buttons.find(b => {
+      if (b.col !== col || b.row !== row) return false;
+      if (uiMode === 'blind') {
+        return !b.blindPanel || b.blindPanel === currentBlindPanel;
+      }
+      return true;
+    });
+    if (button?.fixed) {
+      return;
+    }
     setEditButtonCol(col);
     setEditButtonRow(row);
     setEditButtonVisible(true);
@@ -795,38 +862,40 @@ export function TerminalScreen({ route, navigation }: Props) {
   const handleSaveEditButton = async (btn: any) => {
     if (!buttonLayout) return;
 
-    // In horizontal mode, swap coordinates to match storage
-    let storageCol = editButtonCol;
-    let storageRow = editButtonRow;
-    if (isHorizontal) {
-      storageCol = editButtonRow;
-      storageRow = editButtonCol;
+    try {
+      // In horizontal mode, swap coordinates to match storage
+      let storageCol = editButtonCol;
+      let storageRow = editButtonRow;
+      if (isHorizontal) {
+        storageCol = editButtonRow;
+        storageRow = editButtonCol;
+      }
+
+      const updated = buttonLayout.buttons.filter(b => {
+        // In blind mode, also check blindPanel to avoid removing buttons from other panels
+        if (uiMode === 'blind') {
+          return !(b.col === storageCol && b.row === storageRow && b.blindPanel === currentBlindPanel);
+        }
+        return !(b.col === storageCol && b.row === storageRow);
+      });
+      if (btn.label && btn.label !== '—') {
+        // Ensure blindPanel is preserved when saving
+        if (uiMode === 'blind') {
+          btn.blindPanel = currentBlindPanel;
+        }
+        updated.push(btn);
+      }
+
+      const newLayout = { buttons: updated };
+      setButtonLayout(newLayout);
+
+      // Save to server-specific storage without updating server state (avoids reconnection)
+      await saveServerLayout(server.id, newLayout);
+
+      setEditButtonVisible(false);
+    } catch (error) {
+      console.error('Error al guardar botón:', error);
     }
-
-    const updated = buttonLayout.buttons.filter(
-      b => !(b.col === storageCol && b.row === storageRow)
-    );
-    if (btn.label && btn.label !== '—') {
-      updated.push(btn);
-    }
-
-    const newLayout = { buttons: updated };
-    setButtonLayout(newLayout);
-
-    const updatedServer = {
-      ...server,
-      buttonLayout: newLayout,
-    };
-    setServer(updatedServer);
-
-    const servers = await loadServers();
-    const index = servers.findIndex(s => s.id === server.id);
-    if (index >= 0) {
-      servers[index] = updatedServer;
-      await saveServers(servers);
-    }
-
-    setEditButtonVisible(false);
   };
 
   const handleDeleteButton = async () => {
@@ -872,10 +941,24 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   const handleSwapButtons = async (targetCol: number, targetRow: number) => {
     if (moveMode && buttonLayout) {
-      const sourceBtn = buttonLayout.buttons.find(b => b.col === sourceCol && b.row === sourceRow);
-      const targetBtn = buttonLayout.buttons.find(b => b.col === targetCol && b.row === targetRow);
+      const findButton = (col: number, row: number) => {
+        return buttonLayout.buttons.find(b => {
+          if (b.col !== col || b.row !== row) return false;
+          if (uiMode === 'blind') {
+            return !b.blindPanel || b.blindPanel === currentBlindPanel;
+          }
+          return true;
+        });
+      };
+
+      const sourceBtn = findButton(sourceCol, sourceRow);
+      const targetBtn = findButton(targetCol, targetRow);
 
       const updated = buttonLayout.buttons.map(b => {
+        // In blind mode, only swap buttons from the same panel
+        if (uiMode === 'blind' && b.blindPanel !== currentBlindPanel) {
+          return b;
+        }
         if (b.col === sourceCol && b.row === sourceRow) {
           return { ...b, col: targetCol, row: targetRow };
         }
@@ -888,18 +971,8 @@ export function TerminalScreen({ route, navigation }: Props) {
       const newLayout = { buttons: updated };
       setButtonLayout(newLayout);
 
-      const updatedServer = {
-        ...server,
-        buttonLayout: newLayout,
-      };
-      setServer(updatedServer);
-
-      const servers = await loadServers();
-      const index = servers.findIndex(s => s.id === server.id);
-      if (index >= 0) {
-        servers[index] = updatedServer;
-        await saveServers(servers);
-      }
+      // Save to server-specific storage without updating server state (avoids reconnection)
+      await saveServerLayout(server.id, newLayout);
 
       setMoveMode(false);
     }
@@ -924,6 +997,25 @@ export function TerminalScreen({ route, navigation }: Props) {
     flatListRef.current?.scrollToIndex({ index: 0, animated: true });
   };
 
+  const handleUpArrow = () => {
+    if (historyIndex < commandHistory.length - 1) {
+      const newIndex = historyIndex + 1;
+      setHistoryIndex(newIndex);
+      setInputText(commandHistory[newIndex]);
+    }
+  };
+
+  const handleDownArrow = () => {
+    if (historyIndex > 0) {
+      const newIndex = historyIndex - 1;
+      setHistoryIndex(newIndex);
+      setInputText(commandHistory[newIndex]);
+    } else if (historyIndex === 0) {
+      setHistoryIndex(-1);
+      setInputText('');
+    }
+  };
+
   const isHorizontal = width > height;
   const availableHeight = height - insets.top - insets.bottom;
   const vitalsHeight = 35;
@@ -931,6 +1023,11 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   // Grid dimensions from config
   const isMinimalista = uiMode === 'blind';
+
+  // Filter buttons by current blind panel
+  const filteredButtons = uiMode === 'blind' && buttonLayout
+    ? buttonLayout.buttons.filter(btn => !btn.blindPanel || btn.blindPanel === currentBlindPanel)
+    : buttonLayout?.buttons || [];
   const modeConfig = isMinimalista ? BLIND_MODE : NORMAL_MODE;
   const gridCols = modeConfig.vertical.cols;
   const gridRows = modeConfig.vertical.rows;
@@ -962,25 +1059,6 @@ export function TerminalScreen({ route, navigation }: Props) {
   const horizontalButtonGridWidth = horizontalGridCols * horizontalCellSize + (horizontalGridCols - 1) * BUTTON_GAP;
   const horizontalRightPanelWidth = horizontalButtonGridWidth + vitalsWidth + 20;
   const horizontalTerminalWidth = width - horizontalRightPanelWidth - insets.left - insets.right;
-
-  const handleUpArrow = () => {
-    if (historyIndex < commandHistory.length - 1) {
-      const newIndex = historyIndex + 1;
-      setHistoryIndex(newIndex);
-      setInputText(commandHistory[newIndex]);
-    }
-  };
-
-  const handleDownArrow = () => {
-    if (historyIndex > 0) {
-      const newIndex = historyIndex - 1;
-      setHistoryIndex(newIndex);
-      setInputText(commandHistory[newIndex]);
-    } else if (historyIndex === 0) {
-      setHistoryIndex(-1);
-      setInputText('');
-    }
-  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -1047,6 +1125,20 @@ export function TerminalScreen({ route, navigation }: Props) {
                 ]}
               >
                 {locateFeedback === 'success' ? '✓ Localizado' : '✗ No localizado'}
+              </Text>
+            </View>
+          )}
+
+          {/* Stat Feedback - Show stat information */}
+          {statFeedback && (
+            <View
+              style={[styles.locateFeedback, styles.statFeedback]}
+              accessible={true}
+              accessibilityLabel={statFeedback.message}
+              accessibilityRole="alert"
+            >
+              <Text style={[styles.locateFeedbackText, styles.statFeedbackText]}>
+                {statFeedback.message}
               </Text>
             </View>
           )}
@@ -1125,7 +1217,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 </TouchableOpacity>
               )}
 
-              {uiMode === 'blind' && channels.length > 0 && (
+              {uiMode === 'blind' && (
                 <TouchableOpacity
                   style={[styles.sendButton, { flex: 0.4, backgroundColor: '#336699' }]}
                   onPress={() => setBlindChannelModalVisible(true)}
@@ -1135,6 +1227,29 @@ export function TerminalScreen({ route, navigation }: Props) {
                 >
                   <Text style={[styles.sendButtonText, { fontSize: 28 }]}>💬</Text>
                 </TouchableOpacity>
+              )}
+
+              {uiMode === 'completo' && (
+                <View style={styles.historyArrowsContainer}>
+                  <TouchableOpacity
+                    style={styles.historyArrowButton}
+                    onPress={handleUpArrow}
+                    accessible={true}
+                    accessibilityLabel="Comando anterior"
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.historyArrowText}>↑</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.historyArrowButton}
+                    onPress={handleDownArrow}
+                    accessible={true}
+                    accessibilityLabel="Comando siguiente"
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.historyArrowText}>↓</Text>
+                  </TouchableOpacity>
+                </View>
               )}
 
               <TextInput
@@ -1187,7 +1302,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         {(uiMode === 'completo' || uiMode === 'blind') && (
           <View style={[styles.buttonGridSection, { height: buttonGridHeight }]}>
             <ButtonGrid
-              buttons={buttonLayout?.buttons || []}
+              buttons={filteredButtons}
               onSendCommand={sendCommand}
               onAddTextButton={handleAddTextButton}
               onEditButton={handleEditButton}
@@ -1278,7 +1393,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                   </TouchableOpacity>
                 )}
 
-                {uiMode === 'blind' && channels.length > 0 && (
+                {uiMode === 'blind' && (
                   <TouchableOpacity
                     style={[styles.sendButton, { flex: 0.4, backgroundColor: '#336699' }]}
                     onPress={() => setBlindChannelModalVisible(true)}
@@ -1288,6 +1403,29 @@ export function TerminalScreen({ route, navigation }: Props) {
                   >
                     <Text style={[styles.sendButtonText, { fontSize: 28 }]}>💬</Text>
                   </TouchableOpacity>
+                )}
+
+                {uiMode === 'completo' && (
+                  <View style={styles.historyArrowsContainer}>
+                    <TouchableOpacity
+                      style={styles.historyArrowButton}
+                      onPress={handleUpArrow}
+                      accessible={true}
+                      accessibilityLabel="Comando anterior"
+                      accessibilityRole="button"
+                    >
+                      <Text style={styles.historyArrowText}>↑</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.historyArrowButton}
+                      onPress={handleDownArrow}
+                      accessible={true}
+                      accessibilityLabel="Comando siguiente"
+                      accessibilityRole="button"
+                    >
+                      <Text style={styles.historyArrowText}>↓</Text>
+                    </TouchableOpacity>
+                  </View>
                 )}
 
                 <TextInput
@@ -1356,7 +1494,7 @@ export function TerminalScreen({ route, navigation }: Props) {
             {/* ButtonGrid Horizontal */}
             <View style={[styles.buttonGridSection, { flex: 1 }]}>
               <ButtonGrid
-                buttons={buttonLayout?.buttons || []}
+                buttons={filteredButtons}
                 onSendCommand={sendCommand}
                 onAddTextButton={handleAddTextButton}
                 onEditButton={handleEditButton}
@@ -1369,6 +1507,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 minimalista={isMinimalista}
                 minCols={gridCols}
                 minRows={horizontalGridRows}
+                onOpenActionModal={(col, row) => setCurrentActionButton({ col, row })}
               />
             </View>
           </View>
@@ -1391,11 +1530,18 @@ export function TerminalScreen({ route, navigation }: Props) {
             visible={editButtonVisible}
             col={editButtonCol}
             row={editButtonRow}
-            button={buttonLayout?.buttons.find(b => b.col === searchCol && b.row === searchRow) || null}
+            button={buttonLayout?.buttons.find(b => {
+              if (b.col !== searchCol || b.row !== searchRow) return false;
+              if (uiMode === 'blind') {
+                return !b.blindPanel || b.blindPanel === currentBlindPanel;
+              }
+              return true;
+            }) || null}
             onSave={handleSaveEditButton}
             onDelete={handleDeleteButton}
             onMove={handleMoveButton}
             onClose={() => setEditButtonVisible(false)}
+            uiMode={uiMode}
           />
         );
       })()}
@@ -1594,5 +1740,30 @@ const styles = StyleSheet.create({
   },
   locateFeedbackTextFailed: {
     color: '#fff',
+  },
+  statFeedback: {
+    backgroundColor: '#223366',
+  },
+  statFeedbackText: {
+    color: '#88ccff',
+  },
+  historyArrowsContainer: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  historyArrowButton: {
+    width: 30,
+    height: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#333',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#555',
+  },
+  historyArrowText: {
+    color: '#0c0',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });

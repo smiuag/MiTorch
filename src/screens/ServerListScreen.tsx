@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -34,6 +34,10 @@ export function ServerListScreen({ navigation }: Props) {
   const [helpModalVisible, setHelpModalVisible] = useState(false);
   const [welcomeModalVisible, setWelcomeModalVisible] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState(true);
+
+  const nameInputRef = useRef<TextInput>(null);
+  const usernameInputRef = useRef<TextInput>(null);
+  const passwordInputRef = useRef<TextInput>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -136,8 +140,8 @@ export function ServerListScreen({ navigation }: Props) {
         onPress={() => navigation.navigate('Terminal', { server: item })}
         onLongPress={() => openEdit(item)}
         accessible={true}
-        accessibilityLabel={`${item.name} server`}
-        accessibilityHint={`Connects to ${item.host}:${item.port}. Double tap to connect, long press to edit`}
+        accessibilityLabel={`${item.name} personaje`}
+        accessibilityHint={`Conecta a ${item.host}:${item.port}. Doble tap para conectar, pulsa largo para editar`}
       >
         <View style={styles.serverInfo}>
           <Text style={styles.serverName}>{item.name}</Text>
@@ -148,9 +152,9 @@ export function ServerListScreen({ navigation }: Props) {
             style={[styles.actionBtn, styles.editBtn]}
             onPress={() => openEdit(item)}
             accessible={true}
-            accessibilityLabel="Edit"
+            accessibilityLabel="Editar"
             accessibilityRole="button"
-            accessibilityHint={`Edit ${item.name} server settings`}
+            accessibilityHint={`Editar configuración del personaje ${item.name}`}
           >
             <Text style={[styles.actionBtnText, styles.editBtnText]}>✎</Text>
           </TouchableOpacity>
@@ -168,9 +172,9 @@ export function ServerListScreen({ navigation }: Props) {
             style={[styles.actionBtn, styles.deleteBtn]}
             onPress={() => handleDelete(item)}
             accessible={true}
-            accessibilityLabel="Delete"
+            accessibilityLabel="Eliminar"
             accessibilityRole="button"
-            accessibilityHint={`Delete ${item.name} server`}
+            accessibilityHint={`Eliminar personaje ${item.name}`}
           >
             <Text style={[styles.actionBtnText, styles.deleteBtnText]}>✕</Text>
           </TouchableOpacity>
@@ -229,9 +233,9 @@ export function ServerListScreen({ navigation }: Props) {
           style={[styles.addBtn, !onboardingDone && { opacity: 0.4 }]}
           onPress={onboardingDone ? openAdd : () => setWelcomeModalVisible(true)}
           accessible={true}
-          accessibilityLabel="Añadir servidor"
+          accessibilityLabel="Añadir personaje"
           accessibilityRole="button"
-          accessibilityHint={onboardingDone ? "Crear un nuevo perfil de servidor" : "Primero debes elegir el modo de interfaz"}
+          accessibilityHint={onboardingDone ? "Crear un nuevo personaje" : "Primero debes elegir el modo de interfaz"}
         >
           <Text style={styles.addText}>+</Text>
         </TouchableOpacity>
@@ -290,16 +294,20 @@ export function ServerListScreen({ navigation }: Props) {
               {editingServer ? 'Editar personaje' : 'Añadir personaje'}
             </Text>
 
-            <Text style={styles.label}>Nombre</Text>
+            <Text style={styles.label}>Nombre del perfil</Text>
             <TextInput
               style={styles.modalInput}
               value={formName}
               onChangeText={setFormName}
               placeholder="Mi personaje"
               placeholderTextColor="#666"
+              returnKeyType="next"
+              onSubmitEditing={() => usernameInputRef.current?.focus()}
+              autoFocus={true}
               accessible={true}
-              accessibilityLabel="Nombre del servidor"
-              accessibilityHint="Ingresa un nombre para este servidor"
+              accessibilityLabel="Nombre del perfil"
+              accessibilityHint="Ingresa un nombre para este perfil"
+              ref={nameInputRef}
             />
 
             <Text style={styles.label}>Host</Text>
@@ -338,9 +346,12 @@ export function ServerListScreen({ navigation }: Props) {
               placeholderTextColor="#666"
               autoCapitalize="none"
               autoCorrect={false}
+              returnKeyType="next"
+              onSubmitEditing={() => passwordInputRef.current?.focus()}
+              ref={usernameInputRef}
               accessible={true}
-              accessibilityLabel="Personaje del servidor"
-              accessibilityHint="Ingresa tu personaje para auto-login"
+              accessibilityLabel="Nombre del personaje"
+              accessibilityHint="Ingresa tu nombre de personaje para auto-login"
             />
 
             <Text style={styles.label}>Contraseña (opcional)</Text>
@@ -353,8 +364,10 @@ export function ServerListScreen({ navigation }: Props) {
               secureTextEntry={true}
               autoCapitalize="none"
               autoCorrect={false}
+              returnKeyType="done"
+              ref={passwordInputRef}
               accessible={true}
-              accessibilityLabel="Contraseña del servidor"
+              accessibilityLabel="Contraseña"
               accessibilityHint="Ingresa tu contraseña para auto-login"
             />
 
@@ -375,7 +388,7 @@ export function ServerListScreen({ navigation }: Props) {
                 accessible={true}
                 accessibilityLabel="Guardar"
                 accessibilityRole="button"
-                accessibilityHint="Guarda la configuración del servidor"
+                accessibilityHint="Guarda la configuración del personaje"
               >
                 <Text style={styles.saveText}>Guardar</Text>
               </TouchableOpacity>

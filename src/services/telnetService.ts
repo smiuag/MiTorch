@@ -29,10 +29,12 @@ export class TelnetService {
   private socket: ReturnType<typeof TcpSocket.createConnection> | null = null;
   private handler: TelnetEventHandler;
   private server: ServerProfile;
+  private encoding: string;
 
-  constructor(server: ServerProfile, handler: TelnetEventHandler) {
+  constructor(server: ServerProfile, handler: TelnetEventHandler, encoding: string = 'utf8') {
     this.server = server;
     this.handler = handler;
+    this.encoding = encoding;
   }
 
   connect(): void {
@@ -122,20 +124,20 @@ export class TelnetService {
   }
 
   private emitText(bytes: number[]): void {
-    const encoding = this.server.encoding || 'utf8';
     let text: string;
 
     try {
       // Try to decode using the specified encoding
-      text = Buffer.from(bytes).toString(encoding as BufferEncoding);
-    } catch {
+      text = Buffer.from(bytes).toString(this.encoding as BufferEncoding);
+    } catch (e) {
       // Fallback to UTF-8 if specified encoding fails
+      console.warn(`[telnetService] Failed to decode with ${this.encoding}: ${e}`);
       text = Buffer.from(bytes).toString('utf8');
     }
 
     if (text) {
-      if (text.length > 100 || text.includes('bando')) {
-        console.log('[telnetService] emitText encoding:', encoding, 'bytes count:', bytes.length, 'text length:', text.length);
+      if (text.length > 100 || text.includes('bando') || text.includes('Imágenes') || text.includes('imagen')) {
+        console.log('[telnetService] ⚠️ ENCODING:', this.encoding, '| bytes:', bytes.length, '| text length:', text.length);
         console.log('[telnetService] First 100 chars:', JSON.stringify(text.slice(0, 100)));
       }
       this.handler.onData(text);
@@ -187,6 +189,7 @@ export class TelnetService {
       } else {
         module = text.slice(0, spaceIdx);
         const jsonStr = text.slice(spaceIdx + 1);
+        console.log(`[GMCP RAW] ${module}: ${jsonStr}`);
         try {
           payload = JSON.parse(jsonStr);
         } catch {
