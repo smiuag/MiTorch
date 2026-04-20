@@ -749,7 +749,9 @@ export function TerminalScreen({ route, navigation }: Props) {
   // In blind mode: input is on the left (with terminal), so ButtonGrid uses full height
   // In normal mode: input is on the right (with buttons), so subtract its height
   const heightForButtonGrid = isMinimalista ? availableHeight : (availableHeight - inputHeight);
-  const maxHorizontalCellSizeByHeight = heightForButtonGrid / horizontalGridRows;
+  // Account for gaps and padding between buttons
+  const horizontalButtonGapsTotal = (horizontalGridRows - 1) * BUTTON_GAP;
+  const maxHorizontalCellSizeByHeight = (heightForButtonGrid - horizontalButtonGapsTotal - BUTTON_PADDING_VERTICAL) / horizontalGridRows;
   const horizontalCellSize = Math.min(maxHorizontalCellSizeByWidth, maxHorizontalCellSizeByHeight);
   const horizontalButtonGridWidth = horizontalGridCols * horizontalCellSize + (horizontalGridCols - 1) * BUTTON_GAP;
   const horizontalRightPanelWidth = horizontalButtonGridWidth + vitalsWidth + 20;
