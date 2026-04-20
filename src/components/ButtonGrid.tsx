@@ -201,7 +201,8 @@ export function ButtonGrid({
   const displayRows = minimalista ? blindConfig.rows : GRID_ROWS;
 
   // Additional transformations in horizontal mode (after swap col/row and row inversion)
-  const additionalTransforms: { [key: string]: { col: number; row: number } } = {
+  // Normal mode: complex rearrangement of directions
+  const normalModeTransforms: { [key: string]: { col: number; row: number } } = {
     '2,2': { col: 5, row: 2 }, // AR → FU
     '3,2': { col: 5, row: 3 }, // AB → 3
     '4,2': { col: 5, row: 4 }, // DE → 2
@@ -220,6 +221,24 @@ export function ButtonGrid({
     '3,5': { col: 2, row: 3 }, // O → NE
   };
 
+  // Blind mode: 90-degree rotation of directions
+  const blindModeTransforms: { [key: string]: { col: number; row: number } } = {
+    '1,4': { col: 1, row: 2 }, // NO → NE position
+    '1,3': { col: 2, row: 2 }, // N → E position
+    '1,2': { col: 3, row: 2 }, // NE → SE position
+    '2,2': { col: 3, row: 3 }, // E → S position
+    '3,2': { col: 3, row: 4 }, // SE → SO position
+    '3,3': { col: 2, row: 4 }, // S → O position
+    '3,4': { col: 1, row: 4 }, // SO → NO position
+    '2,4': { col: 1, row: 3 }, // O → N position
+    '1,1': { col: 3, row: 0 }, // AR → FU position
+    '2,1': { col: 3, row: 1 }, // AB → DE position
+    '3,1': { col: 1, row: 1 }, // DE → AR position
+    '3,0': { col: 2, row: 1 }, // FU → AB position
+  };
+
+  const additionalTransforms = minimalista ? blindModeTransforms : normalModeTransforms;
+
   const buttonLookup = new Map<string, LayoutButton>();
   buttons.forEach((btn) => {
     // In horizontal mode, swap col/row for lookup (rotate 90°) and reverse row order
@@ -233,8 +252,8 @@ export function ButtonGrid({
       let finalCol = newCol;
       let finalRow = newRow;
 
-      // Apply additional transformations only for normal mode (not blind/minimalist)
-      if (!minimalista && additionalTransforms[key]) {
+      // Apply additional transformations for both modes (different tables per mode)
+      if (additionalTransforms[key]) {
         const transform = additionalTransforms[key];
         finalCol = transform.col;
         finalRow = transform.row;
