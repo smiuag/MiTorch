@@ -268,10 +268,11 @@ export function SettingsScreen({ navigation }: Props) {
             onValueChange={(value) => {
               const enabledSounds = Object.keys(settings.enabledSounds).reduce((acc, sound) => ({
                 ...acc,
-                [sound]: settings.uiMode === 'blind' ? true : false,
+                [sound]: settings.uiMode === 'blind' ? value : false,
               }), {});
-              updateSetting('soundsEnabled', value);
-              updateSetting('enabledSounds', enabledSounds);
+              const updated = { ...settings, soundsEnabled: value, enabledSounds };
+              setSettings(updated);
+              saveSettings(updated);
             }}
             trackColor={{ false: '#333', true: '#0c0' }}
             thumbColor={settings.soundsEnabled ? '#000' : '#666'}
