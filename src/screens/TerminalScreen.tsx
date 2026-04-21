@@ -33,6 +33,7 @@ import { loadServers, saveServers } from '../storage/serverStorage';
 import { blindModeService } from '../services/blindModeService';
 import { playerStatsService } from '../services/playerStatsService';
 import { soundConfigService } from '../services/soundConfigService';
+import { useSounds } from '../contexts/SoundContext';
 import { NORMAL_MODE, BLIND_MODE } from '../config/gridConfig';
 import { BlindChannelModal, ChannelMessage, nextMsgId } from '../components/BlindChannelModal';
 import { loadChannelAliases, saveChannelAliases } from '../storage/channelStorage';
@@ -45,6 +46,7 @@ let lineIdCounter = 0;
 export function TerminalScreen({ route, navigation }: Props) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const { playSound, detectSound } = useSounds();
   const { server: initialServer } = route.params;
 
   const [server, setServer] = useState(initialServer);
@@ -97,6 +99,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const aliasTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const walkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const walkPathRef = useRef<string[]>([]);
+  const playSoundRef = useRef(playSound);
   const walkStepRef = useRef(0);
   const walkActiveRef = useRef(false);
   const isAtBottomRef = useRef(true);
@@ -232,10 +235,10 @@ export function TerminalScreen({ route, navigation }: Props) {
       const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
       // Detect username prompt: "Introduce el nombre de tu personaje:"
       if (/introduce el nombre de tu personaje/i.test(withoutAnsi)) {
-        console.log('[AUTO-LOGIN] Detected username prompt, sending username...');
+        // [AUTO-LOGIN logs removed Detected username prompt, sending username...');
         autoLoginRef.current = 'waiting-for-password';
         setTimeout(() => {
-          console.log('[AUTO-LOGIN] Sending username:', server.username);
+          // [AUTO-LOGIN logs removed Sending username:', server.username);
           telnetRef.current?.send(server.username!);
         }, 200);
       }
@@ -246,10 +249,10 @@ export function TerminalScreen({ route, navigation }: Props) {
       const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
       // Detect password prompt: "Introduce la clave de tu ficha o de tu cuenta:"
       if (/introduce la clave de tu ficha o de tu cuenta/i.test(withoutAnsi)) {
-        console.log('[AUTO-LOGIN] Detected password prompt, sending password...');
+        // [AUTO-LOGIN logs removed Detected password prompt, sending password...');
         autoLoginRef.current = false; // Mark as completed before sending
         setTimeout(() => {
-          console.log('[AUTO-LOGIN] Sending password');
+          // [AUTO-LOGIN logs removed Sending password');
           telnetRef.current?.send(server.password!);
         }, 200);
       }
@@ -277,14 +280,19 @@ export function TerminalScreen({ route, navigation }: Props) {
     // Skip lines that are only template variables like <VERSION>, <NAME>, etc
     if (/^\s*<[A-Z_]+>\s*$/.test(text)) return;
 
+    // Detect sound FIRST (before any filtering) so it works in all modes
+    const soundPath = detectSound(text);
+    if (soundPath) {
+      console.log(`[TerminalScreen] detectSound found: "${soundPath}" from text: "${text.substring(0, 50)}..."`);
+    }
+
     // Blind mode: Process with filters
     let displayText = text;
     let shouldAnnounce = false;
     let announcementText = '';
-    let soundPath = '';
 
     if (text.includes('bloqueo')) {
-      console.log(`[CHECK] Procesando bloqueo: uiMode=${uiMode}`);
+      // [CHECK logs removed Procesando bloqueo: uiMode=${uiMode}`);
     }
 
     // Process line with blind mode service to detect patterns and sounds (both modes use this)
@@ -294,6 +302,11 @@ export function TerminalScreen({ route, navigation }: Props) {
 
       // Skip line if filter says to silence it
       if (!result.shouldDisplay) {
+        // Even if not displaying, still check if we should play sound
+        if (soundPath && soundConfigService.shouldPlaySound(soundPath) && !silentModeEnabledRef.current) {
+          console.log(`[ProcessLine] ✓ Silent msg with sound: "${soundPath}"`);
+          playSoundRef.current(soundPath);
+        }
         return;
       }
 
@@ -333,11 +346,6 @@ export function TerminalScreen({ route, navigation }: Props) {
       if (playerVars.hpHistory.length > 0) {
         setHpHistory(playerVars.hpHistory);
       }
-    }
-
-    // Extract sound from filter (works in both blind and completo modes)
-    if (result.sound) {
-      soundPath = result.sound;
     }
 
     // Detect player class from common text patterns
@@ -380,22 +388,14 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
 
     // Play sound if configured (independent of UI mode)
-    console.log(`[ProcessLine] soundPath="${soundPath}", silentMode=${silentModeEnabledRef.current}`);
+    const shouldPlayConfig = soundConfigService.shouldPlaySound(soundPath);
+    const isSilent = silentModeEnabledRef.current;
     if (soundPath) {
-      console.log(`[ProcessLine] soundPath exists, checking config...`);
-      if (soundConfigService.shouldPlaySound(soundPath)) {
-        console.log(`[ProcessLine] Config allows sound, checking silent mode...`);
-        if (!silentModeEnabledRef.current) {
-          console.log(`[ProcessLine] ✓ Playing sound: "${soundPath}"`);
-          blindModeService.playSound(soundPath);
-        } else {
-          console.log(`[ProcessLine] ✗ Silent mode is ON`);
-        }
-      } else {
-        console.log(`[ProcessLine] ✗ Sound not configured/enabled`);
-      }
-    } else {
-      console.log(`[ProcessLine] ✗ No soundPath`);
+      console.log(`[ProcessLine] soundPath="${soundPath}" hasPath=${!!soundPath} shouldPlay=${shouldPlayConfig} isSilent=${isSilent}`);
+    }
+    if (soundPath && soundConfigService.shouldPlaySound(soundPath) && !silentModeEnabledRef.current) {
+      console.log(`[ProcessLine] ✓ Playing sound: "${soundPath}"`);
+      playSoundRef.current(soundPath);
     }
 
     // Read all messages when silent mode is disabled (if not already announced by filters and not a channel)
@@ -443,6 +443,11 @@ export function TerminalScreen({ route, navigation }: Props) {
     silentModeEnabledRef.current = silentModeEnabled;
   }, [silentModeEnabled]);
 
+  // Keep playSound ref in sync so processingAndAddLine always has the latest version
+  useEffect(() => {
+    playSoundRef.current = playSound;
+  }, [playSound]);
+
   useEffect(() => {
     const telnet = new TelnetService(server, {
       onData: (text: string) => {
@@ -466,12 +471,12 @@ export function TerminalScreen({ route, navigation }: Props) {
               if (intentionalLocateRef.current) {
                 if (clean.match(/\[.*\]\s*$/)) {
                   let roomName = clean.replace(/^[>\]]\s*/, '');
-                  console.log('[LOCATE] Buscando:', roomName);
+                  // [LOCATE logs removed Buscando:', roomName);
                   const mapSvc = mapServiceRef.current;
                   if (mapSvc.isLoaded && roomName) {
                     const room = mapSvc.findRoom(roomName);
                     if (room) {
-                      console.log('[LOCATE] ✓ Encontrada:', room.n);
+                      // [LOCATE logs removed ✓ Encontrada:', room.n);
                       mapSvc.setCurrentRoom(room.id);
                       setCurrentRoom(room);
                       const nearby = mapSvc.getNearbyRooms(room.x, room.y, room.z, 15);
@@ -487,7 +492,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                         );
                       }
                     } else {
-                      console.log('[LOCATE] ✗ No encontrada en mapa');
+                      // [LOCATE logs removed ✗ No encontrada en mapa');
                       setLocateFeedback('failed');
                       setTimeout(() => setLocateFeedback(null), 2000);
 
@@ -529,7 +534,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         }
       },
       onGMCP: (module: string, data: any) => {
-        console.log(`[GMCP] ${module}:`, JSON.stringify(data, null, 2));
+        // [GMCP logs removed ${module}:`, JSON.stringify(data, null, 2));
         if (module === 'Room.Actual') {
           // Don't auto-locate on Room.Actual. Only manual ojear (locate) can trigger localization.
           // Room.Actual is used to sync movement after successful locate via ojear.

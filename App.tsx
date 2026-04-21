@@ -6,18 +6,20 @@ import { RootStackParamList } from './src/types';
 import { ServerListScreen } from './src/screens/ServerListScreen';
 import { TerminalScreen } from './src/screens/TerminalScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { SoundProvider } from './src/contexts/SoundContext';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
   return (
-    <NavigationContainer
-      theme={DarkTheme}
-      documentTitle={{
-        enabled: false,
-        formatter: (options) => `BlowTorch - ${options.title}`,
-      }}
-    >
+    <SoundProvider>
+      <NavigationContainer
+        theme={DarkTheme}
+        documentTitle={{
+          enabled: false,
+          formatter: (options) => `BlowTorch - ${options.title}`,
+        }}
+      >
       <StatusBar hidden={true} />
       <Stack.Navigator
         screenOptions={{
@@ -55,6 +57,7 @@ export default function App() {
           }}
         />
       </Stack.Navigator>
-    </NavigationContainer>
+      </NavigationContainer>
+    </SoundProvider>
   );
 }

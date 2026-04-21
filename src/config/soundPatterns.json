@@ -1,0 +1,82 @@
+{
+  "description": "Sound patterns for BlowTorch - detects game events and maps to sounds",
+  "version": "1.0",
+  "patterns": [
+    {
+      "regex": "\\[?El bloqueo '([^']+)' termina\\]?",
+      "sound": "bloqueos/bloqueo-termina.wav"
+    },
+    {
+      "regex": "Te estremeces y pierdes la concentración",
+      "sound": "combate/pierdes-concentracion.wav"
+    },
+    {
+      "regex": "Preparas los componentes del hechizo",
+      "sound": "hechizos/preparas.wav"
+    },
+    {
+      "regex": "Comienzas a formular el hechizo",
+      "sound": "hechizos/formulando.wav"
+    },
+    {
+      "regex": "resiste los efectos de tu hechizo",
+      "sound": "hechizos/resiste.wav"
+    },
+    {
+      "regex": "El destino de tu hechizo ha desaparecido",
+      "sound": "hechizos/fuera-rango.wav"
+    },
+    {
+      "regex": "Tus imágenes se desvanecen",
+      "sound": "hechizos/imagenes-off.wav"
+    },
+    {
+      "regex": "Tus clones ilusorios se dividen.*imágenes suba a (\\d+)",
+      "sound": "hechizos/imagenes-up.wav"
+    },
+    {
+      "regex": "Tu piel queda cubierta.*capas de piedra",
+      "sound": "hechizos/piel-piedra-on.wav"
+    },
+    {
+      "regex": "Alcanzas.*a .* con tu maniobra de (.+)!",
+      "sound": "combate/impacto.wav"
+    },
+    {
+      "regex": ".*logra esquivar.*tu maniobra",
+      "sound": "combate/esquivado.wav"
+    },
+    {
+      "regex": ".*logra parar.*tu maniobra",
+      "sound": "combate/bloqueado.wav"
+    },
+    {
+      "regex": "Tus objetivos ya no están al alcance",
+      "sound": "combate/objetivo-perdido.wav"
+    },
+    {
+      "regex": "Tu maniobra.*se ve interrumpida",
+      "sound": "combate/interrumpido.wav"
+    },
+    {
+      "regex": "críticamente",
+      "sound": "combate/critico.wav"
+    },
+    {
+      "regex": "\\[muerte\\]|has muerto|Your death|You have been killed",
+      "sound": "eventos/muerte.wav"
+    },
+    {
+      "regex": "\\[victoria\\]|enemigo ha sido aniquilado|Victory",
+      "sound": "eventos/victoria.wav"
+    },
+    {
+      "regex": "Ganas ([\\d,]+) puntos de experiencia",
+      "sound": "eventos/xp.wav"
+    },
+    {
+      "regex": "Tu salud ha aumentado",
+      "sound": "eventos/curacion.wav"
+    }
+  ]
+}

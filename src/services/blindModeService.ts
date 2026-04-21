@@ -118,7 +118,6 @@ class BlindModeService {
       this.promptFilterRegexes = rawPatterns
         .flatMap(pattern => this.convertPromptPatternToRegexArray(pattern));
 
-      console.log(`[BlindMode] Loaded ${this.promptFilterRegexes.length} prompt filter regex patterns (from ${rawPatterns.length} prompt patterns)`);
     } catch (e) {
       console.warn('[BlindMode] Error loading prompt filters:', e);
       this.promptFilterRegexes = [];
@@ -204,14 +203,14 @@ class BlindModeService {
 
     // Log PL: and Jgd: lines for debugging
     if (originalText.includes('PL:') || originalText.includes('Jgd:')) {
-      console.log(`[PROMPT_DEBUG] Original: "${originalText}"`);
-      console.log(`[PROMPT_DEBUG] Normalized: "${cleanText}"`);
-      console.log(`[PROMPT_DEBUG] IsPrompt: ${isPrompt}`);
+      // [PROMPT_DEBUG logs removed Original: "${originalText}"`);
+      // [PROMPT_DEBUG logs removed Normalized: "${cleanText}"`);
+      // [PROMPT_DEBUG logs removed IsPrompt: ${isPrompt}`);
       if (!isPrompt) {
-        console.log(`[PROMPT_DEBUG] ⚠️ NOT FILTERED - checking regexes...`);
+        // [PROMPT_DEBUG logs removed ⚠️ NOT FILTERED - checking regexes...`);
         this.promptFilterRegexes.forEach((regex, idx) => {
           if (regex.test(cleanText)) {
-            console.log(`[PROMPT_DEBUG] ✓ Matched regex #${idx}: ${regex}`);
+            // [PROMPT_DEBUG logs removed ✓ Matched regex #${idx}: ${regex}`);
           }
         });
       }
@@ -258,7 +257,7 @@ class BlindModeService {
       }
 
       playerStatsService.updatePlayerVariables({ hpHistory: updatedHistory });
-      console.log(`[HP_HISTORY] ${label}`);
+      // [HP_HISTORY logs removed ${label}`);
     }
 
     const newPercent = maxHP > 0 ? (newHP / maxHP) * 100 : 0;
@@ -343,18 +342,17 @@ class BlindModeService {
     announcement?: string;
     modifiedText: string;
     action?: FilterAction;
-    sound?: string;
   } {
     // Strip ANSI codes for pattern matching
     const cleanText = this.stripAnsiCodes(text);
 
     if (cleanText.includes('bloqueo')) {
-      console.log(`[BM] BLOQUEO DETECTADO: "${cleanText}"`);
+      // [BM logs removed BLOQUEO DETECTADO: "${cleanText}"`);
     }
 
     // First: Check if this is a prompt line (suppress prompt output from terminal)
     if (this.isPromptLine(cleanText)) {
-      console.log(`[BM] ✓ PROMPT suppressed: "${cleanText}"`);
+      // [BM logs removed ✓ PROMPT suppressed: "${cleanText}"`);
       return {
         shouldDisplay: false,
         modifiedText: text,
@@ -372,7 +370,7 @@ class BlindModeService {
           const regex = new RegExp(pattern.regex, 'i');
           const match = regex.exec(cleanText);
           if (match) {
-            console.log(`[BM] ✓ MATCH en ${groupName}: patrón="${pattern.regex}" silence=${pattern.silence}`);
+            // [BM logs removed ✓ MATCH en ${groupName}: patrón="${pattern.regex}" silence=${pattern.silence}`);
             return this.executeFilterAction(pattern, cleanText, groupName, match);
           }
         } catch (e) {
@@ -401,7 +399,6 @@ class BlindModeService {
     announcement?: string;
     modifiedText: string;
     action?: FilterAction;
-    sound?: string;
     capturedData?: Record<string, any>;
   } {
     // Handle capture actions
@@ -420,7 +417,7 @@ class BlindModeService {
 
         // Update unified PlayerVariables service
         (updates as any)[varName] = parsedValue;
-        console.log(`[CAPTURE] ${varName} = ${JSON.stringify(parsedValue)}`);
+        // [CAPTURE logs removed ${varName} = ${JSON.stringify(parsedValue)}`);
       }
 
       if (Object.keys(updates).length > 0) {
@@ -469,13 +466,11 @@ class BlindModeService {
     const shouldSilence = pattern.silence === true;
     const shouldAnnounce = pattern.announce === true || pattern.action === 'announce';
 
-    console.log(`[BM executeFilterAction] Returning sound="${pattern.sound}"`);
     return {
       shouldDisplay: !shouldSilence,
       announcement: shouldAnnounce ? message : undefined,
       modifiedText: text,
       action,
-      sound: pattern.sound,
     };
   }
 
@@ -501,19 +496,19 @@ class BlindModeService {
    */
   async playSound(soundPath: string) {
     try {
-      console.log(`[SOUND] Intentando reproducir: "${soundPath}"`);
+      // [SOUND logs removed Intentando reproducir: "${soundPath}"`);
 
       if (!soundPath) {
-        console.log(`[SOUND] ✗ soundPath está vacío`);
+        // [SOUND logs removed ✗ soundPath está vacío`);
         return;
       }
 
       if (!(soundPath in soundModules)) {
-        console.log(`[SOUND] ✗ soundPath="${soundPath}" NO existe en soundModules`);
+        // [SOUND logs removed ✗ soundPath="${soundPath}" NO existe en soundModules`);
         return;
       }
 
-      console.log(`[SOUND] ✓ soundPath encontrado en soundModules`);
+      // [SOUND logs removed ✓ soundPath encontrado en soundModules`);
 
       // Set audio mode for playback - compatible with both iOS and Android
       await Audio.setAudioModeAsync({
@@ -527,10 +522,10 @@ class BlindModeService {
       const module = soundModules[soundPath as keyof typeof soundModules];
 
       // Play sound directly from module
-      console.log(`[SOUND] Reproduciendo: "${soundPath}"`);
+      // [SOUND logs removed Reproduciendo: "${soundPath}"`);
       const { sound } = await Audio.Sound.createAsync(module);
       await sound.playAsync();
-      console.log(`[SOUND] ✓ Sonido reproduciendo: "${soundPath}"`);
+      // [SOUND logs removed ✓ Sonido reproduciendo: "${soundPath}"`);
 
       // Unload after playback completes
       setTimeout(() => {

@@ -6,10 +6,12 @@ import { RootStackParamList, GestureConfig } from '../types';
 import { loadSettings, saveSettings, AppSettings, rebuildGestures, AVAILABLE_SOUNDS, rebuildSounds } from '../storage/settingsStorage';
 import { DEFAULT_SETTINGS } from '../storage/settingsStorage';
 import { blindModeService } from '../services/blindModeService';
+import { useSounds } from '../contexts/SoundContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export function SettingsScreen({ navigation }: Props) {
+  const { playSound } = useSounds();
   const [settings, setSettings] = useState<AppSettings>(() => ({ ...DEFAULT_SETTINGS }));
   const [encodingModalVisible, setEncodingModalVisible] = useState(false);
   const [gestureModalVisible, setGestureModalVisible] = useState(false);
@@ -522,7 +524,9 @@ export function SettingsScreen({ navigation }: Props) {
                 </View>
                 <TouchableOpacity
                   style={styles.soundPreviewBtn}
-                  onPress={() => blindModeService.playSound(soundPath)}
+                  onPress={() => {
+                    playSound(soundPath);
+                  }}
                   accessible={true}
                   accessibilityLabel={`Preescuchar ${soundLabel}`}
                   accessibilityRole="button"

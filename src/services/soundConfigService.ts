@@ -8,22 +8,10 @@ export class SoundConfigService {
   }
 
   shouldPlaySound(soundPath: string | undefined): boolean {
-    console.log(`[SoundConfig] shouldPlaySound("${soundPath}")`);
-    if (!soundPath) {
-      console.log(`[SoundConfig] ✗ No soundPath`);
+    if (!soundPath || !this.settings || !this.settings.soundsEnabled) {
       return false;
     }
-    if (!this.settings) {
-      console.log(`[SoundConfig] ✗ No settings`);
-      return false;
-    }
-    if (!this.settings.soundsEnabled) {
-      console.log(`[SoundConfig] ✗ soundsEnabled=false`);
-      return false;
-    }
-    const enabled = this.settings.enabledSounds[soundPath] ?? false;
-    console.log(`[SoundConfig] enabledSounds["${soundPath}"] = ${enabled}`);
-    return enabled;
+    return this.settings.enabledSounds[soundPath] ?? false;
   }
 
   getInitialSoundsState(currentUIMode: 'blind' | 'completo'): {

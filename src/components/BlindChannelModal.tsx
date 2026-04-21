@@ -10,6 +10,7 @@ import {
   ScrollView,
   Keyboard,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AnsiSpan } from '../types';
@@ -63,6 +64,7 @@ export function BlindChannelModal({
   const [editAlias, setEditAlias] = useState('');
   const [askingAliasForChannel, setAskingAliasForChannel] = useState<string | null>(null);
   const [newAlias, setNewAlias] = useState('');
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const aliasInputRef = useRef<TextInput>(null);
   const messagesListRef = useRef<FlatList>(null);
 
@@ -100,6 +102,34 @@ export function BlindChannelModal({
       return () => clearTimeout(timer);
     }
   }, [askingAliasForChannel]);
+
+  // Listen to keyboard show/hide to adjust scroll
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+        // Esperar a que el teclado termine de subir antes de hacer scroll
+        setTimeout(() => {
+          if (messagesListRef.current) {
+            messagesListRef.current.scrollToEnd({ animated: true });
+          }
+        }, Platform.OS === 'ios' ? 250 : 300);
+      }
+    );
+
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardHeight(0);
+      }
+    );
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // Scroll to end when changing channel
   useEffect(() => {
@@ -194,7 +224,7 @@ export function BlindChannelModal({
 
   return (
     <Modal visible={true} animationType="slide" onRequestClose={onClose} transparent={false}>
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { paddingBottom: keyboardHeight }]}>
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Canales</Text>

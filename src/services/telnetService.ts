@@ -137,8 +137,8 @@ export class TelnetService {
 
     if (text) {
       if (text.length > 100 || text.includes('bando') || text.includes('Imágenes') || text.includes('imagen')) {
-        console.log('[telnetService] ⚠️ ENCODING:', this.encoding, '| bytes:', bytes.length, '| text length:', text.length);
-        console.log('[telnetService] First 100 chars:', JSON.stringify(text.slice(0, 100)));
+        // telnetService logs removed ⚠️ ENCODING:', this.encoding, '| bytes:', bytes.length, '| text length:', text.length);
+        // telnetService logs removed First 100 chars:', JSON.stringify(text.slice(0, 100)));
       }
       this.handler.onData(text);
     }
@@ -189,7 +189,7 @@ export class TelnetService {
       } else {
         module = text.slice(0, spaceIdx);
         const jsonStr = text.slice(spaceIdx + 1);
-        console.log(`[GMCP RAW] ${module}: ${jsonStr}`);
+        // GMCP RAW logs removed ${module}: ${jsonStr}`);
         try {
           payload = JSON.parse(jsonStr);
         } catch {
