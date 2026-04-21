@@ -46,8 +46,9 @@ export class TelnetService {
 
   connect(): void {
     try {
-      console.log('[TelnetService] Platform.OS:', Platform.OS);
-      if (Platform.OS === 'web') {
+      const isWeb = typeof window !== 'undefined' && !Platform.OS || Platform.OS === 'web';
+      console.log('[TelnetService] Is Web:', isWeb, 'Platform.OS:', Platform.OS);
+      if (isWeb) {
         console.log('[TelnetService] Connecting via WebSocket to:', this.proxyUrl);
         this.connectViaWebSocket();
       } else {
