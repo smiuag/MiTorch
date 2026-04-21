@@ -1,25 +1,25 @@
 import { AnsiSpan } from '../types';
 
 const ANSI_COLORS: Record<number, string> = {
-  30: '#000000', 31: '#cc0000', 32: '#00cc00', 33: '#cccc00',
-  34: '#0000cc', 35: '#cc00cc', 36: '#00cccc', 37: '#cccccc',
-  90: '#666666', 91: '#ff0000', 92: '#00ff00', 93: '#ffff00',
-  94: '#5555ff', 95: '#ff00ff', 96: '#00ffff', 97: '#ffffff',
+  30: '#444444', 31: '#dd5555', 32: '#55dd55', 33: '#dddd55',
+  34: '#5555dd', 35: '#dd55dd', 36: '#55dddd', 37: '#ffffff',
+  90: '#888888', 91: '#ff5555', 92: '#55ff55', 93: '#ffff55',
+  94: '#5555ff', 95: '#ff55ff', 96: '#55ffff', 97: '#ffffff',
 };
 
 const ANSI_BG_COLORS: Record<number, string> = {
-  40: '#000000', 41: '#cc0000', 42: '#00cc00', 43: '#cccc00',
-  44: '#0000cc', 45: '#cc00cc', 46: '#00cccc', 47: '#cccccc',
-  100: '#666666', 101: '#ff0000', 102: '#00ff00', 103: '#ffff00',
-  104: '#5555ff', 105: '#ff00ff', 106: '#00ffff', 107: '#ffffff',
+  40: '#444444', 41: '#dd5555', 42: '#55dd55', 43: '#dddd55',
+  44: '#5555dd', 45: '#dd55dd', 46: '#55dddd', 47: '#ffffff',
+  100: '#888888', 101: '#ff5555', 102: '#55ff55', 103: '#ffff55',
+  104: '#5555ff', 105: '#ff55ff', 106: '#55ffff', 107: '#ffffff',
 };
 
 const ANSI_256_COLORS: string[] = (() => {
   const colors: string[] = [];
   // 0-15: standard + bright colors
   const std = [
-    '#000000', '#cc0000', '#00cc00', '#cccc00', '#0000cc', '#cc00cc', '#00cccc', '#cccccc',
-    '#666666', '#ff0000', '#00ff00', '#ffff00', '#5555ff', '#ff00ff', '#00ffff', '#ffffff',
+    '#444444', '#dd5555', '#55dd55', '#dddd55', '#5555dd', '#dd55dd', '#55dddd', '#ffffff',
+    '#888888', '#ff5555', '#55ff55', '#ffff55', '#5555ff', '#ff55ff', '#55ffff', '#ffffff',
   ];
   colors.push(...std);
   // 16-231: 6x6x6 color cube
@@ -73,10 +73,11 @@ function applyParams(state: AnsiState, params: number[]): void {
     } else if (p === 24) {
       state.underline = undefined;
     } else if (p >= 30 && p <= 37) {
-      state.fg = ANSI_COLORS[state.bold ? p + 60 : p];
+      state.fg = ANSI_COLORS[p];
     } else if (p === 38 && params[i + 1] === 5) {
       // 256-color foreground
-      state.fg = ANSI_256_COLORS[params[i + 2]] ?? undefined;
+      const colorIndex = params[i + 2];
+      state.fg = ANSI_256_COLORS[colorIndex] ?? undefined;
       i += 2;
     } else if (p === 38 && params[i + 1] === 2) {
       // 24-bit foreground
@@ -88,7 +89,8 @@ function applyParams(state: AnsiState, params: number[]): void {
     } else if (p >= 40 && p <= 47) {
       state.bg = ANSI_BG_COLORS[p];
     } else if (p === 48 && params[i + 1] === 5) {
-      state.bg = ANSI_256_COLORS[params[i + 2]] ?? undefined;
+      const colorIndex = params[i + 2];
+      state.bg = ANSI_256_COLORS[colorIndex] ?? undefined;
       i += 2;
     } else if (p === 48 && params[i + 1] === 2) {
       const r = params[i + 2], g = params[i + 3], b = params[i + 4];

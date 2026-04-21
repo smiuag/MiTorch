@@ -108,6 +108,8 @@ export function ButtonEditModal({
               value={label}
               onChangeText={setLabel}
               autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
               accessible={true}
               accessibilityLabel="Etiqueta del botón"
               accessibilityHint="Texto corto que se muestra en el botón"
@@ -136,6 +138,8 @@ export function ButtonEditModal({
                     setCommands(newCmds);
                   }}
                   autoCapitalize="none"
+                  autoCorrect={false}
+                  spellCheck={false}
                   editable={!(button?.locked && idx === 0)}
                   accessible={true}
                   accessibilityLabel={idx === 0 ? 'Comando primario' : `Comando alternativo ${idx}`}

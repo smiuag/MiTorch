@@ -229,6 +229,9 @@ export function BlindChannelModal({
               returnKeyType="send"
               blurOnSubmit={false}
               onSubmitEditing={handleSendMessage}
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
               accessibilityLabel="Escribir mensaje"
               accessibilityHint={`Mensaje para canal ${activeChannel}`}
             />
@@ -275,6 +278,7 @@ export function BlindChannelModal({
                 onChangeText={setNewAlias}
                 autoCapitalize="none"
                 autoCorrect={false}
+                spellCheck={false}
                 placeholderTextColor="#555"
                 accessibilityLabel="Alias del canal"
               />
@@ -310,6 +314,7 @@ export function BlindChannelModal({
                 onChangeText={setEditAlias}
                 autoCapitalize="none"
                 autoCorrect={false}
+                spellCheck={false}
                 placeholderTextColor="#555"
                 accessibilityLabel="Nuevo alias"
               />
