@@ -153,7 +153,7 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMod
           {currentRoom.n}
         </Text>
 
-        <View style={styles.mapArea} pointerEvents="none">
+        <View style={styles.mapArea} pointerEvents="box-none">
           {mapContent.lines.map(line => {
             const dx = line.x2 - line.x1;
             const dy = line.y2 - line.y1;
