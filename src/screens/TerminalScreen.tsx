@@ -125,6 +125,17 @@ export function TerminalScreen({ route, navigation }: Props) {
   const scrollVelocityRef = useRef(0);
   const scrollMomentumRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const currentScrollOffsetRef = useRef(0);
+  const pendingTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const isMountedRef = useRef(true);
+
+  // Cleanup all pending timeouts on unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      pendingTimeoutsRef.current.forEach(id => clearTimeout(id));
+      pendingTimeoutsRef.current.clear();
+    };
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -237,10 +248,12 @@ export function TerminalScreen({ route, navigation }: Props) {
       if (/introduce el nombre de tu personaje/i.test(withoutAnsi)) {
         // [AUTO-LOGIN logs removed Detected username prompt, sending username...');
         autoLoginRef.current = 'waiting-for-password';
-        setTimeout(() => {
+        const id = setTimeout(() => {
           // [AUTO-LOGIN logs removed Sending username:', server.username);
           telnetRef.current?.send(server.username!);
+          pendingTimeoutsRef.current.delete(id);
         }, 200);
+        pendingTimeoutsRef.current.add(id);
       }
     }
 
@@ -251,10 +264,12 @@ export function TerminalScreen({ route, navigation }: Props) {
       if (/introduce la clave de tu ficha o de tu cuenta/i.test(withoutAnsi)) {
         // [AUTO-LOGIN logs removed Detected password prompt, sending password...');
         autoLoginRef.current = false; // Mark as completed before sending
-        setTimeout(() => {
+        const id = setTimeout(() => {
           // [AUTO-LOGIN logs removed Sending password');
           telnetRef.current?.send(server.password!);
+          pendingTimeoutsRef.current.delete(id);
         }, 200);
+        pendingTimeoutsRef.current.add(id);
       }
     }
 
@@ -377,7 +392,11 @@ export function TerminalScreen({ route, navigation }: Props) {
     // Channel messages: always write to terminal, NEVER announce (even if silent mode is off)
     if (isChannelMessage) {
       if (isAtBottomRef.current) {
-        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
+        const id = setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: false });
+          pendingTimeoutsRef.current.delete(id);
+        }, 50);
+        pendingTimeoutsRef.current.add(id);
       }
       return;
     }
@@ -408,7 +427,11 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
 
     if (isAtBottomRef.current) {
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
+      const id = setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+        pendingTimeoutsRef.current.delete(id);
+      }, 50);
+      pendingTimeoutsRef.current.add(id);
     }
   };
 
@@ -673,6 +696,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
     const STEP_DELAY = 1100;
     const processNextStep = () => {
+      if (!isMountedRef.current) return;
       const step = walkStepRef.current;
       const allPaths = walkPathRef.current;
       if (step < allPaths.length && walkActiveRef.current) {
@@ -686,7 +710,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         walkPathRef.current = [];
         walkStepRef.current = 0;
         walkActiveRef.current = false;
-        setWalking(false);
+        if (isMountedRef.current) setWalking(false);
       }
     };
     processNextStep();
@@ -704,17 +728,21 @@ export function TerminalScreen({ route, navigation }: Props) {
     if (waitingForIrsalaAfterLocateRef.current && currentRoom) {
       waitingForIrsalaAfterLocateRef.current = false;
       setInputText('irsala ');
-      setTimeout(() => {
+      const id = setTimeout(() => {
         textInputRef.current?.focus();
+        pendingTimeoutsRef.current.delete(id);
       }, 100);
+      pendingTimeoutsRef.current.add(id);
     }
   }, [currentRoom]);
 
   const handleAddTextButton = useCallback((command: string) => {
     setInputText(command + ' ');
-    setTimeout(() => {
+    const id = setTimeout(() => {
       textInputRef.current?.focus();
+      pendingTimeoutsRef.current.delete(id);
     }, 100);
+    pendingTimeoutsRef.current.add(id);
   }, []);
 
   const sendCommand = useCallback((command: string) => {
@@ -869,7 +897,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
 
     if (connected) {
-      telnetRef.current.send(command);
+      telnetRef.current?.send(command);
       setCommandHistory([command, ...commandHistory]);
     }
 

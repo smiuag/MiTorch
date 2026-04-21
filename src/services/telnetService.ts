@@ -1,4 +1,5 @@
 import TcpSocket from 'react-native-tcp-socket';
+import { Platform } from 'react-native';
 import { ServerProfile } from '../types';
 
 // Telnet command bytes
@@ -27,9 +28,11 @@ export type TelnetEventHandler = {
 
 export class TelnetService {
   private socket: ReturnType<typeof TcpSocket.createConnection> | null = null;
+  private webSocket: WebSocket | null = null;
   private handler: TelnetEventHandler;
   private server: ServerProfile;
   private encoding: string;
+  private proxyUrl: string = 'ws://localhost:8080'; // Cambiar al URL del proxy en producción
 
   constructor(server: ServerProfile, handler: TelnetEventHandler, encoding: string = 'utf8') {
     this.server = server;
@@ -37,31 +40,90 @@ export class TelnetService {
     this.encoding = encoding;
   }
 
+  setProxyUrl(url: string): void {
+    this.proxyUrl = url;
+  }
+
   connect(): void {
     try {
-      this.socket = TcpSocket.createConnection(
-        { host: this.server.host, port: this.server.port },
-        () => {
-          this.handler.onConnect();
-        }
-      );
-
-      this.socket.on('data', (data: Buffer | string) => {
-        const bytes = typeof data === 'string'
-          ? Array.from(data).map(c => c.charCodeAt(0))
-          : Array.from(data);
-        this.processBytes(bytes);
-      });
-
-      this.socket.on('close', () => {
-        this.handler.onClose();
-      });
-
-      this.socket.on('error', (error: Error) => {
-        this.handler.onError(error.message);
-      });
+      if (Platform.OS === 'web') {
+        this.connectViaWebSocket();
+      } else {
+        this.connectViaTCP();
+      }
     } catch (e: any) {
       this.handler.onError(e.message ?? 'Connection failed');
+    }
+  }
+
+  private connectViaTCP(): void {
+    this.socket = TcpSocket.createConnection(
+      { host: this.server.host, port: this.server.port },
+      () => {
+        this.handler.onConnect();
+      }
+    );
+
+    this.socket.on('data', (data: Buffer | string) => {
+      const bytes = typeof data === 'string'
+        ? Array.from(data).map(c => c.charCodeAt(0))
+        : Array.from(data);
+      this.processBytes(bytes);
+    });
+
+    this.socket.on('close', () => {
+      this.handler.onClose();
+    });
+
+    this.socket.on('error', (error: Error) => {
+      this.handler.onError(error.message);
+    });
+  }
+
+  private connectViaWebSocket(): void {
+    try {
+      this.webSocket = new WebSocket(this.proxyUrl);
+      this.webSocket.binaryType = 'arraybuffer';
+
+      this.webSocket.onopen = () => {
+        // Enviar comando de conexión al proxy
+        this.webSocket!.send(JSON.stringify({
+          type: 'connect',
+          host: this.server.host,
+          port: this.server.port
+        }));
+      };
+
+      this.webSocket.onmessage = (event) => {
+        if (typeof event.data === 'string') {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'connected') {
+              this.handler.onConnect();
+            } else if (msg.type === 'closed') {
+              this.handler.onClose();
+            } else if (msg.type === 'error') {
+              this.handler.onError(msg.message);
+            }
+          } catch {
+            // No es JSON, ignorar
+          }
+        } else if (event.data instanceof ArrayBuffer) {
+          // Datos binarios del MUD
+          const bytes = Array.from(new Uint8Array(event.data));
+          this.processBytes(bytes);
+        }
+      };
+
+      this.webSocket.onclose = () => {
+        this.handler.onClose();
+      };
+
+      this.webSocket.onerror = (error) => {
+        this.handler.onError('WebSocket error: ' + error);
+      };
+    } catch (e: any) {
+      this.handler.onError(e.message ?? 'WebSocket connection failed');
     }
   }
 
@@ -216,28 +278,43 @@ export class TelnetService {
   }
 
   private sendCommand(cmd: number, opt: number): void {
-    if (this.socket) {
-      this.socket.write(Buffer.from([IAC, cmd, opt]));
-    }
+    const buffer = Buffer.from([IAC, cmd, opt]);
+    this.writeToSocket(buffer);
   }
 
   send(text: string): void {
+    const data = text + '\r\n';
+    this.writeToSocket(Buffer.from(data, 'utf8'));
+  }
+
+  private writeToSocket(buffer: Buffer): void {
     if (this.socket) {
-      const data = text + '\r\n';
-      this.socket.write(Buffer.from(data, 'utf8'));
+      this.socket.write(buffer);
+    } else if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
+      this.webSocket.send(JSON.stringify({
+        type: 'data',
+        payload: buffer.toString('base64')
+      }));
     }
   }
 
   disconnect(): void {
     if (this.socket) {
       try {
+        this.socket.removeAllListeners();
         this.socket.destroy();
       } catch {}
       this.socket = null;
     }
+    if (this.webSocket) {
+      try {
+        this.webSocket.close();
+      } catch {}
+      this.webSocket = null;
+    }
   }
 
   get isConnected(): boolean {
-    return this.socket !== null;
+    return this.socket !== null || (this.webSocket !== null && this.webSocket.readyState === WebSocket.OPEN);
   }
 }
