@@ -1474,16 +1474,28 @@ export function TerminalScreen({ route, navigation }: Props) {
               </TouchableOpacity>
 
               {uiMode === 'completo' && (
-                <TouchableOpacity
-                  style={[styles.sendButton, { backgroundColor: '#336699' }]}
-                  onPress={() => setBlindChannelModalVisible(true)}
-                  accessible={true}
-                  accessibilityLabel="Abrir canales"
-                  accessibilityRole="button"
-                  accessibilityHint="Abre el panel de mensajes de canales"
-                >
-                  <Text style={styles.sendButtonText}>💬</Text>
-                </TouchableOpacity>
+                <>
+                  <TouchableOpacity
+                    style={[styles.sendButton, { backgroundColor: '#336699' }]}
+                    onPress={() => setBlindChannelModalVisible(true)}
+                    accessible={true}
+                    accessibilityLabel="Abrir canales"
+                    accessibilityRole="button"
+                    accessibilityHint="Abre el panel de mensajes de canales"
+                  >
+                    <Text style={styles.sendButtonText}>💬</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.sendButton, { backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
+                    onPress={() => setSilentModeEnabled(!silentModeEnabled)}
+                    accessible={true}
+                    accessibilityLabel={`Silenciar sonidos ${silentModeEnabled ? 'desactivado' : 'activado'}`}
+                    accessibilityRole="button"
+                    accessibilityHint="Activa/desactiva los sonidos de eventos"
+                  >
+                    <Text style={styles.sendButtonText}>{silentModeEnabled ? '🔇' : '🔊'}</Text>
+                  </TouchableOpacity>
+                </>
               )}
             </>
           ) : (
@@ -1721,16 +1733,28 @@ export function TerminalScreen({ route, navigation }: Props) {
                 </TouchableOpacity>
 
                 {uiMode === 'completo' && (
-                  <TouchableOpacity
-                    style={[styles.sendButton, { backgroundColor: '#336699' }]}
-                    onPress={() => setBlindChannelModalVisible(true)}
-                    accessible={true}
-                    accessibilityLabel="Abrir canales"
-                    accessibilityRole="button"
-                    accessibilityHint="Abre el panel de mensajes de canales"
-                  >
-                    <Text style={styles.sendButtonText}>💬</Text>
-                  </TouchableOpacity>
+                  <>
+                    <TouchableOpacity
+                      style={[styles.sendButton, { backgroundColor: '#336699' }]}
+                      onPress={() => setBlindChannelModalVisible(true)}
+                      accessible={true}
+                      accessibilityLabel="Abrir canales"
+                      accessibilityRole="button"
+                      accessibilityHint="Abre el panel de mensajes de canales"
+                    >
+                      <Text style={styles.sendButtonText}>💬</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.sendButton, { backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
+                      onPress={() => setSilentModeEnabled(!silentModeEnabled)}
+                      accessible={true}
+                      accessibilityLabel={`Silenciar sonidos ${silentModeEnabled ? 'desactivado' : 'activado'}`}
+                      accessibilityRole="button"
+                      accessibilityHint="Activa/desactiva los sonidos de eventos"
+                    >
+                      <Text style={styles.sendButtonText}>{silentModeEnabled ? '🔇' : '🔊'}</Text>
+                    </TouchableOpacity>
+                  </>
                 )}
               </>
             ) : (
