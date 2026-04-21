@@ -469,6 +469,7 @@ class BlindModeService {
     const shouldSilence = pattern.silence === true;
     const shouldAnnounce = pattern.announce === true || pattern.action === 'announce';
 
+    console.log(`[BM executeFilterAction] Returning sound="${pattern.sound}"`);
     return {
       shouldDisplay: !shouldSilence,
       announcement: shouldAnnounce ? message : undefined,

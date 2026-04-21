@@ -378,8 +378,22 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
 
     // Play sound if configured (independent of UI mode)
-    if (soundPath && soundConfigService.shouldPlaySound(soundPath) && !silentModeEnabledRef.current) {
-      blindModeService.playSound(soundPath);
+    console.log(`[ProcessLine] soundPath="${soundPath}", silentMode=${silentModeEnabledRef.current}`);
+    if (soundPath) {
+      console.log(`[ProcessLine] soundPath exists, checking config...`);
+      if (soundConfigService.shouldPlaySound(soundPath)) {
+        console.log(`[ProcessLine] Config allows sound, checking silent mode...`);
+        if (!silentModeEnabledRef.current) {
+          console.log(`[ProcessLine] ✓ Playing sound: "${soundPath}"`);
+          blindModeService.playSound(soundPath);
+        } else {
+          console.log(`[ProcessLine] ✗ Silent mode is ON`);
+        }
+      } else {
+        console.log(`[ProcessLine] ✗ Sound not configured/enabled`);
+      }
+    } else {
+      console.log(`[ProcessLine] ✗ No soundPath`);
     }
 
     // Read all messages when silent mode is disabled (if not already announced by filters and not a channel)
