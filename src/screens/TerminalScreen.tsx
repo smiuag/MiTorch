@@ -287,8 +287,11 @@ export function TerminalScreen({ route, navigation }: Props) {
       console.log(`[CHECK] Procesando bloqueo: uiMode=${uiMode}`);
     }
 
+    console.log(`[ProcessLine] CHECK: uiMode="${uiMode}"`);
     if (uiMode === 'blind') {
+      console.log(`[ProcessLine] ✓ In BLIND mode, calling blindModeService.processLine()`);
       const result = blindModeService.processLine(text);
+      console.log(`[ProcessLine] result.sound="${result.sound}"`);
 
       // Skip line if filter says to silence it
       if (!result.shouldDisplay) {
