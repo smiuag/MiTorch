@@ -32,6 +32,7 @@ import { ButtonLayout, createDefaultLayout, createBlindModeLayout, loadLayout, s
 import { loadServers, saveServers } from '../storage/serverStorage';
 import { blindModeService } from '../services/blindModeService';
 import { playerStatsService } from '../services/playerStatsService';
+import { soundConfigService } from '../services/soundConfigService';
 import { NORMAL_MODE, BLIND_MODE } from '../config/gridConfig';
 import { BlindChannelModal, ChannelMessage, nextMsgId } from '../components/BlindChannelModal';
 import { loadChannelAliases, saveChannelAliases } from '../storage/channelStorage';
@@ -126,6 +127,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     useCallback(() => {
       (async () => {
         const settings = await loadSettings();
+        soundConfigService.setSettings(settings);
         if (settings.fontSize) {
           setFontSize(settings.fontSize);
           fontSizeRef.current = settings.fontSize;
@@ -370,12 +372,14 @@ export function TerminalScreen({ route, navigation }: Props) {
       return;
     }
 
-    // Non-channel messages: Announce filtered content and play sound in blind mode (only if silent mode is disabled)
+    // Non-channel messages: Announce filtered content in blind mode (only if silent mode is disabled)
     if (shouldAnnounce && uiMode === 'blind' && !silentModeEnabledRef.current) {
       blindModeService.announceMessage(announcementText, 'normal');
-      if (soundPath) {
-        blindModeService.playSound(soundPath);
-      }
+    }
+
+    // Play sound if configured (independent of UI mode)
+    if (soundPath && soundConfigService.shouldPlaySound(soundPath) && !silentModeEnabledRef.current) {
+      blindModeService.playSound(soundPath);
     }
 
     // Read all messages when silent mode is disabled (if not already announced by filters and not a channel)

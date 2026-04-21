@@ -10,7 +10,31 @@ export interface AppSettings {
   encoding: string;
   gesturesEnabled: boolean;
   gestures: GestureConfig[];
+  soundsEnabled: boolean;
+  enabledSounds: Record<string, boolean>;
 }
+
+export const AVAILABLE_SOUNDS = {
+  'bloqueos/bloqueo-termina.wav': 'Bloqueo termina',
+  'combate/pierdes-concentracion.wav': 'Pierdes concentración',
+  'hechizos/preparas.wav': 'Preparas hechizo',
+  'hechizos/formulando.wav': 'Formulando',
+  'hechizos/resiste.wav': 'Resiste',
+  'hechizos/fuera-rango.wav': 'Fuera de rango',
+  'hechizos/imagenes-off.wav': 'Imágenes desactivadas',
+  'hechizos/imagenes-up.wav': 'Imágenes activadas',
+  'hechizos/piel-piedra-on.wav': 'Piel de piedra',
+  'combate/impacto.wav': 'Impacto',
+  'combate/esquivado.wav': 'Esquivado',
+  'combate/bloqueado.wav': 'Bloqueado',
+  'combate/objetivo-perdido.wav': 'Objetivo perdido',
+  'combate/interrumpido.wav': 'Interrumpido',
+  'combate/critico.wav': 'Crítico',
+  'eventos/muerte.wav': 'Muerte',
+  'eventos/victoria.wav': 'Victoria',
+  'eventos/xp.wav': 'XP',
+  'eventos/curacion.wav': 'Curación',
+} as const;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   fontSize: 14,
@@ -18,6 +42,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   onboardingDone: false,
   encoding: 'utf8',
   gesturesEnabled: true,
+  soundsEnabled: false,
+  enabledSounds: Object.keys(AVAILABLE_SOUNDS).reduce((acc, sound) => ({
+    ...acc,
+    [sound]: false,
+  }), {}),
   gestures: [
     { type: 'doubletap', enabled: true, command: 'responder ', opensKeyboard: true },
     { type: 'swipe_up', enabled: true, command: 'norte', opensKeyboard: false },
@@ -59,6 +88,11 @@ export function rebuildGestures(settings: AppSettings): AppSettings {
   });
 
   return { ...settings, gestures: rebuilt };
+}
+
+export function rebuildSounds(settings: AppSettings): AppSettings {
+  const merged = { ...DEFAULT_SETTINGS.enabledSounds, ...settings.enabledSounds };
+  return { ...settings, enabledSounds: merged };
 }
 
 export async function saveSettings(settings: AppSettings): Promise<void> {

@@ -3,8 +3,9 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, FlatList, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, GestureConfig } from '../types';
-import { loadSettings, saveSettings, AppSettings, rebuildGestures } from '../storage/settingsStorage';
+import { loadSettings, saveSettings, AppSettings, rebuildGestures, AVAILABLE_SOUNDS, rebuildSounds } from '../storage/settingsStorage';
 import { DEFAULT_SETTINGS } from '../storage/settingsStorage';
+import { blindModeService } from '../services/blindModeService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
@@ -12,6 +13,7 @@ export function SettingsScreen({ navigation }: Props) {
   const [settings, setSettings] = useState<AppSettings>(() => ({ ...DEFAULT_SETTINGS }));
   const [encodingModalVisible, setEncodingModalVisible] = useState(false);
   const [gestureModalVisible, setGestureModalVisible] = useState(false);
+  const [soundModalVisible, setSoundModalVisible] = useState(false);
 
   useEffect(() => {
     loadSettings().then(setSettings);
@@ -29,6 +31,7 @@ export function SettingsScreen({ navigation }: Props) {
     // Rebuild gestures when switching modes
     if (key === 'uiMode') {
       updated = rebuildGestures(updated);
+      updated = rebuildSounds(updated);
     }
 
     setSettings(updated);
@@ -246,6 +249,44 @@ export function SettingsScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
 
+        {/* Sounds Section */}
+        <View style={[styles.sectionHeader, styles.marginTop]}>
+          <Text style={styles.sectionTitle}>Sonidos</Text>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Usar sonidos</Text>
+            <Text style={styles.rowDesc}>
+              {settings.uiMode === 'blind'
+                ? 'Sonidos activados por defecto en modo blind'
+                : 'Activa sonidos para eventos del juego'}
+            </Text>
+          </View>
+          <Switch
+            value={settings.soundsEnabled}
+            onValueChange={(value) => {
+              const enabledSounds = Object.keys(settings.enabledSounds).reduce((acc, sound) => ({
+                ...acc,
+                [sound]: settings.uiMode === 'blind' ? true : false,
+              }), {});
+              updateSetting('soundsEnabled', value);
+              updateSetting('enabledSounds', enabledSounds);
+            }}
+            trackColor={{ false: '#333', true: '#0c0' }}
+            thumbColor={settings.soundsEnabled ? '#000' : '#666'}
+          />
+        </View>
+
+        {settings.soundsEnabled && (
+          <TouchableOpacity
+            style={[styles.row, styles.gestureConfigBtn]}
+            onPress={() => setSoundModalVisible(true)}
+          >
+            <Text style={styles.gestureConfigBtnText}>🔊 Configurar sonidos</Text>
+          </TouchableOpacity>
+        )}
+
       </ScrollView>
 
       {/* Gesture Configuration Modal */}
@@ -451,6 +492,65 @@ export function SettingsScreen({ navigation }: Props) {
             </TouchableOpacity>
           </View>
         </View>
+      </Modal>
+
+      {/* Sounds Configuration Modal */}
+      <Modal
+        visible={soundModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSoundModalVisible(false)}
+      >
+        <SafeAreaView style={styles.container}>
+          <View style={styles.header}>
+            <TouchableOpacity
+              onPress={() => setSoundModalVisible(false)}
+              style={styles.backBtn}
+            >
+              <Text style={styles.backText}>{'< Volver'}</Text>
+            </TouchableOpacity>
+            <Text style={styles.title}>Configurar Sonidos</Text>
+          </View>
+
+          <FlatList
+            data={Object.entries(AVAILABLE_SOUNDS)}
+            renderItem={({ item: [soundPath, soundLabel] }) => (
+              <View style={styles.soundRow}>
+                <View style={styles.soundRowInfo}>
+                  <Text style={styles.rowTitle}>{soundLabel}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.soundPreviewBtn}
+                  onPress={() => blindModeService.playSound(soundPath)}
+                  accessible={true}
+                  accessibilityLabel={`Preescuchar ${soundLabel}`}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.soundPreviewBtnText}>🔊</Text>
+                </TouchableOpacity>
+                <Switch
+                  value={settings.enabledSounds[soundPath] ?? false}
+                  onValueChange={(value) => {
+                    const updated = {
+                      ...settings,
+                      enabledSounds: {
+                        ...settings.enabledSounds,
+                        [soundPath]: value,
+                      },
+                    };
+                    setSettings(updated);
+                    saveSettings(updated);
+                  }}
+                  trackColor={{ false: '#333', true: '#0c0' }}
+                  thumbColor={settings.enabledSounds[soundPath] ? '#000' : '#666'}
+                />
+              </View>
+            )}
+            keyExtractor={([soundPath]) => soundPath}
+            scrollEnabled={true}
+            contentContainerStyle={styles.sectionContent}
+          />
+        </SafeAreaView>
       </Modal>
 
     </SafeAreaView>
@@ -869,5 +969,28 @@ const styles = StyleSheet.create({
   },
   gestureKeyboardButtonTextActive: {
     color: '#0c0',
+  },
+  soundRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1a1a',
+    gap: 12,
+  },
+  soundRowInfo: {
+    flex: 1,
+  },
+  soundPreviewBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#1a1a2a',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  soundPreviewBtnText: {
+    fontSize: 18,
   },
 });
