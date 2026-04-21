@@ -61,3 +61,17 @@ export interface FloatingLayout {
   items: LayoutItem[];
 }
 
+export type GestureType =
+  | 'doubletap'
+  | 'swipe_up' | 'swipe_down' | 'swipe_left' | 'swipe_right'
+  | 'swipe_up_right' | 'swipe_up_left' | 'swipe_down_right' | 'swipe_down_left'
+  | 'twofingers_up' | 'twofingers_down' | 'twofingers_left' | 'twofingers_right'
+  | 'twofingers_up_right' | 'twofingers_up_left' | 'twofingers_down_right' | 'twofingers_down_left'
+  | 'pinch_in' | 'pinch_out';
+
+export interface GestureConfig {
+  type: GestureType;
+  enabled: boolean;
+  command: string;
+  opensKeyboard: boolean;
+}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   FlatList,
@@ -10,12 +10,14 @@ import {
   Modal,
   Alert,
   AccessibilityInfo,
+  PanResponder,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList, MudLine } from '../types';
+import { RootStackParamList, MudLine, GestureConfig, GestureType } from '../types';
 import { TelnetService } from '../services/telnetService';
 import { parseAnsi } from '../utils/ansiParser';
 import { AnsiText } from '../components/AnsiText';
@@ -106,6 +108,19 @@ export function TerminalScreen({ route, navigation }: Props) {
   const textInputRef = useRef<TextInput>(null);
   const lastSentChannelTime = useRef(0);
   const silentModeEnabledRef = useRef(false);
+  const gesturesEnabledRef = useRef(false);
+  const gesturesRef = useRef<GestureConfig[]>([]);
+  const lastTapRef = useRef(0);
+  const pinchStartDistanceRef = useRef(0);
+  const pinchAngleRef = useRef(0);
+  const pinchActiveRef = useRef(false);
+  const twoFingersStartRef = useRef({ x: 0, y: 0 });
+  const twoFingersActiveRef = useRef(false);
+  const twoFingersMovedRef = useRef(false);
+  const scrollStartRef = useRef({ y: 0, offset: 0 });
+  const scrollVelocityRef = useRef(0);
+  const scrollMomentumRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const currentScrollOffsetRef = useRef(0);
 
   useFocusEffect(
     useCallback(() => {
@@ -120,6 +135,12 @@ export function TerminalScreen({ route, navigation }: Props) {
         }
         if (settings.encoding) {
           setEncoding(settings.encoding);
+        }
+        if (settings.gesturesEnabled !== undefined) {
+          gesturesEnabledRef.current = settings.gesturesEnabled;
+        }
+        if (settings.gestures) {
+          gesturesRef.current = settings.gestures;
         }
       })();
 
@@ -980,6 +1001,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   const handleFlatListScroll = (event: any) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    currentScrollOffsetRef.current = contentOffset.y;
     const isAtEnd = contentOffset.y >= contentSize.height - layoutMeasurement.height - 50;
     isAtBottomRef.current = isAtEnd;
     setIsAtBottom(isAtEnd);
@@ -1015,6 +1037,111 @@ export function TerminalScreen({ route, navigation }: Props) {
       setInputText('');
     }
   };
+
+  const detectSwipeDirection = (dx: number, dy: number): string => {
+    const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+    const a = (angle + 360) % 360;
+
+    if (a >= 337.5 || a < 22.5) return 'swipe_right';
+    if (a >= 22.5 && a < 67.5) return 'swipe_down_right';
+    if (a >= 67.5 && a < 112.5) return 'swipe_down';
+    if (a >= 112.5 && a < 157.5) return 'swipe_down_left';
+    if (a >= 157.5 && a < 202.5) return 'swipe_left';
+    if (a >= 202.5 && a < 247.5) return 'swipe_up_left';
+    if (a >= 247.5 && a < 292.5) return 'swipe_up';
+    return 'swipe_up_right';
+  };
+
+  const triggerGesture = (type: GestureType) => {
+    if (!gesturesEnabledRef.current || uiMode !== 'completo') return;
+    const gesture = gesturesRef.current.find(g => g.type === type && g.enabled);
+    if (!gesture || !gesture.command) return;
+
+    if (gesture.opensKeyboard) {
+      setInputText(gesture.command);
+      setTimeout(() => textInputRef.current?.focus(), 100);
+    } else {
+      telnetRef.current?.send(gesture.command);
+    }
+  };
+
+  const handleDoubleTap = (touchCount: number) => {
+    if (!gesturesEnabledRef.current || uiMode !== 'completo' || touchCount !== 1) {
+      lastTapRef.current = 0;
+      return;
+    }
+    const now = Date.now();
+    if (now - lastTapRef.current < 300) {
+      triggerGesture('doubletap');
+      lastTapRef.current = 0;
+    } else {
+      lastTapRef.current = now;
+    }
+  };
+
+  const applyScrollMomentum = useCallback((velocity: number) => {
+    if (scrollMomentumRef.current) clearInterval(scrollMomentumRef.current);
+    let currentVelocity = velocity;
+    const friction = 0.95;
+
+    scrollMomentumRef.current = setInterval(() => {
+      if (Math.abs(currentVelocity) < 0.5) {
+        if (scrollMomentumRef.current) clearInterval(scrollMomentumRef.current);
+        return;
+      }
+
+      flatListRef.current?.scrollToOffset({
+        offset: scrollStartRef.current.offset + currentVelocity,
+        animated: false,
+      });
+      scrollStartRef.current.offset += currentVelocity;
+      currentVelocity *= friction;
+    }, 16);
+  }, []);
+
+  const terminalPanResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onPanResponderGrant: (evt) => {
+      if (scrollMomentumRef.current) clearInterval(scrollMomentumRef.current);
+      scrollStartRef.current = {
+        y: evt.nativeEvent.pageY,
+        offset: currentScrollOffsetRef.current,
+      };
+    },
+    onMoveShouldSetPanResponder: (_, gs) => {
+      if (uiMode !== 'completo') return false;
+      const isHorizontal = Math.abs(gs.dx) > Math.abs(gs.dy) && Math.abs(gs.dx) > 30;
+      const isFastVertical = Math.abs(gs.dy) > Math.abs(gs.dx) && Math.abs(gs.vy) > 0.8 && Math.abs(gs.dy) > 50;
+      const isSlowVertical = Math.abs(gs.dy) > Math.abs(gs.dx) && Math.abs(gs.dy) > 10;
+      return isHorizontal || isFastVertical || isSlowVertical;
+    },
+    onPanResponderMove: (_, gs) => {
+      if (uiMode !== 'completo') return;
+      const isSlowVertical = Math.abs(gs.dy) > Math.abs(gs.dx) && Math.abs(gs.dy) > 10;
+      if (isSlowVertical && Math.abs(gs.vy) < 0.5) {
+        flatListRef.current?.scrollToOffset({
+          offset: scrollStartRef.current.offset - gs.dy,
+          animated: false,
+        });
+        scrollVelocityRef.current = -gs.vy * 50;
+      }
+    },
+    onPanResponderRelease: (evt, gs) => {
+      const { x0, y0 } = gs;
+      const screenWidth = Dimensions.get('window').width;
+      if (x0 > screenWidth - 200 && y0 < 200) {
+        return;
+      }
+
+      const absX = Math.abs(gs.dx), absY = Math.abs(gs.dy);
+      const isSlowVertical = absY > absX && absY > 10 && Math.abs(gs.vy) < 0.5;
+
+      if (gesturesEnabledRef.current && !isSlowVertical && (absX > 15 || absY > 15)) {
+        const swipeDirection = detectSwipeDirection(gs.dx, gs.dy);
+        triggerGesture(swipeDirection as GestureType);
+      }
+    },
+  }), [uiMode, applyScrollMomentum]);
 
   const isHorizontal = width > height;
   const availableHeight = height - insets.top - insets.bottom;
@@ -1074,6 +1201,61 @@ export function TerminalScreen({ route, navigation }: Props) {
           accessibilityLiveRegion={uiMode === 'blind' ? 'polite' : 'none'}
           accessibilityHint="Ventana de terminal de solo lectura. Usa las flechas o desliza para navegar."
           accessibilityActions={uiMode === 'blind' ? [{ name: 'scroll' }] : undefined}
+          {...terminalPanResponder.panHandlers}
+          onStartShouldSetResponder={() => false}
+          onTouchStart={(evt) => {
+            const touchCount = evt.nativeEvent.touches.length;
+            if (touchCount === 1) {
+              handleDoubleTap(1);
+            } else {
+              lastTapRef.current = 0;
+            }
+            if (!gesturesEnabledRef.current || uiMode !== 'completo') return;
+            if (touchCount === 2) {
+              const [t1, t2] = evt.nativeEvent.touches;
+              const dx = t2.pageX - t1.pageX;
+              const dy = t2.pageY - t1.pageY;
+              twoFingersStartRef.current = {
+                x: (t1.pageX + t2.pageX) / 2,
+                y: (t1.pageY + t2.pageY) / 2,
+              };
+              pinchStartDistanceRef.current = Math.hypot(dx, dy);
+              pinchAngleRef.current = Math.abs(Math.atan2(dy, dx) * 180 / Math.PI);
+              pinchActiveRef.current = true;
+              twoFingersActiveRef.current = true;
+              twoFingersMovedRef.current = false;
+            }
+          }}
+          onTouchMove={(evt) => {
+            if (!pinchActiveRef.current || evt.nativeEvent.touches.length !== 2) return;
+            const [t1, t2] = evt.nativeEvent.touches;
+            const centroidX = (t1.pageX + t2.pageX) / 2;
+            const centroidY = (t1.pageY + t2.pageY) / 2;
+            const centroidDx = centroidX - twoFingersStartRef.current.x;
+            const centroidDy = centroidY - twoFingersStartRef.current.y;
+            const centroidMove = Math.hypot(centroidDx, centroidDy);
+
+            const newDist = Math.hypot(t2.pageX - t1.pageX, t2.pageY - t1.pageY);
+            const pinchDelta = Math.abs(newDist - pinchStartDistanceRef.current);
+
+            if (centroidMove > 30 && !twoFingersMovedRef.current) {
+              const direction = detectSwipeDirection(centroidDx, centroidDy) as GestureType;
+              const gestureType = direction.replace('swipe_', 'twofingers_') as GestureType;
+              triggerGesture(gestureType);
+              pinchActiveRef.current = false;
+              twoFingersMovedRef.current = true;
+            } else if (pinchDelta > 40 && !twoFingersMovedRef.current) {
+              const pinchType = newDist > pinchStartDistanceRef.current ? 'pinch_out' : 'pinch_in';
+              triggerGesture(pinchType);
+              pinchActiveRef.current = false;
+              twoFingersMovedRef.current = true;
+            }
+          }}
+          onTouchEnd={() => {
+            pinchActiveRef.current = false;
+            twoFingersActiveRef.current = false;
+            twoFingersMovedRef.current = false;
+          }}
         >
           <FlatList
             scrollToEndDelay={100}
@@ -1085,6 +1267,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 <AnsiText spans={item.spans} fontSize={fontSize} lineId={item.id} />
               </View>
             )}
+            scrollEnabled={uiMode === 'blind'}
             scrollEventThrottle={16}
             onScroll={handleFlatListScroll}
             onScrollEndDrag={handleFlatListScroll}
@@ -1265,6 +1448,8 @@ export function TerminalScreen({ route, navigation }: Props) {
                 onSubmitEditing={handleSendInput}
                 returnKeyType="send"
                 autoCapitalize="none"
+                autoCorrect={false}
+                spellCheck={false}
                 accessible={true}
                 accessibilityLabel="Entrada de comando"
                 accessibilityHint="Escribe un comando y presiona enviar o enter"
@@ -1331,6 +1516,61 @@ export function TerminalScreen({ route, navigation }: Props) {
             accessibilityRole="text"
             accessibilityLiveRegion={uiMode === 'blind' ? 'polite' : 'none'}
             accessibilityHint="Ventana de terminal de solo lectura. Usa las flechas o desliza para navegar."
+            {...terminalPanResponder.panHandlers}
+            onStartShouldSetResponder={() => false}
+            onTouchStart={(evt) => {
+              const touchCount = evt.nativeEvent.touches.length;
+              if (touchCount === 1) {
+                handleDoubleTap(1);
+              } else {
+                lastTapRef.current = 0;
+              }
+              if (!gesturesEnabledRef.current || uiMode !== 'completo') return;
+              if (touchCount === 2) {
+                const [t1, t2] = evt.nativeEvent.touches;
+                const dx = t2.pageX - t1.pageX;
+                const dy = t2.pageY - t1.pageY;
+                twoFingersStartRef.current = {
+                  x: (t1.pageX + t2.pageX) / 2,
+                  y: (t1.pageY + t2.pageY) / 2,
+                };
+                pinchStartDistanceRef.current = Math.hypot(dx, dy);
+                pinchAngleRef.current = Math.abs(Math.atan2(dy, dx) * 180 / Math.PI);
+                pinchActiveRef.current = true;
+                twoFingersActiveRef.current = true;
+                twoFingersMovedRef.current = false;
+              }
+            }}
+            onTouchMove={(evt) => {
+              if (!pinchActiveRef.current || evt.nativeEvent.touches.length !== 2) return;
+              const [t1, t2] = evt.nativeEvent.touches;
+              const centroidX = (t1.pageX + t2.pageX) / 2;
+              const centroidY = (t1.pageY + t2.pageY) / 2;
+              const centroidDx = centroidX - twoFingersStartRef.current.x;
+              const centroidDy = centroidY - twoFingersStartRef.current.y;
+              const centroidMove = Math.hypot(centroidDx, centroidDy);
+
+              const newDist = Math.hypot(t2.pageX - t1.pageX, t2.pageY - t1.pageY);
+              const pinchDelta = Math.abs(newDist - pinchStartDistanceRef.current);
+
+              if (centroidMove > 30 && !twoFingersMovedRef.current) {
+                const direction = detectSwipeDirection(centroidDx, centroidDy) as GestureType;
+                const gestureType = direction.replace('swipe_', 'twofingers_') as GestureType;
+                triggerGesture(gestureType);
+                pinchActiveRef.current = false;
+                twoFingersMovedRef.current = true;
+              } else if (pinchDelta > 40 && !twoFingersMovedRef.current) {
+                const pinchType = newDist > pinchStartDistanceRef.current ? 'pinch_out' : 'pinch_in';
+                triggerGesture(pinchType);
+                pinchActiveRef.current = false;
+                twoFingersMovedRef.current = true;
+              }
+            }}
+            onTouchEnd={() => {
+              pinchActiveRef.current = false;
+              twoFingersActiveRef.current = false;
+              twoFingersMovedRef.current = false;
+            }}
           >
             <FlatList
               scrollToEndDelay={100}
@@ -1342,6 +1582,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                   <AnsiText spans={item.spans} fontSize={fontSize} lineId={item.id} />
                 </View>
               )}
+              scrollEnabled={uiMode === 'blind'}
               scrollEventThrottle={16}
               onScroll={handleFlatListScroll}
               onScrollEndDrag={handleFlatListScroll}
@@ -1441,6 +1682,8 @@ export function TerminalScreen({ route, navigation }: Props) {
                   onSubmitEditing={handleSendInput}
                   returnKeyType="send"
                   autoCapitalize="none"
+                  autoCorrect={false}
+                  spellCheck={false}
                   accessible={true}
                   accessibilityLabel="Entrada de comando"
                   accessibilityHint="Escribe un comando y presiona enviar o enter"
