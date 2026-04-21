@@ -2,14 +2,18 @@ const WebSocket = require('ws');
 const net = require('net');
 const express = require('express');
 const cors = require('cors');
+const http = require('http');
 
 const app = express();
 app.use(cors());
 
-// Crear servidor WebSocket en puerto 8080
-const wss = new WebSocket.Server({ port: 8080 });
+// Crear servidor HTTP
+const server = http.createServer(app);
 
-console.log('🔌 WebSocket Proxy escuchando en ws://localhost:8080');
+// Crear servidor WebSocket en el MISMO puerto 3000
+const wss = new WebSocket.Server({ server });
+
+console.log('🔌 WebSocket Proxy escuchando en wss://localhost:3000');
 
 wss.on('connection', (ws) => {
   console.log('✅ Cliente conectado');
@@ -79,6 +83,6 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', clients: wss.clients.size });
 });
 
-app.listen(3000, () => {
-  console.log('🌐 HTTP server (health check) en http://localhost:3000');
+server.listen(3000, () => {
+  console.log('🌐 WebSocket + HTTP server en puerto 3000');
 });
