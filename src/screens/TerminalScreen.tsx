@@ -304,8 +304,10 @@ export function TerminalScreen({ route, navigation }: Props) {
       }
 
       // Get sound from filter if present
+      console.log(`[ProcessLine] result.sound="${result.sound}"`);
       if (result.sound) {
         soundPath = result.sound;
+        console.log(`[ProcessLine] ✓ Assigned soundPath="${soundPath}"`);
       }
 
       // Sync captured data to React state and playerStatsService
