@@ -64,6 +64,7 @@ export function BlindChannelModal({
   const [askingAliasForChannel, setAskingAliasForChannel] = useState<string | null>(null);
   const [newAlias, setNewAlias] = useState('');
   const aliasInputRef = useRef<TextInput>(null);
+  const messagesListRef = useRef<FlatList>(null);
 
   const sortedChannels = useMemo(() => sortChannels(channels), [channels]);
 
@@ -99,6 +100,33 @@ export function BlindChannelModal({
       return () => clearTimeout(timer);
     }
   }, [askingAliasForChannel]);
+
+  // Scroll to end when changing channel
+  useEffect(() => {
+    if (activeChannel && messagesListRef.current) {
+      setTimeout(() => {
+        messagesListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+  }, [activeChannel]);
+
+  // Scroll to end when modal opens
+  useEffect(() => {
+    if (visible && activeChannel && messagesListRef.current) {
+      setTimeout(() => {
+        messagesListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+  }, [visible]);
+
+  // Scroll to end when new messages arrive
+  useEffect(() => {
+    if (activeChannel && messagesListRef.current && filteredMessages.length > 0) {
+      setTimeout(() => {
+        messagesListRef.current?.scrollToEnd({ animated: true });
+      }, 50);
+    }
+  }, [filteredMessages]);
 
   const handleSendMessage = useCallback(() => {
     if (!inputText.trim() || !activeChannel) return;
@@ -197,6 +225,7 @@ export function BlindChannelModal({
         {/* Messages list */}
         {activeChannel ? (
           <FlatList
+            ref={messagesListRef}
             data={filteredMessages}
             renderItem={renderMessage}
             keyExtractor={item => String(item.id)}

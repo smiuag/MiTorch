@@ -1468,6 +1468,19 @@ export function TerminalScreen({ route, navigation }: Props) {
               >
                 <Text style={[styles.sendButtonText, uiMode === 'blind' && { fontSize: 28 }]}>›</Text>
               </TouchableOpacity>
+
+              {uiMode === 'completo' && (
+                <TouchableOpacity
+                  style={[styles.sendButton, { backgroundColor: '#336699' }]}
+                  onPress={() => setBlindChannelModalVisible(true)}
+                  accessible={true}
+                  accessibilityLabel="Abrir canales"
+                  accessibilityRole="button"
+                  accessibilityHint="Abre el panel de mensajes de canales"
+                >
+                  <Text style={styles.sendButtonText}>💬</Text>
+                </TouchableOpacity>
+              )}
             </>
           ) : (
             <TouchableOpacity
@@ -1702,6 +1715,19 @@ export function TerminalScreen({ route, navigation }: Props) {
                 >
                   <Text style={[styles.sendButtonText, uiMode === 'blind' && { fontSize: 28 }]}>›</Text>
                 </TouchableOpacity>
+
+                {uiMode === 'completo' && (
+                  <TouchableOpacity
+                    style={[styles.sendButton, { backgroundColor: '#336699' }]}
+                    onPress={() => setBlindChannelModalVisible(true)}
+                    accessible={true}
+                    accessibilityLabel="Abrir canales"
+                    accessibilityRole="button"
+                    accessibilityHint="Abre el panel de mensajes de canales"
+                  >
+                    <Text style={styles.sendButtonText}>💬</Text>
+                  </TouchableOpacity>
+                )}
               </>
             ) : (
               <TouchableOpacity
@@ -1789,8 +1815,8 @@ export function TerminalScreen({ route, navigation }: Props) {
         );
       })()}
 
-      {/* Blind Channel Modal */}
-      {uiMode === 'blind' && (
+      {/* Channel Modal */}
+      {(uiMode === 'blind' || uiMode === 'completo') && (
         <BlindChannelModal
           visible={blindChannelModalVisible}
           onClose={() => setBlindChannelModalVisible(false)}
