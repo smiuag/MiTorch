@@ -32,7 +32,7 @@ export class TelnetService {
   private handler: TelnetEventHandler;
   private server: ServerProfile;
   private encoding: string;
-  private proxyUrl: string = 'ws://localhost:8080'; // Cambiar al URL del proxy en producción
+  private proxyUrl: string = 'wss://mitorch.onrender.com';
 
   constructor(server: ServerProfile, handler: TelnetEventHandler, encoding: string = 'utf8') {
     this.server = server;
