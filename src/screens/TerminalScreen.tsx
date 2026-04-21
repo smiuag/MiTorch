@@ -287,11 +287,10 @@ export function TerminalScreen({ route, navigation }: Props) {
       console.log(`[CHECK] Procesando bloqueo: uiMode=${uiMode}`);
     }
 
-    console.log(`[ProcessLine] CHECK: uiMode="${uiMode}"`);
+    // Process line with blind mode service to detect patterns and sounds (both modes use this)
+    const result = blindModeService.processLine(text);
+
     if (uiMode === 'blind') {
-      console.log(`[ProcessLine] ✓ In BLIND mode, calling blindModeService.processLine()`);
-      const result = blindModeService.processLine(text);
-      console.log(`[ProcessLine] result.sound="${result.sound}"`);
 
       // Skip line if filter says to silence it
       if (!result.shouldDisplay) {
@@ -304,13 +303,6 @@ export function TerminalScreen({ route, navigation }: Props) {
       if (result.announcement) {
         shouldAnnounce = true;
         announcementText = result.announcement;
-      }
-
-      // Get sound from filter if present
-      console.log(`[ProcessLine] result.sound="${result.sound}"`);
-      if (result.sound) {
-        soundPath = result.sound;
-        console.log(`[ProcessLine] ✓ Assigned soundPath="${soundPath}"`);
       }
 
       // Sync captured data to React state and playerStatsService
@@ -341,6 +333,11 @@ export function TerminalScreen({ route, navigation }: Props) {
       if (playerVars.hpHistory.length > 0) {
         setHpHistory(playerVars.hpHistory);
       }
+    }
+
+    // Extract sound from filter (works in both blind and completo modes)
+    if (result.sound) {
+      soundPath = result.sound;
     }
 
     // Detect player class from common text patterns
