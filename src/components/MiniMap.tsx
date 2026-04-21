@@ -76,6 +76,7 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMod
             return (
               <View
                 key={line.key}
+                pointerEvents="none"
                 style={[
                   styles.exitLine,
                   {
@@ -95,6 +96,7 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMod
             return (
               <View
                 key={room.id}
+                pointerEvents="none"
                 style={[
                   styles.roomDot,
                   isCurrent ? styles.currentRoomDot : { backgroundColor: roomColor + '99' },
@@ -163,6 +165,7 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMod
             return (
               <View
                 key={line.key}
+                pointerEvents="none"
                 style={[
                   styles.exitLine,
                   {
@@ -182,6 +185,7 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMod
             return (
               <View
                 key={room.id}
+                pointerEvents="none"
                 style={[
                   styles.roomDot,
                   isCurrent ? styles.currentRoomDot : { backgroundColor: roomColor + '99' },
