@@ -72,8 +72,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 export async function loadSettings(): Promise<AppSettings> {
   const json = await AsyncStorage.getItem(SETTINGS_KEY);
-  if (!json) return { ...DEFAULT_SETTINGS };
-  return JSON.parse(json);
+  let settings: AppSettings;
+  if (!json) {
+    settings = { ...DEFAULT_SETTINGS };
+  } else {
+    settings = JSON.parse(json);
+  }
+  // Rebuild sounds to ensure proper defaults based on UI mode
+  return rebuildSounds(settings);
 }
 
 export function rebuildGestures(settings: AppSettings): AppSettings {
