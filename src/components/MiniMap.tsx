@@ -137,6 +137,7 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMod
   return (
     <View
       style={styles.wrapperOpen}
+      pointerEvents="none"
       accessible={true}
       accessibilityLabel="Mini map"
       accessibilityRole="none"
