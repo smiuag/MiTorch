@@ -8,9 +8,14 @@ import { DEFAULT_SETTINGS } from '../storage/settingsStorage';
 import { blindModeService } from '../services/blindModeService';
 import { useSounds } from '../contexts/SoundContext';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
+type Props = NativeStackScreenProps<RootStackParamList, 'Settings'> & {
+  sourceLocation?: 'terminal' | 'serverlist';
+  onFontSizeChange?: (size: number) => void;
+  onSoundToggle?: (enabled: boolean) => void;
+  onGesturesEnabledChange?: (enabled: boolean) => void;
+};
 
-export function SettingsScreen({ navigation }: Props) {
+export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFontSizeChange, onSoundToggle, onGesturesEnabledChange }: Props) {
   const { playSound } = useSounds();
   const [settings, setSettings] = useState<AppSettings>(() => ({ ...DEFAULT_SETTINGS }));
   const [encodingModalVisible, setEncodingModalVisible] = useState(false);
@@ -38,6 +43,19 @@ export function SettingsScreen({ navigation }: Props) {
 
     setSettings(updated);
     saveSettings(updated);
+
+    // Trigger callbacks for immediate changes in terminal mode
+    if (sourceLocation === 'terminal') {
+      if (key === 'fontSize' && onFontSizeChange) {
+        onFontSizeChange(value as number);
+      }
+      if (key === 'soundsEnabled' && onSoundToggle) {
+        onSoundToggle(value as boolean);
+      }
+      if (key === 'gesturesEnabled' && onGesturesEnabledChange) {
+        onGesturesEnabledChange(value as boolean);
+      }
+    }
   };
 
 
@@ -122,63 +140,67 @@ export function SettingsScreen({ navigation }: Props) {
           </View>
         </View>
 
-        {/* UI Mode Section */}
-        <View style={[styles.sectionHeader, styles.marginTop]}>
-          <Text style={styles.sectionTitle}>Interfaz</Text>
-        </View>
+        {/* UI Mode Section - Only show outside terminal modal */}
+        {sourceLocation !== 'terminal' && (
+          <>
+            <View style={[styles.sectionHeader, styles.marginTop]}>
+              <Text style={styles.sectionTitle}>Interfaz</Text>
+            </View>
 
-        <View style={styles.modeRow}>
-          <View style={styles.rowInfo}>
-            <Text style={styles.rowTitle}>Modo de interfaz</Text>
-            <Text style={styles.rowDesc}>
-              Mostrar todos los controles o solo lo esencial para lectores de pantalla.
-            </Text>
-          </View>
-        </View>
+            <View style={styles.modeRow}>
+              <View style={styles.rowInfo}>
+                <Text style={styles.rowTitle}>Modo de interfaz</Text>
+                <Text style={styles.rowDesc}>
+                  Mostrar todos los controles o solo lo esencial para lectores de pantalla.
+                </Text>
+              </View>
+            </View>
 
-        <View style={styles.modeButtonsRow}>
-          <TouchableOpacity
-            style={[
-              styles.modeButton,
-              settings.uiMode === 'completo' && styles.modeButtonActive,
-            ]}
-            onPress={() => updateSetting('uiMode', 'completo')}
-            accessible={true}
-            accessibilityLabel="Complete mode"
-            accessibilityRole="radio"
-            accessibilityState={{ selected: settings.uiMode === 'completo' }}
-          >
-            <Text
-              style={[
-                styles.modeButtonText,
-                settings.uiMode === 'completo' && styles.modeButtonTextActive,
-              ]}
-            >
-              Completo
-            </Text>
-          </TouchableOpacity>
+            <View style={styles.modeButtonsRow}>
+              <TouchableOpacity
+                style={[
+                  styles.modeButton,
+                  settings.uiMode === 'completo' && styles.modeButtonActive,
+                ]}
+                onPress={() => updateSetting('uiMode', 'completo')}
+                accessible={true}
+                accessibilityLabel="Complete mode"
+                accessibilityRole="radio"
+                accessibilityState={{ selected: settings.uiMode === 'completo' }}
+              >
+                <Text
+                  style={[
+                    styles.modeButtonText,
+                    settings.uiMode === 'completo' && styles.modeButtonTextActive,
+                  ]}
+                >
+                  Completo
+                </Text>
+              </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[
-              styles.modeButton,
-              settings.uiMode === 'blind' && styles.modeButtonActive,
-            ]}
-            onPress={() => updateSetting('uiMode', 'blind')}
-            accessible={true}
-            accessibilityLabel="Blind mode"
-            accessibilityRole="radio"
-            accessibilityState={{ selected: settings.uiMode === 'blind' }}
-          >
-            <Text
-              style={[
-                styles.modeButtonText,
-                settings.uiMode === 'blind' && styles.modeButtonTextActive,
-              ]}
-            >
-              Blind mode
-            </Text>
-          </TouchableOpacity>
-        </View>
+              <TouchableOpacity
+                style={[
+                  styles.modeButton,
+                  settings.uiMode === 'blind' && styles.modeButtonActive,
+                ]}
+                onPress={() => updateSetting('uiMode', 'blind')}
+                accessible={true}
+                accessibilityLabel="Blind mode"
+                accessibilityRole="radio"
+                accessibilityState={{ selected: settings.uiMode === 'blind' }}
+              >
+                <Text
+                  style={[
+                    styles.modeButtonText,
+                    settings.uiMode === 'blind' && styles.modeButtonTextActive,
+                  ]}
+                >
+                  Blind mode
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
 
         {/* Gestures Section - Only in complete mode */}
         {settings.uiMode === 'completo' && (
@@ -229,27 +251,31 @@ export function SettingsScreen({ navigation }: Props) {
           </>
         )}
 
-        {/* Encoding Section */}
-        <View style={[styles.sectionHeader, styles.marginTop]}>
-          <Text style={styles.sectionTitle}>Codificación de caracteres</Text>
-        </View>
+        {/* Encoding Section - Only show outside terminal modal */}
+        {sourceLocation !== 'terminal' && (
+          <>
+            <View style={[styles.sectionHeader, styles.marginTop]}>
+              <Text style={styles.sectionTitle}>Codificación de caracteres</Text>
+            </View>
 
-        <View style={styles.row}>
-          <View style={styles.rowInfo}>
-            <Text style={styles.rowTitle}>Codificación</Text>
-            <Text style={styles.rowDesc}>
-              {settings.uiMode === 'blind' ? 'Automáticamente ISO-8859-1 en blind mode' : 'Selecciona la codificación para la conexión'}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.encodingBtn}
-            onPress={() => setEncodingModalVisible(true)}
-          >
-            <Text style={styles.encodingBtnText}>
-              {settings.encoding === 'utf8' ? 'UTF-8' : (settings.encoding || 'UTF-8').toUpperCase()}
-            </Text>
-          </TouchableOpacity>
-        </View>
+            <View style={styles.row}>
+              <View style={styles.rowInfo}>
+                <Text style={styles.rowTitle}>Codificación</Text>
+                <Text style={styles.rowDesc}>
+                  {settings.uiMode === 'blind' ? 'Automáticamente ISO-8859-1 en blind mode' : 'Selecciona la codificación para la conexión'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.encodingBtn}
+                onPress={() => setEncodingModalVisible(true)}
+              >
+                <Text style={styles.encodingBtnText}>
+                  {settings.encoding === 'utf8' ? 'UTF-8' : (settings.encoding || 'UTF-8').toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
 
         {/* Sounds Section */}
         <View style={[styles.sectionHeader, styles.marginTop]}>
@@ -275,6 +301,9 @@ export function SettingsScreen({ navigation }: Props) {
               const updated = { ...settings, soundsEnabled: value, enabledSounds };
               setSettings(updated);
               saveSettings(updated);
+              if (sourceLocation === 'terminal' && onSoundToggle) {
+                onSoundToggle(value);
+              }
             }}
             trackColor={{ false: '#333', true: '#0c0' }}
             thumbColor={settings.soundsEnabled ? '#000' : '#666'}

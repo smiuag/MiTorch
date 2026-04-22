@@ -20,43 +20,43 @@ export default function App() {
           formatter: (options) => `BlowTorch - ${options.title}`,
         }}
       >
-      <StatusBar hidden={true} />
-      <Stack.Navigator
-        screenOptions={{
-          headerStyle: { backgroundColor: '#111' },
-          headerTintColor: '#00cc00',
-          headerTitleStyle: { fontFamily: 'monospace' },
-          contentStyle: { backgroundColor: '#000' },
-        }}
-      >
-        <Stack.Screen
-          name="ServerList"
-          component={ServerListScreen}
-          options={{
-            headerShown: false,
-            title: 'Server List',
-            accessibilityLabel: 'Server List Screen',
+        <StatusBar hidden={true} />
+        <Stack.Navigator
+          screenOptions={{
+            headerStyle: { backgroundColor: '#111' },
+            headerTintColor: '#00cc00',
+            headerTitleStyle: { fontFamily: 'monospace' },
+            contentStyle: { backgroundColor: '#000' },
           }}
-        />
-        <Stack.Screen
-          name="Terminal"
-          component={TerminalScreen}
-          options={({ route }) => ({
-            headerShown: false,
-            title: `MUD Terminal - ${route.params?.server?.name || 'Conectando'}`,
-            accessibilityLabel: `Terminal - ${route.params?.server?.name || 'Conectando'}. Presiona el botón atrás para desconectar.`,
-          })}
-        />
-        <Stack.Screen
-          name="Settings"
-          component={SettingsScreen}
-          options={{
-            headerShown: false,
-            title: 'Settings',
-            accessibilityLabel: 'Settings Screen',
-          }}
-        />
-      </Stack.Navigator>
+        >
+          <Stack.Screen
+            name="ServerList"
+            component={ServerListScreen}
+            options={{
+              headerShown: false,
+              title: 'Server List',
+              accessibilityLabel: 'Server List Screen',
+            }}
+          />
+          <Stack.Screen
+            name="Terminal"
+            component={TerminalScreen}
+            options={({ route }) => ({
+              headerShown: false,
+              title: `MUD Terminal - ${route.params?.server?.name || 'Conectando'}`,
+              accessibilityLabel: `Terminal - ${route.params?.server?.name || 'Conectando'}`,
+            })}
+          />
+          <Stack.Screen
+            name="Settings"
+            component={SettingsScreen}
+            options={{
+              headerShown: false,
+              title: 'Settings',
+              accessibilityLabel: 'Settings Screen',
+            }}
+          />
+        </Stack.Navigator>
       </NavigationContainer>
     </SoundProvider>
   );

@@ -19,6 +19,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, MudLine, GestureConfig, GestureType } from '../types';
 import { TelnetService } from '../services/telnetService';
+import { SettingsScreen } from './SettingsScreen';
 import { parseAnsi } from '../utils/ansiParser';
 import { AnsiText } from '../components/AnsiText';
 import { MiniMap } from '../components/MiniMap';
@@ -90,6 +91,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [roomAllies, setRoomAllies] = useState('');
   const [hpHistory, setHpHistory] = useState<{ delta: number; label: string }[]>([]);
   const [currentBlindPanel, setCurrentBlindPanel] = useState(1);
+  const [settingsModalVisible, setSettingsModalVisible] = useState(false);
 
   const fontSizeRef = useRef(14);
   const telnetRef = useRef<TelnetService | null>(null);
@@ -108,7 +110,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const recentLinesRef = useRef<string[]>([]);
   const intentionalLocateRef = useRef(false);
   const waitingForIrsalaAfterLocateRef = useRef(false);
-  const autoLoginRef = useRef(false);
+  const autoLoginRef = useRef<boolean | string>(false);
   const textInputRef = useRef<TextInput>(null);
   const lastSentChannelTime = useRef(0);
   const silentModeEnabledRef = useRef(false);
@@ -472,7 +474,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, [playSound]);
 
   useEffect(() => {
-    const telnet = new TelnetService(server, {
+    const handler: TelnetEventHandler = {
       onData: (text: string) => {
         if (isCapturingAliasRef.current) {
           aliasBufferRef.current.push(text);
@@ -648,8 +650,9 @@ export function TerminalScreen({ route, navigation }: Props) {
           lastSentChannelTime.current = Date.now();
         }
       },
-    }, encoding);
+    };
 
+    const telnet = new TelnetService(server, handler, encoding);
     telnetRef.current = telnet;
     telnet.connect();
 
@@ -700,9 +703,7 @@ export function TerminalScreen({ route, navigation }: Props) {
       const step = walkStepRef.current;
       const allPaths = walkPathRef.current;
       if (step < allPaths.length && walkActiveRef.current) {
-        if (telnetRef.current) {
-          telnetRef.current.send(allPaths[step]);
-        }
+        telnetRef.current?.send(allPaths[step]);
         walkStepRef.current = step + 1;
         walkTimeoutRef.current = setTimeout(processNextStep, STEP_DELAY);
       } else {
@@ -717,10 +718,9 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, []);
 
   const handleLocate = useCallback(() => {
-    if (!telnetRef.current) return;
     recentLinesRef.current = [];
     intentionalLocateRef.current = true;
-    telnetRef.current.send('ojear');
+    telnetRef.current?.send('ojear');
   }, []);
 
   // When locate completes and we're waiting for irsala setup, do it now
@@ -746,8 +746,6 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, []);
 
   const sendCommand = useCallback((command: string) => {
-    if (!telnetRef.current) return;
-
     // Intercept "parar" or "stop" to stop walking
     if ((command.toLowerCase() === 'parar' || command.toLowerCase() === 'stop') && walking) {
       stopWalk();
@@ -1437,7 +1435,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         )}
 
         {/* Input Row */}
-        <View style={[styles.inputSection, { height: inputHeight }]}>
+        <View style={[styles.inputSection, { height: inputHeight }, uiMode === 'completo' && { marginTop: 2 }]}>
           {connected ? (
             <>
               {uiMode === 'blind' && (
@@ -1525,27 +1523,38 @@ export function TerminalScreen({ route, navigation }: Props) {
               {uiMode === 'completo' && (
                 <>
                   <TouchableOpacity
-                    style={[styles.sendButton, { backgroundColor: '#336699' }]}
+                    style={[styles.compactButton, { backgroundColor: '#336699' }]}
                     onPress={() => setBlindChannelModalVisible(true)}
                     accessible={true}
                     accessibilityLabel="Abrir canales"
                     accessibilityRole="button"
                     accessibilityHint="Abre el panel de mensajes de canales"
                   >
-                    <Text style={styles.sendButtonText}>💬</Text>
+                    <Text style={styles.compactButtonText}>💬</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.sendButton, { backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
+                    style={[styles.compactButton, { backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
                     onPress={() => setSilentModeEnabled(!silentModeEnabled)}
                     accessible={true}
                     accessibilityLabel={`Silenciar sonidos ${silentModeEnabled ? 'desactivado' : 'activado'}`}
                     accessibilityRole="button"
                     accessibilityHint="Activa/desactiva los sonidos de eventos"
                   >
-                    <Text style={styles.sendButtonText}>{silentModeEnabled ? '🔇' : '🔊'}</Text>
+                    <Text style={styles.compactButtonText}>{silentModeEnabled ? '🔇' : '🔊'}</Text>
                   </TouchableOpacity>
                 </>
               )}
+
+              <TouchableOpacity
+                style={[styles.compactButton, { backgroundColor: '#663366' }]}
+                onPress={() => setSettingsModalVisible(true)}
+                accessible={true}
+                accessibilityLabel="Configuración"
+                accessibilityRole="button"
+                accessibilityHint="Abre la configuración de la aplicación"
+              >
+                <Text style={styles.compactButtonText}>⚙️</Text>
+              </TouchableOpacity>
             </>
           ) : (
             <TouchableOpacity
@@ -1784,27 +1793,38 @@ export function TerminalScreen({ route, navigation }: Props) {
                 {uiMode === 'completo' && (
                   <>
                     <TouchableOpacity
-                      style={[styles.sendButton, { backgroundColor: '#336699' }]}
+                      style={[styles.compactButton, { backgroundColor: '#336699' }]}
                       onPress={() => setBlindChannelModalVisible(true)}
                       accessible={true}
                       accessibilityLabel="Abrir canales"
                       accessibilityRole="button"
                       accessibilityHint="Abre el panel de mensajes de canales"
                     >
-                      <Text style={styles.sendButtonText}>💬</Text>
+                      <Text style={styles.compactButtonText}>💬</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.sendButton, { backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
+                      style={[styles.compactButton, { backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
                       onPress={() => setSilentModeEnabled(!silentModeEnabled)}
                       accessible={true}
                       accessibilityLabel={`Silenciar sonidos ${silentModeEnabled ? 'desactivado' : 'activado'}`}
                       accessibilityRole="button"
                       accessibilityHint="Activa/desactiva los sonidos de eventos"
                     >
-                      <Text style={styles.sendButtonText}>{silentModeEnabled ? '🔇' : '🔊'}</Text>
+                      <Text style={styles.compactButtonText}>{silentModeEnabled ? '🔇' : '🔊'}</Text>
                     </TouchableOpacity>
                   </>
                 )}
+
+                <TouchableOpacity
+                  style={[styles.compactButton, { backgroundColor: '#663366' }]}
+                  onPress={() => setSettingsModalVisible(true)}
+                  accessible={true}
+                  accessibilityLabel="Configuración"
+                  accessibilityRole="button"
+                  accessibilityHint="Abre la configuración de la aplicación"
+                >
+                  <Text style={styles.compactButtonText}>⚙️</Text>
+                </TouchableOpacity>
               </>
             ) : (
               <TouchableOpacity
@@ -1912,6 +1932,36 @@ export function TerminalScreen({ route, navigation }: Props) {
           fontSize={fontSize}
         />
       )}
+
+      {/* Settings Modal */}
+      <Modal
+        visible={settingsModalVisible}
+        animationType="slide"
+        onRequestClose={() => setSettingsModalVisible(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#111', borderBottomWidth: 1, borderBottomColor: '#333' }}>
+            <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#00cc00', fontFamily: 'monospace' }}>
+              Configuración
+            </Text>
+            <TouchableOpacity
+              onPress={() => setSettingsModalVisible(false)}
+              accessible={true}
+              accessibilityLabel="Cerrar configuración"
+              accessibilityRole="button"
+            >
+              <Text style={{ fontSize: 24, color: '#00cc00' }}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <SettingsScreen
+            navigation={navigation}
+            sourceLocation="terminal"
+            onFontSizeChange={setFontSize}
+            onSoundToggle={(enabled) => silentModeEnabledRef.current = !enabled}
+            onGesturesEnabledChange={(enabled) => gesturesEnabledRef.current = enabled}
+          />
+        </SafeAreaView>
+      </Modal>
 
       {/* Room Search Results */}
       <RoomSearchResults
@@ -2110,6 +2160,17 @@ const styles = StyleSheet.create({
   historyArrowText: {
     color: '#0c0',
     fontSize: 16,
+    fontWeight: 'bold',
+  },
+  compactButton: {
+    width: 40,
+    alignSelf: 'stretch',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 4,
+  },
+  compactButtonText: {
+    fontSize: 20,
     fontWeight: 'bold',
   },
 });
