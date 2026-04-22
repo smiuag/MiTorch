@@ -13,6 +13,7 @@ import {
   PanResponder,
   Dimensions,
   AppState,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -126,6 +127,9 @@ export function TerminalScreen({ route, navigation }: Props) {
   const notificationsEnabledRef = useRef(false);
   const enabledNotificationsRef = useRef<Record<string, boolean>>({});
   const appStateRef = useRef(AppState.currentState);
+  // Set true right before a programmatic blur so the keyboardDidHide
+  // listener does not also wipe the input.
+  const suppressClearOnHideRef = useRef(false);
   const lastTapRef = useRef(0);
   const pinchStartDistanceRef = useRef(0);
   const pinchAngleRef = useRef(0);
@@ -153,6 +157,20 @@ export function TerminalScreen({ route, navigation }: Props) {
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
       appStateRef.current = state;
+    });
+    return () => sub.remove();
+  }, []);
+
+  // Clear the command input whenever the user dismisses the soft keyboard
+  // (tap outside, back button, drag-down). Skipped for programmatic blurs
+  // such as the blur+focus dance used to re-pop the keyboard.
+  useEffect(() => {
+    const sub = Keyboard.addListener('keyboardDidHide', () => {
+      if (suppressClearOnHideRef.current) {
+        suppressClearOnHideRef.current = false;
+        return;
+      }
+      setInputText('');
     });
     return () => sub.remove();
   }, []);
@@ -806,6 +824,10 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   const handleAddTextButton = useCallback((command: string) => {
     setInputText(command + ' ');
+    // blur+focus reliably pops the soft keyboard on Android — calling
+    // .focus() alone is a no-op when the input already had logical focus.
+    suppressClearOnHideRef.current = true;
+    textInputRef.current?.blur();
     const id = setTimeout(() => {
       textInputRef.current?.focus();
       pendingTimeoutsRef.current.delete(id);
@@ -977,7 +999,13 @@ export function TerminalScreen({ route, navigation }: Props) {
   const handleSendInput = () => {
     if (inputText.trim()) {
       sendCommand(inputText);
-      setInputText('');
+      // Preserve common conversation prefixes so the user can keep typing.
+      const firstWord = inputText.trim().split(/\s+/)[0];
+      if (firstWord && /^(responder|decir)$/i.test(firstWord)) {
+        setInputText(firstWord + ' ');
+      } else {
+        setInputText('');
+      }
     }
   };
 
@@ -1552,6 +1580,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                   setHistoryIndex(-1);
                 }}
                 onSubmitEditing={handleSendInput}
+                blurOnSubmit={false}
                 returnKeyType="send"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -1824,6 +1853,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                     setHistoryIndex(-1);
                   }}
                   onSubmitEditing={handleSendInput}
+                  blurOnSubmit={false}
                   returnKeyType="send"
                   autoCapitalize="none"
                   autoCorrect={false}
