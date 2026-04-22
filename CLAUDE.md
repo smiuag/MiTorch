@@ -612,7 +612,7 @@ Call the `save*` function from the storage module (e.g., `saveLayout(layout)`). 
 
 ## Temas Pendientes
 
-- **El teclado se cierra al enviar**: cuando el usuario escribe en el input del terminal y pulsa enviar, el teclado nativo se oculta. Debería mantenerse abierto para enviar varios mensajes seguidos sin tener que reabrirlo.
+- **Revisar botones de modo blind de consultar vida, energía...**
 
 ## Desarrollos por ahora no necesarios
 
