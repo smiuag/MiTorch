@@ -14,7 +14,14 @@ export interface AppSettings {
   enabledSounds: Record<string, boolean>;
   keepAwakeEnabled: boolean;
   backgroundConnectionEnabled: boolean;
+  notificationsEnabled: boolean;
+  enabledNotifications: Record<string, boolean>;
 }
+
+export const AVAILABLE_NOTIFICATIONS = {
+  bonk: 'BONK',
+  private_msg: 'Mensaje privado',
+} as const;
 
 export const AVAILABLE_SOUNDS = {
   'bloqueos/bloqueo-termina.wav': 'Bloqueo termina',
@@ -51,6 +58,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
     ...acc,
     [sound]: false,
   }), {}),
+  notificationsEnabled: false,
+  enabledNotifications: Object.keys(AVAILABLE_NOTIFICATIONS).reduce((acc, n) => ({
+    ...acc,
+    [n]: false,
+  }), {}),
   gestures: [
     { type: 'doubletap', enabled: true, command: 'responder ', opensKeyboard: true },
     { type: 'swipe_up', enabled: true, command: 'norte', opensKeyboard: false },
@@ -82,8 +94,8 @@ export async function loadSettings(): Promise<AppSettings> {
   } else {
     settings = { ...DEFAULT_SETTINGS, ...JSON.parse(json) };
   }
-  // Rebuild sounds to ensure proper defaults based on UI mode
-  return rebuildSounds(settings);
+  // Rebuild sounds and notifications to merge in any new defaults
+  return rebuildNotifications(rebuildSounds(settings));
 }
 
 export function rebuildGestures(settings: AppSettings): AppSettings {
@@ -103,6 +115,11 @@ export function rebuildGestures(settings: AppSettings): AppSettings {
 export function rebuildSounds(settings: AppSettings): AppSettings {
   const merged = { ...DEFAULT_SETTINGS.enabledSounds, ...settings.enabledSounds };
   return { ...settings, enabledSounds: merged };
+}
+
+export function rebuildNotifications(settings: AppSettings): AppSettings {
+  const merged = { ...DEFAULT_SETTINGS.enabledNotifications, ...settings.enabledNotifications };
+  return { ...settings, enabledNotifications: merged };
 }
 
 export async function saveSettings(settings: AppSettings): Promise<void> {

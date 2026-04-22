@@ -4,7 +4,7 @@ import { requestNotificationPermission, openNotificationSettings } from '../serv
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, GestureConfig } from '../types';
-import { loadSettings, saveSettings, AppSettings, rebuildGestures, AVAILABLE_SOUNDS, rebuildSounds } from '../storage/settingsStorage';
+import { loadSettings, saveSettings, AppSettings, rebuildGestures, AVAILABLE_SOUNDS, AVAILABLE_NOTIFICATIONS, rebuildSounds } from '../storage/settingsStorage';
 import { DEFAULT_SETTINGS } from '../storage/settingsStorage';
 import { blindModeService } from '../services/blindModeService';
 import { useSounds } from '../contexts/SoundContext';
@@ -22,6 +22,7 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
   const [encodingModalVisible, setEncodingModalVisible] = useState(false);
   const [gestureModalVisible, setGestureModalVisible] = useState(false);
   const [soundModalVisible, setSoundModalVisible] = useState(false);
+  const [notificationModalVisible, setNotificationModalVisible] = useState(false);
 
   useEffect(() => {
     loadSettings().then(setSettings);
@@ -392,6 +393,60 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
           </TouchableOpacity>
         )}
 
+        {/* Notifications Section */}
+        <View style={[styles.sectionHeader, styles.marginTop]}>
+          <Text style={styles.sectionTitle}>Notificaciones</Text>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Usar notificaciones</Text>
+            <Text style={styles.rowDesc}>
+              Avisos del sistema para eventos del juego (ej. BONK). Funcionan también con la pantalla bloqueada si tienes activa la conexión en segundo plano.
+            </Text>
+          </View>
+          <Switch
+            value={settings.notificationsEnabled}
+            onValueChange={async (value) => {
+              if (value) {
+                const result = await requestNotificationPermission();
+                if (result === 'blocked') {
+                  Alert.alert(
+                    'Permiso necesario',
+                    'Has denegado el permiso de notificaciones. Para recibir avisos, ábrelo en los ajustes del sistema.',
+                    [
+                      { text: 'Cancelar', style: 'cancel' },
+                      { text: 'Abrir ajustes', onPress: () => openNotificationSettings() },
+                    ]
+                  );
+                } else if (result === 'denied') {
+                  Alert.alert(
+                    'Permiso denegado',
+                    'Sin permiso de notificaciones no podremos mostrarte avisos.'
+                  );
+                }
+              }
+              const updated = { ...settings, notificationsEnabled: value };
+              setSettings(updated);
+              saveSettings(updated);
+              if (value) {
+                setNotificationModalVisible(true);
+              }
+            }}
+            trackColor={{ false: '#333', true: '#0c0' }}
+            thumbColor={settings.notificationsEnabled ? '#000' : '#666'}
+          />
+        </View>
+
+        {settings.notificationsEnabled && (
+          <TouchableOpacity
+            style={[styles.row, styles.gestureConfigBtn]}
+            onPress={() => setNotificationModalVisible(true)}
+          >
+            <Text style={styles.gestureConfigBtnText}>🔔 Configurar notificaciones</Text>
+          </TouchableOpacity>
+        )}
+
       </ScrollView>
 
       {/* Gesture Configuration Modal */}
@@ -597,6 +652,56 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             </TouchableOpacity>
           </View>
         </View>
+      </Modal>
+
+      {/* Notifications Configuration Modal */}
+      <Modal
+        visible={notificationModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setNotificationModalVisible(false)}
+      >
+        <SafeAreaView style={styles.container}>
+          <View style={styles.header}>
+            <TouchableOpacity
+              onPress={() => setNotificationModalVisible(false)}
+              style={styles.backBtn}
+            >
+              <Text style={styles.backText}>{'< Volver'}</Text>
+            </TouchableOpacity>
+            <Text style={styles.title}>Configurar Notificaciones</Text>
+          </View>
+
+          <FlatList
+            data={Object.entries(AVAILABLE_NOTIFICATIONS)}
+            renderItem={({ item: [notifId, notifLabel] }) => (
+              <View style={styles.row}>
+                <View style={styles.rowInfo}>
+                  <Text style={styles.rowTitle}>{notifLabel}</Text>
+                </View>
+                <Switch
+                  value={settings.enabledNotifications[notifId] ?? false}
+                  onValueChange={(value) => {
+                    const updated = {
+                      ...settings,
+                      enabledNotifications: {
+                        ...settings.enabledNotifications,
+                        [notifId]: value,
+                      },
+                    };
+                    setSettings(updated);
+                    saveSettings(updated);
+                  }}
+                  trackColor={{ false: '#333', true: '#0c0' }}
+                  thumbColor={settings.enabledNotifications[notifId] ? '#000' : '#666'}
+                />
+              </View>
+            )}
+            keyExtractor={([notifId]) => notifId}
+            scrollEnabled={true}
+            contentContainerStyle={styles.sectionContent}
+          />
+        </SafeAreaView>
       </Modal>
 
       {/* Sounds Configuration Modal */}

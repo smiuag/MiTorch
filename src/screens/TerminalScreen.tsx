@@ -12,11 +12,13 @@ import {
   AccessibilityInfo,
   PanResponder,
   Dimensions,
+  AppState,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { startBackgroundConnection, stopBackgroundConnection } from '../services/foregroundService';
+import { detectNotification, fireNotification, stripAnsi } from '../services/notificationService';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, MudLine, GestureConfig, GestureType } from '../types';
@@ -121,6 +123,9 @@ export function TerminalScreen({ route, navigation }: Props) {
   const silentModeEnabledRef = useRef(false);
   const gesturesEnabledRef = useRef(false);
   const gesturesRef = useRef<GestureConfig[]>([]);
+  const notificationsEnabledRef = useRef(false);
+  const enabledNotificationsRef = useRef<Record<string, boolean>>({});
+  const appStateRef = useRef(AppState.currentState);
   const lastTapRef = useRef(0);
   const pinchStartDistanceRef = useRef(0);
   const pinchAngleRef = useRef(0);
@@ -142,6 +147,14 @@ export function TerminalScreen({ route, navigation }: Props) {
       pendingTimeoutsRef.current.forEach(id => clearTimeout(id));
       pendingTimeoutsRef.current.clear();
     };
+  }, []);
+
+  // Track app foreground/background state so notifications only fire when not active
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      appStateRef.current = state;
+    });
+    return () => sub.remove();
   }, []);
 
   useFocusEffect(
@@ -170,6 +183,12 @@ export function TerminalScreen({ route, navigation }: Props) {
         }
         if (settings.gestures) {
           gesturesRef.current = settings.gestures;
+        }
+        if (settings.notificationsEnabled !== undefined) {
+          notificationsEnabledRef.current = settings.notificationsEnabled;
+        }
+        if (settings.enabledNotifications) {
+          enabledNotificationsRef.current = settings.enabledNotifications;
         }
       })();
 
@@ -312,6 +331,15 @@ export function TerminalScreen({ route, navigation }: Props) {
     const soundPath = detectSound(text);
     if (soundPath) {
       console.log(`[TerminalScreen] detectSound found: "${soundPath}" from text: "${text.substring(0, 50)}..."`);
+    }
+
+    // Detect notification trigger (independent of sound and UI mode).
+    // Skip when the app is in foreground — the user already sees the message.
+    if (notificationsEnabledRef.current && appStateRef.current !== 'active') {
+      const notif = detectNotification(text);
+      if (notif && enabledNotificationsRef.current[notif.id]) {
+        fireNotification(notif.label, stripAnsi(text).trim());
+      }
     }
 
     // Blind mode: Process with filters

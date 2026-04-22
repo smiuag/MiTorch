@@ -33,5 +33,12 @@ class BlowTorchForegroundModule : Module() {
       ctx.stopService(Intent(ctx, BlowTorchForegroundService::class.java))
       true
     }
+
+    AsyncFunction("notify") { id: Int, title: String, body: String ->
+      val ctx = appContext.reactContext
+        ?: throw IllegalStateException("React context unavailable")
+      BlowTorchNotifier.notify(ctx, id, title, body)
+      true
+    }
   }
 }
