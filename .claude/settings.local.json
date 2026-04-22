@@ -1,3 +1,13 @@
 {
+  "permissions": {
+    "allow": [
+      "Read(//c/c/proyectos/Claude/BlowTorch/**)",
+      "Bash(adb devices *)",
+      "PowerShell(. .\\\\reset-dev.ps1)",
+      "Bash(npm start *)",
+      "Bash(npm run *)",
+      "Bash(git add *)"
+    ]
+  },
   "model": "claude-opus-4-7"
 }
