@@ -609,3 +609,7 @@ Lines flow through: `incoming text` → `parseAnsi()` → `MudLine[]` → `FlatL
 ### Storing Settings
 
 Call the `save*` function from the storage module (e.g., `saveLayout(layout)`). These are async.
+
+## Temas Pendientes
+
+- **El teclado se cierra al enviar**: cuando el usuario escribe en el input del terminal y pulsa enviar, el teclado nativo se oculta. Debería mantenerse abierto para enviar varios mensajes seguidos sin tener que reabrirlo.

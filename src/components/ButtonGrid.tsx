@@ -58,8 +58,8 @@ function ButtonCell({
   uiMode?: 'completo' | 'blind';
   onSendCommand: (command: string) => void;
   onAddTextButton: (command: string) => void;
-  onEditButton: (col: number, row: number) => void;
-  onSwapButtons?: (targetCol: number, targetRow: number) => void;
+  onEditButton: () => void;
+  onSwapButtons?: () => void;
   onSecondaryCommand: (command: string) => void;
 }) {
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -84,7 +84,7 @@ function ButtonCell({
             isLongPressTriggeredRef.current = true;
             // Don't allow editing fixed buttons
             if (!button?.fixed) {
-              onEditButton(col, row);
+              onEditButton();
             }
           }, 800);
         },
@@ -128,11 +128,7 @@ function ButtonCell({
           } else {
             // Tap - execute primary command or moveMode swap
             if (moveMode && onSwapButtons && !button?.locked) {
-              if (horizontalMode) {
-                onSwapButtons(row, col);
-              } else {
-                onSwapButtons(col, row);
-              }
+              onSwapButtons();
             } else if (button?.command) {
               // In blind mode: execute primary command directly (longpress for config)
               // In completo mode: execute primary command (drag handles secondary)
@@ -277,32 +273,46 @@ export function ButtonGrid({
   };
 
   const additionalTransforms = minimalista ? blindModeTransforms : normalModeTransforms;
+  const verticalCols = minimalista ? BLIND_MODE.vertical.cols : NORMAL_MODE.vertical.cols;
+
+  // Inverse of additionalTransforms: visual final → swapped intermediate
+  const inverseAdditionalTransforms = useMemo(() => {
+    const inv: { [key: string]: { col: number; row: number } } = {};
+    for (const [swappedKey, finalPos] of Object.entries(additionalTransforms)) {
+      const [swCol, swRow] = swappedKey.split(',').map(Number);
+      inv[`${finalPos.col},${finalPos.row}`] = { col: swCol, row: swRow };
+    }
+    return inv;
+  }, [additionalTransforms]);
+
+  // Storage (col, row) → visual final (col, row)
+  const storageToVisual = (sCol: number, sRow: number): { col: number; row: number } => {
+    if (!horizontalMode) return { col: sCol, row: sRow };
+    const swCol = sRow;
+    const swRow = (verticalCols - 1) - sCol;
+    const t = additionalTransforms[`${swCol},${swRow}`];
+    return t ? { col: t.col, row: t.row } : { col: swCol, row: swRow };
+  };
+
+  // Visual (col, row) → storage (col, row) — inverse of the above
+  const visualToStorage = (vCol: number, vRow: number): { col: number; row: number } => {
+    if (!horizontalMode) return { col: vCol, row: vRow };
+    const inv = inverseAdditionalTransforms[`${vCol},${vRow}`];
+    const swCol = inv ? inv.col : vCol;
+    const swRow = inv ? inv.row : vRow;
+    return { col: (verticalCols - 1) - swRow, row: swCol };
+  };
 
   const buttonLookup = new Map<string, LayoutButton>();
   buttons.forEach((btn) => {
-    // In horizontal mode, swap col/row for lookup (rotate 90°) and reverse row order
-    if (horizontalMode) {
-      const newCol = btn.row;
-      // Invert row order based on vertical grid width
-      const verticalCols = minimalista ? BLIND_MODE.vertical.cols : NORMAL_MODE.vertical.cols;
-      const newRow = (verticalCols - 1) - btn.col;
-      const key = `${newCol},${newRow}`;
-
-      let finalCol = newCol;
-      let finalRow = newRow;
-
-      // Apply additional transformations for both modes (different tables per mode)
-      if (additionalTransforms[key]) {
-        const transform = additionalTransforms[key];
-        finalCol = transform.col;
-        finalRow = transform.row;
-      }
-
-      buttonLookup.set(`${finalCol},${finalRow}`, btn);
-    } else {
-      buttonLookup.set(`${btn.col},${btn.row}`, btn);
-    }
+    const v = storageToVisual(btn.col, btn.row);
+    buttonLookup.set(`${v.col},${v.row}`, btn);
   });
+
+  // Convert source storage coords to visual for the move-mode highlight
+  const sourceVisual = sourceCol !== undefined && sourceRow !== undefined
+    ? storageToVisual(sourceCol, sourceRow)
+    : { col: -1, row: -1 };
 
   const handleSecondaryCommand = (command: string) => {
     onSendCommand(command);
@@ -319,7 +329,8 @@ export function ButtonGrid({
         <View key={`row-${row}`} style={[styles.row, { height: cellSize }]}>
           {Array.from({ length: gridCols }).map((_, col) => {
             const button = buttonLookup.get(`${col},${row}`);
-            const isSource = moveMode && col === sourceCol && row === sourceRow;
+            const isSource = moveMode && col === sourceVisual.col && row === sourceVisual.row;
+            const storage = visualToStorage(col, row);
             return (
               <ButtonCell
                 key={`cell-${col}-${row}`}
@@ -333,8 +344,8 @@ export function ButtonGrid({
                 uiMode={uiMode}
                 onSendCommand={onSendCommand}
                 onAddTextButton={onAddTextButton}
-                onEditButton={onEditButton}
-                onSwapButtons={onSwapButtons}
+                onEditButton={() => onEditButton(storage.col, storage.row)}
+                onSwapButtons={onSwapButtons ? () => onSwapButtons(storage.col, storage.row) : undefined}
                 onSecondaryCommand={handleSecondaryCommand}
                 onOpenActionModal={onOpenActionModal}
               />

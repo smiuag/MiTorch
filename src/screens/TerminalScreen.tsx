@@ -16,6 +16,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import { startBackgroundConnection, stopBackgroundConnection } from '../services/foregroundService';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, MudLine, GestureConfig, GestureType } from '../types';
@@ -57,6 +58,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [keepAwakeEnabled, setKeepAwakeEnabled] = useState(true);
+  const [backgroundConnectionEnabled, setBackgroundConnectionEnabled] = useState(true);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [mapVisible, setMapVisible] = useState(true);
   const [currentRoom, setCurrentRoom] = useState<MapRoom | null>(null);
@@ -162,6 +164,9 @@ export function TerminalScreen({ route, navigation }: Props) {
         }
         if (settings.keepAwakeEnabled !== undefined) {
           setKeepAwakeEnabled(settings.keepAwakeEnabled);
+        }
+        if (settings.backgroundConnectionEnabled !== undefined) {
+          setBackgroundConnectionEnabled(settings.backgroundConnectionEnabled);
         }
         if (settings.gestures) {
           gesturesRef.current = settings.gestures;
@@ -687,6 +692,15 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
   }, [connected, keepAwakeEnabled]);
 
+  useEffect(() => {
+    if (connected && backgroundConnectionEnabled) {
+      startBackgroundConnection(server.name);
+      return () => {
+        stopBackgroundConnection();
+      };
+    }
+  }, [connected, server.name, backgroundConnectionEnabled]);
+
   const stopWalk = useCallback(() => {
     if (walkTimeoutRef.current) {
       clearTimeout(walkTimeoutRef.current);
@@ -961,13 +975,8 @@ export function TerminalScreen({ route, navigation }: Props) {
     if (!buttonLayout) return;
 
     try {
-      // In horizontal mode, swap coordinates to match storage
-      let storageCol = editButtonCol;
-      let storageRow = editButtonRow;
-      if (isHorizontal) {
-        storageCol = editButtonRow;
-        storageRow = editButtonCol;
-      }
+      const storageCol = editButtonCol;
+      const storageRow = editButtonRow;
 
       const updated = buttonLayout.buttons.filter(b => {
         // In blind mode, also check blindPanel to avoid removing buttons from other panels
@@ -999,16 +1008,8 @@ export function TerminalScreen({ route, navigation }: Props) {
   const handleDeleteButton = async () => {
     if (!buttonLayout) return;
 
-    // In horizontal mode, swap coordinates to match storage
-    let storageCol = editButtonCol;
-    let storageRow = editButtonRow;
-    if (isHorizontal) {
-      storageCol = editButtonRow;
-      storageRow = editButtonCol;
-    }
-
     const updated = buttonLayout.buttons.filter(
-      b => !(b.col === storageCol && b.row === storageRow)
+      b => !(b.col === editButtonCol && b.row === editButtonRow)
     );
 
     const newLayout = { buttons: updated };
@@ -1914,20 +1915,13 @@ export function TerminalScreen({ route, navigation }: Props) {
       {/* Alias Wizard Modal */}
       {/* Button Edit Modal */}
       {(() => {
-        // In horizontal mode, swap col/row to find button in layout storage
-        let searchCol = editButtonCol;
-        let searchRow = editButtonRow;
-        if (isHorizontal) {
-          searchCol = editButtonRow;
-          searchRow = editButtonCol;
-        }
         return (
           <ButtonEditModal
             visible={editButtonVisible}
             col={editButtonCol}
             row={editButtonRow}
             button={buttonLayout?.buttons.find(b => {
-              if (b.col !== searchCol || b.row !== searchRow) return false;
+              if (b.col !== editButtonCol || b.row !== editButtonRow) return false;
               if (uiMode === 'blind') {
                 return !b.blindPanel || b.blindPanel === currentBlindPanel;
               }

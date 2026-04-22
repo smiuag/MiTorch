@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, FlatList, Switch, TextInput } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, FlatList, Switch, TextInput, Alert } from 'react-native';
+import { requestNotificationPermission, openNotificationSettings } from '../services/foregroundService';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, GestureConfig } from '../types';
@@ -16,7 +17,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Settings'> & {
 };
 
 export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFontSizeChange, onSoundToggle, onGesturesEnabledChange }: Props) {
-  const { playSound } = useSounds();
+  const { playSound, prepareSounds } = useSounds();
   const [settings, setSettings] = useState<AppSettings>(() => ({ ...DEFAULT_SETTINGS }));
   const [encodingModalVisible, setEncodingModalVisible] = useState(false);
   const [gestureModalVisible, setGestureModalVisible] = useState(false);
@@ -216,6 +217,41 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
           />
         </View>
 
+        <View style={styles.row}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Conexión en segundo plano</Text>
+            <Text style={styles.rowDesc}>
+              Mantiene el MUD conectado aunque el teléfono esté bloqueado o la app en segundo plano. Necesario para escuchar mensajes sin tener la app abierta. Requiere permiso de notificaciones.
+            </Text>
+          </View>
+          <Switch
+            value={settings.backgroundConnectionEnabled}
+            onValueChange={async (value) => {
+              if (value) {
+                const result = await requestNotificationPermission();
+                if (result === 'blocked') {
+                  Alert.alert(
+                    'Permiso necesario',
+                    'Has denegado el permiso de notificaciones. Para habilitar la conexión en segundo plano, ábrelo en los ajustes del sistema.',
+                    [
+                      { text: 'Cancelar', style: 'cancel' },
+                      { text: 'Abrir ajustes', onPress: () => openNotificationSettings() },
+                    ]
+                  );
+                } else if (result === 'denied') {
+                  Alert.alert(
+                    'Permiso denegado',
+                    'Sin permiso de notificaciones la conexión no podrá mantenerse cuando bloquees el teléfono.'
+                  );
+                }
+              }
+              updateSetting('backgroundConnectionEnabled', value);
+            }}
+            trackColor={{ false: '#333', true: '#0c0' }}
+            thumbColor={settings.backgroundConnectionEnabled ? '#000' : '#666'}
+          />
+        </View>
+
         {/* Gestures Section - Only in complete mode */}
         {settings.uiMode === 'completo' && (
           <>
@@ -232,7 +268,26 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
               </View>
               <Switch
                 value={settings.gesturesEnabled}
-                onValueChange={(value) => updateSetting('gesturesEnabled', value)}
+                onValueChange={(value) => {
+                  updateSetting('gesturesEnabled', value);
+                  if (value) {
+                    let gestures = settings.gestures || [];
+                    let isFirstTime = false;
+                    if (gestures.length === 0) {
+                      gestures = DEFAULT_SETTINGS.gestures;
+                      isFirstTime = true;
+                    } else {
+                      const validTypes = new Set(DEFAULT_SETTINGS.gestures.map(g => g.type));
+                      gestures = gestures.filter(g => validTypes.has(g.type));
+                    }
+                    const updated = { ...settings, gesturesEnabled: true, gestures };
+                    setSettings(updated);
+                    if (isFirstTime) {
+                      saveSettings(updated);
+                    }
+                    setGestureModalVisible(true);
+                  }
+                }}
                 trackColor={{ false: '#333', true: '#0c0' }}
                 thumbColor={settings.gesturesEnabled ? '#000' : '#666'}
               />
@@ -315,6 +370,10 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
               const updated = { ...settings, soundsEnabled: value, enabledSounds };
               setSettings(updated);
               saveSettings(updated);
+              if (value) {
+                prepareSounds();
+                setSoundModalVisible(true);
+              }
               if (sourceLocation === 'terminal' && onSoundToggle) {
                 onSoundToggle(value);
               }

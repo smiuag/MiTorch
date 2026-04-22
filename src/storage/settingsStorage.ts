@@ -13,6 +13,7 @@ export interface AppSettings {
   soundsEnabled: boolean;
   enabledSounds: Record<string, boolean>;
   keepAwakeEnabled: boolean;
+  backgroundConnectionEnabled: boolean;
 }
 
 export const AVAILABLE_SOUNDS = {
@@ -45,6 +46,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   gesturesEnabled: true,
   soundsEnabled: false,
   keepAwakeEnabled: true,
+  backgroundConnectionEnabled: true,
   enabledSounds: Object.keys(AVAILABLE_SOUNDS).reduce((acc, sound) => ({
     ...acc,
     [sound]: false,

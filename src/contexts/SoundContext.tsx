@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { Audio } from 'expo-av';
 import soundPatternsData from '../config/soundPatterns.json';
+import { loadSettings } from '../storage/settingsStorage';
 
 interface SoundPattern {
   regex: string;
@@ -35,6 +36,7 @@ interface SoundContextType {
   isReady: boolean;
   playSound: (soundPath: string) => Promise<void>;
   detectSound: (text: string) => string | undefined;
+  prepareSounds: () => Promise<void>;
 }
 
 const SoundContext = createContext<SoundContextType | undefined>(undefined);
@@ -44,67 +46,76 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
   const [patterns, setPatterns] = useState<SoundPattern[]>([]);
   const [isReady, setIsReady] = useState(false);
   const soundCacheRef = useRef<Map<string, Audio.Sound>>(new Map());
+  const isReadyRef = useRef(false);
+  const loadingRef = useRef(false);
 
-  useEffect(() => {
-    const initSounds = async () => {
-      try {
-        // Configure audio mode once
-        await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-          shouldDuckAndroid: false,
-          interruptionModeAndroid: 1,
-        });
+  const prepareSounds = useCallback(async () => {
+    if (isReadyRef.current || loadingRef.current) return;
+    loadingRef.current = true;
+    try {
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: false,
+        interruptionModeAndroid: 1,
+      });
 
-        // Load patterns
-        setPatterns((soundPatternsData as any).patterns || []);
+      const cache = new Map<string, Audio.Sound>();
+      console.log(`[SoundContext] Preloading ${Object.keys(soundModules).length} sounds...`);
+      const t0 = Date.now();
 
-        // Pre-load all sounds
-        const cache = new Map<string, Audio.Sound>();
-        console.log(`[SoundContext] Preloading ${Object.keys(soundModules).length} sounds...`);
-        const t0 = Date.now();
-
-        for (const [soundPath, module] of Object.entries(soundModules)) {
-          try {
-            const { sound } = await Audio.Sound.createAsync(module);
-            cache.set(soundPath, sound);
-          } catch (e) {
-            console.warn(`[SoundContext] Failed to preload ${soundPath}: ${e}`);
-          }
+      for (const [soundPath, module] of Object.entries(soundModules)) {
+        try {
+          const { sound } = await Audio.Sound.createAsync(module);
+          cache.set(soundPath, sound);
+        } catch (e) {
+          console.warn(`[SoundContext] Failed to preload ${soundPath}: ${e}`);
         }
-
-        setSoundCache(cache);
-        soundCacheRef.current = cache;
-        const elapsed = Date.now() - t0;
-        console.log(`[SoundContext] Preload complete in ${elapsed}ms. Cache size: ${cache.size}`);
-
-        // Warm up all sounds by playing them once silently (volume 0)
-        console.log(`[SoundContext] Warming up ${cache.size} sounds silently...`);
-        for (const [soundPath, sound] of cache.entries()) {
-          try {
-            await sound.setVolumeAsync(0);
-            await sound.setPositionAsync(0);
-            await sound.playAsync();
-            await sound.setVolumeAsync(1);
-          } catch (e) {
-            console.warn(`[SoundContext] Failed to warm up ${soundPath}: ${e}`);
-          }
-        }
-        console.log(`[SoundContext] Warmup complete`);
-
-        setIsReady(true);
-      } catch (e) {
-        console.error(`[SoundContext] Initialization error: ${e}`);
       }
-    };
 
-    initSounds();
+      setSoundCache(cache);
+      soundCacheRef.current = cache;
+      const elapsed = Date.now() - t0;
+      console.log(`[SoundContext] Preload complete in ${elapsed}ms. Cache size: ${cache.size}`);
+
+      console.log(`[SoundContext] Warming up ${cache.size} sounds silently...`);
+      for (const [soundPath, sound] of cache.entries()) {
+        try {
+          await sound.setVolumeAsync(0);
+          await sound.setPositionAsync(0);
+          await sound.playAsync();
+          await sound.setVolumeAsync(1);
+        } catch (e) {
+          console.warn(`[SoundContext] Failed to warm up ${soundPath}: ${e}`);
+        }
+      }
+      console.log(`[SoundContext] Warmup complete`);
+
+      isReadyRef.current = true;
+      setIsReady(true);
+    } catch (e) {
+      console.error(`[SoundContext] Initialization error: ${e}`);
+    } finally {
+      loadingRef.current = false;
+    }
   }, []);
 
-  // Keep ref in sync with state so playSound always has current cache
   useEffect(() => {
-    soundCacheRef.current = soundCache;
-  }, [soundCache]);
+    setPatterns((soundPatternsData as any).patterns || []);
+
+    (async () => {
+      try {
+        const settings = await loadSettings();
+        if (settings.soundsEnabled) {
+          await prepareSounds();
+        } else {
+          console.log('[SoundContext] Sounds disabled in settings — skipping preload');
+        }
+      } catch (e) {
+        console.warn(`[SoundContext] Failed to read settings on mount: ${e}`);
+      }
+    })();
+  }, [prepareSounds]);
 
   const playSound = useCallback(async (soundPath: string) => {
     try {
@@ -139,7 +150,7 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <SoundContext.Provider value={{ soundCache, patterns, isReady, playSound, detectSound }}>
+    <SoundContext.Provider value={{ soundCache, patterns, isReady, playSound, detectSound, prepareSounds }}>
       {children}
     </SoundContext.Provider>
   );
