@@ -1,20 +1,7 @@
 import { Linking, PermissionsAndroid, Platform } from 'react-native';
-import ReactNativeForegroundService from '@supersami/rn-foreground-service';
+import BlowTorchForeground from '../../modules/blowtorch-foreground';
 
 const APP_PACKAGE = 'com.smiaug.torchzhyla';
-
-const SERVICE_ID = 1244;
-let registered = false;
-
-function ensureRegistered() {
-  if (registered) return;
-  try {
-    ReactNativeForegroundService.register({ config: { alert: false } });
-    registered = true;
-  } catch (e) {
-    console.warn('[foregroundService] register failed', e);
-  }
-}
 
 export async function openNotificationSettings(): Promise<void> {
   if (Platform.OS !== 'android') {
@@ -55,31 +42,25 @@ async function ensureNotificationPermission(): Promise<boolean> {
 }
 
 export async function startBackgroundConnection(serverName: string): Promise<void> {
+  if (Platform.OS !== 'android') return;
   const allowed = await ensureNotificationPermission();
   if (!allowed) {
-    console.warn('[foregroundService] notification permission denied; background connection will not survive screen lock');
+    console.warn(
+      '[foregroundService] notification permission denied; background connection will not survive screen lock'
+    );
     return;
   }
-  ensureRegistered();
   try {
-    ReactNativeForegroundService.start({
-      id: SERVICE_ID,
-      title: 'BlowTorch conectado',
-      message: `Manteniendo conexión con ${serverName}`,
-      icon: 'ic_launcher',
-      importance: 'max',
-      number: 1,
-      button: false,
-    });
+    await BlowTorchForeground.start('BlowTorch conectado', `Manteniendo conexión con ${serverName}`);
   } catch (e) {
     console.warn('[foregroundService] start failed', e);
   }
 }
 
-export function stopBackgroundConnection(): void {
-  if (!registered) return;
+export async function stopBackgroundConnection(): Promise<void> {
+  if (Platform.OS !== 'android') return;
   try {
-    ReactNativeForegroundService.stop();
+    await BlowTorchForeground.stop();
   } catch (e) {
     console.warn('[foregroundService] stop failed', e);
   }

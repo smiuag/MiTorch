@@ -10,6 +10,9 @@ const DO = 253;
 const DONT = 254;
 const SB = 250;   // Subnegotiation Begin
 const SE = 240;   // Subnegotiation End
+const NOP = 241;  // No-op (used for keep-alive)
+
+const KEEPALIVE_INTERVAL_MS = 60_000;
 
 // Telnet options we care about
 const OPT_ECHO = 1;
@@ -33,6 +36,7 @@ export class TelnetService {
   private server: ServerProfile;
   private encoding: string;
   private proxyUrl: string = 'wss://mitorch.onrender.com';
+  private keepAliveTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(server: ServerProfile, handler: TelnetEventHandler, encoding: string = 'utf8') {
     this.server = server;
@@ -64,6 +68,7 @@ export class TelnetService {
     this.socket = TcpSocket.createConnection(
       { host: this.server.host, port: this.server.port },
       () => {
+        this.startKeepAlive();
         this.handler.onConnect();
       }
     );
@@ -76,10 +81,12 @@ export class TelnetService {
     });
 
     this.socket.on('close', () => {
+      this.stopKeepAlive();
       this.handler.onClose();
     });
 
     this.socket.on('error', (error: Error) => {
+      this.stopKeepAlive();
       this.handler.onError(error.message);
     });
   }
@@ -303,6 +310,7 @@ export class TelnetService {
   }
 
   disconnect(): void {
+    this.stopKeepAlive();
     if (this.socket) {
       try {
         this.socket.removeAllListeners();
@@ -315,6 +323,25 @@ export class TelnetService {
         this.webSocket.close();
       } catch {}
       this.webSocket = null;
+    }
+  }
+
+  private startKeepAlive(): void {
+    this.stopKeepAlive();
+    this.keepAliveTimer = setInterval(() => {
+      if (!this.socket) return;
+      try {
+        this.socket.write(Buffer.from([IAC, NOP]));
+      } catch (e) {
+        console.warn('[TelnetService] keep-alive write failed', e);
+      }
+    }, KEEPALIVE_INTERVAL_MS);
+  }
+
+  private stopKeepAlive(): void {
+    if (this.keepAliveTimer) {
+      clearInterval(this.keepAliveTimer);
+      this.keepAliveTimer = null;
     }
   }
 
