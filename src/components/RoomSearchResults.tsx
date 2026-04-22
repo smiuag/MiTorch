@@ -7,9 +7,10 @@ interface RoomSearchResultsProps {
   visible: boolean;
   onSelect: (room: MapRoom) => void;
   onClose: () => void;
+  highlightedRoomId?: number | null;
 }
 
-export function RoomSearchResults({ rooms, visible, onSelect, onClose }: RoomSearchResultsProps) {
+export function RoomSearchResults({ rooms, visible, onSelect, onClose, highlightedRoomId }: RoomSearchResultsProps) {
   if (!visible || rooms.length === 0) return null;
 
   return (
@@ -48,9 +49,10 @@ export function RoomSearchResults({ rooms, visible, onSelect, onClose }: RoomSea
         accessibilityRole="list"
         renderItem={({ item }) => {
           const exits = Object.keys(item.e || {}).sort().join(', ');
+          const isHighlighted = highlightedRoomId === item.id;
           return (
             <TouchableOpacity
-              style={styles.roomItem}
+              style={[styles.roomItem, isHighlighted && styles.roomItemHighlighted]}
               onPress={() => onSelect(item)}
               accessible={true}
               accessibilityLabel={item.n}
@@ -62,7 +64,9 @@ export function RoomSearchResults({ rooms, visible, onSelect, onClose }: RoomSea
                 <Text style={styles.roomName}>{item.n}</Text>
                 {exits && <Text style={styles.roomExits}>{exits}</Text>}
               </View>
-              <Text style={styles.goText}>Ir</Text>
+              <Text style={[styles.goText, isHighlighted && styles.goTextHighlighted]}>
+                {isHighlighted ? 'Ir →' : 'Ir'}
+              </Text>
             </TouchableOpacity>
           );
         }}
@@ -117,6 +121,14 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#1a1a1a',
+  },
+  roomItemHighlighted: {
+    backgroundColor: 'rgba(0, 150, 0, 0.18)',
+    borderLeftWidth: 3,
+    borderLeftColor: '#0f0',
+  },
+  goTextHighlighted: {
+    color: '#ff0',
   },
   colorDot: {
     width: 10,

@@ -1,29 +1,131 @@
-import React, { useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { MapRoom } from '../services/mapService';
+import React, { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, PanResponder } from 'react-native';
+import Svg, { Circle, Line, G } from 'react-native-svg';
+import { MapRoom, MapService } from '../services/mapService';
 
 interface MiniMapProps {
+  mapService: MapService;
   currentRoom: MapRoom | null;
-  nearbyRooms: MapRoom[];
   visible: boolean;
   onToggle: () => void;
-  inlineMode?: boolean;
   walking?: boolean;
   onStop?: () => void;
+}
+
+export interface MiniMapHandle {
+  previewRoom: (room: MapRoom) => void;
+  resetView: () => void;
 }
 
 const MAP_SIZE = 180;
 const ROOM_SIZE = 7.2;
 const CURRENT_ROOM_SIZE = 9;
-const VIEW_RADIUS = 13.5;
+const BASE_VIEW_RADIUS = 13.5;
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 4;
 
-export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMode, walking, onStop }: MiniMapProps) {
+export const MiniMap = forwardRef<MiniMapHandle, MiniMapProps>(function MiniMap(
+  { mapService, currentRoom, visible, onToggle },
+  ref
+) {
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [zOffset, setZOffset] = useState(0);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      previewRoom: (room: MapRoom) => {
+        if (!currentRoom) return;
+        setZoom(1);
+        setPan({ x: room.x - currentRoom.x, y: room.y - currentRoom.y });
+        setZOffset(room.z - currentRoom.z);
+      },
+      resetView: () => {
+        setZoom(1);
+        setPan({ x: 0, y: 0 });
+        setZOffset(0);
+      },
+    }),
+    [currentRoom]
+  );
+
+  const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
+  zoomRef.current = zoom;
+  panRef.current = pan;
+
+  const gesture = useRef({
+    mode: 'none' as 'none' | 'pan' | 'pinch',
+    startPan: { x: 0, y: 0 },
+    pinchStartDist: 0,
+    pinchStartZoom: 1,
+  });
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+
+      onPanResponderGrant: (evt) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches.length >= 2) {
+          const dx = touches[0].pageX - touches[1].pageX;
+          const dy = touches[0].pageY - touches[1].pageY;
+          gesture.current.pinchStartDist = Math.sqrt(dx * dx + dy * dy);
+          gesture.current.pinchStartZoom = zoomRef.current;
+          gesture.current.mode = 'pinch';
+        } else {
+          gesture.current.startPan = { ...panRef.current };
+          gesture.current.mode = 'pan';
+        }
+      },
+
+      onPanResponderMove: (evt, g) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches.length >= 2) {
+          const dx = touches[0].pageX - touches[1].pageX;
+          const dy = touches[0].pageY - touches[1].pageY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (gesture.current.mode !== 'pinch' || gesture.current.pinchStartDist === 0) {
+            gesture.current.pinchStartDist = dist;
+            gesture.current.pinchStartZoom = zoomRef.current;
+            gesture.current.mode = 'pinch';
+            return;
+          }
+          const ratio = dist / gesture.current.pinchStartDist;
+          const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, gesture.current.pinchStartZoom * ratio));
+          setZoom(newZoom);
+        } else if (touches.length === 1 && gesture.current.mode === 'pan') {
+          const visibleRadius = BASE_VIEW_RADIUS / zoomRef.current;
+          const scale = (MAP_SIZE / 2) / visibleRadius;
+          setPan({
+            x: gesture.current.startPan.x - g.dx / scale,
+            y: gesture.current.startPan.y + g.dy / scale,
+          });
+        }
+      },
+
+      onPanResponderRelease: () => {
+        gesture.current.mode = 'none';
+      },
+      onPanResponderTerminate: () => {
+        gesture.current.mode = 'none';
+      },
+    })
+  ).current;
+
   const mapContent = useMemo(() => {
-    if (!currentRoom || nearbyRooms.length === 0) return null;
+    if (!currentRoom) return null;
 
-    const cx = currentRoom.x;
-    const cy = currentRoom.y;
-    const scale = MAP_SIZE / (VIEW_RADIUS * 2);
+    const visibleRadius = BASE_VIEW_RADIUS / zoom;
+    const scale = (MAP_SIZE / 2) / visibleRadius;
+    const cx = currentRoom.x + pan.x;
+    const cy = currentRoom.y + pan.y;
+    const viewZ = currentRoom.z + zOffset;
+
+    const rooms = mapService.getNearbyRooms(cx, cy, viewZ, visibleRadius * 1.3);
 
     const toScreen = (x: number, y: number) => ({
       sx: (x - cx) * scale + MAP_SIZE / 2,
@@ -31,92 +133,33 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMod
     });
 
     const lines: { x1: number; y1: number; x2: number; y2: number; key: string }[] = [];
-    const roomDots: { sx: number; sy: number; room: MapRoom; isCurrent: boolean }[] = [];
-    const roomSet = new Set(nearbyRooms.map(r => r.id));
+    const dots: { sx: number; sy: number; room: MapRoom; isCurrent: boolean }[] = [];
+    const roomMap = new Map(rooms.map((r) => [r.id, r]));
+    const seen = new Set<string>();
 
-    for (const room of nearbyRooms) {
+    for (const room of rooms) {
       const { sx, sy } = toScreen(room.x, room.y);
-      roomDots.push({ sx, sy, room, isCurrent: room.id === currentRoom.id });
+      dots.push({ sx, sy, room, isCurrent: zOffset === 0 && room.id === currentRoom.id });
 
-      for (const [, destId] of Object.entries(room.e)) {
-        if (roomSet.has(destId)) {
-          const dest = nearbyRooms.find(r => r.id === destId);
-          if (dest) {
-            const { sx: dx, sy: dy } = toScreen(dest.x, dest.y);
-            const key = `${Math.min(room.id, destId)}-${Math.max(room.id, destId)}`;
-            if (!lines.find(l => l.key === key)) {
-              lines.push({ x1: sx, y1: sy, x2: dx, y2: dy, key });
-            }
-          }
-        }
+      for (const destId of Object.values(room.e)) {
+        const dest = roomMap.get(destId);
+        if (!dest) continue;
+        const key = `${Math.min(room.id, destId)}-${Math.max(room.id, destId)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const { sx: dx, sy: dy } = toScreen(dest.x, dest.y);
+        lines.push({ x1: sx, y1: sy, x2: dx, y2: dy, key });
       }
     }
 
-    return { lines, roomDots };
-  }, [currentRoom, nearbyRooms]);
+    return { lines, dots };
+  }, [currentRoom, zoom, pan, zOffset, mapService]);
 
-  if (inlineMode) {
-    if (!currentRoom || !mapContent) {
-      return <View style={styles.inlineEmpty} />;
-    }
-
-    return (
-      <View style={styles.inlineContainer}>
-        <Text style={styles.roomName} numberOfLines={1}>
-          {currentRoom.n}
-        </Text>
-
-        <View style={styles.mapArea}>
-          {mapContent.lines.map(line => {
-            const dx = line.x2 - line.x1;
-            const dy = line.y2 - line.y1;
-            const length = Math.sqrt(dx * dx + dy * dy);
-            const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-
-            return (
-              <View
-                key={line.key}
-                pointerEvents="none"
-                style={[
-                  styles.exitLine,
-                  {
-                    left: line.x1,
-                    top: line.y1,
-                    width: length,
-                    transform: [{ rotate: `${angle}deg` }],
-                  },
-                ]}
-              />
-            );
-          })}
-
-          {mapContent.roomDots.map(({ sx, sy, room, isCurrent }) => {
-            const size = isCurrent ? CURRENT_ROOM_SIZE : ROOM_SIZE;
-            const roomColor = room.c ?? 'rgba(0, 180, 0, 0.4)';
-            return (
-              <View
-                key={room.id}
-                pointerEvents="none"
-                style={[
-                  styles.roomDot,
-                  isCurrent ? styles.currentRoomDot : { backgroundColor: roomColor + '99' },
-                  {
-                    left: sx - size / 2,
-                    top: sy - size / 2,
-                    width: size,
-                    height: size,
-                    borderRadius: size / 2,
-                  },
-                ]}
-              />
-            );
-          })}
-
-        </View>
-
-      </View>
-    );
-  }
+  const resetView = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setZOffset(0);
+  };
 
   if (!visible || !currentRoom || !mapContent) {
     return (
@@ -125,7 +168,6 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMod
           style={styles.toggleBtn}
           onPress={onToggle}
           activeOpacity={0.7}
-          accessible={true}
           accessibilityLabel="Toggle map"
           accessibilityRole="button"
           accessibilityHint="Show or hide the map view"
@@ -136,98 +178,97 @@ export function MiniMap({ currentRoom, nearbyRooms, visible, onToggle, inlineMod
     );
   }
 
+  const isPanned = pan.x !== 0 || pan.y !== 0 || zoom !== 1 || zOffset !== 0;
+  const zOffsetLabel = zOffset > 0 ? `+${zOffset}` : zOffset < 0 ? `${zOffset}` : '';
+
   return (
-    <View
-      style={styles.wrapperOpen}
-      pointerEvents="box-none"
-      accessible={true}
-      accessibilityLabel="Mini map"
-      accessibilityRole="none"
-    >
+    <View style={styles.wrapperOpen} pointerEvents="box-none">
       <View style={styles.container}>
-        <Text
-          style={styles.roomName}
-          numberOfLines={1}
-          accessible={true}
-          accessibilityLabel={`Current room: ${currentRoom.n}`}
-          accessibilityRole="header"
-        >
+        <Text style={styles.roomName} numberOfLines={1}>
           {currentRoom.n}
+          {zOffset !== 0 ? `  (z ${zOffsetLabel})` : ''}
         </Text>
 
-        <View style={styles.mapArea} pointerEvents="box-none">
-          {mapContent.lines.map(line => {
-            const dx = line.x2 - line.x1;
-            const dy = line.y2 - line.y1;
-            const length = Math.sqrt(dx * dx + dy * dy);
-            const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-
-            return (
-              <View
-                key={line.key}
-                pointerEvents="none"
-                style={[
-                  styles.exitLine,
-                  {
-                    left: line.x1,
-                    top: line.y1,
-                    width: length,
-                    transform: [{ rotate: `${angle}deg` }],
-                  },
-                ]}
-              />
-            );
-          })}
-
-          {mapContent.roomDots.map(({ sx, sy, room, isCurrent }) => {
-            const size = isCurrent ? CURRENT_ROOM_SIZE : ROOM_SIZE;
-            const roomColor = room.c ?? 'rgba(0, 180, 0, 0.4)';
-            return (
-              <View
-                key={room.id}
-                pointerEvents="none"
-                style={[
-                  styles.roomDot,
-                  isCurrent ? styles.currentRoomDot : { backgroundColor: roomColor + '99' },
-                  {
-                    left: sx - size / 2,
-                    top: sy - size / 2,
-                    width: size,
-                    height: size,
-                    borderRadius: size / 2,
-                  },
-                ]}
-              />
-            );
-          })}
-
+        <View style={styles.mapArea} {...panResponder.panHandlers}>
+          <Svg width={MAP_SIZE} height={MAP_SIZE} pointerEvents="none">
+            <G>
+              {mapContent.lines.map((l) => (
+                <Line
+                  key={l.key}
+                  x1={l.x1}
+                  y1={l.y1}
+                  x2={l.x2}
+                  y2={l.y2}
+                  stroke="rgba(0,200,0,0.25)"
+                  strokeWidth={1}
+                />
+              ))}
+              {mapContent.dots.map(({ sx, sy, room, isCurrent }) => {
+                const r = (isCurrent ? CURRENT_ROOM_SIZE : ROOM_SIZE) / 2;
+                const fill = isCurrent
+                  ? 'rgba(255,255,0,0.85)'
+                  : room.c
+                  ? `${room.c}cc`
+                  : 'rgba(0,180,0,0.7)';
+                return (
+                  <Circle
+                    key={room.id}
+                    cx={sx}
+                    cy={sy}
+                    r={r}
+                    fill={fill}
+                    stroke={isCurrent ? 'rgba(255,255,255,0.7)' : undefined}
+                    strokeWidth={isCurrent ? 1 : 0}
+                  />
+                );
+              })}
+            </G>
+          </Svg>
         </View>
 
+        {isPanned && (
+          <TouchableOpacity
+            style={styles.recenterBtn}
+            onPress={resetView}
+            activeOpacity={0.7}
+            accessibilityLabel="Centrar mapa"
+            accessibilityRole="button"
+          >
+            <Text style={styles.recenterText}>⊙</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      <TouchableOpacity style={styles.toggleBtn} onPress={onToggle} activeOpacity={0.7}>
-        <Text style={styles.toggleText}>M</Text>
-      </TouchableOpacity>
+      <View style={styles.rightColumn}>
+        <TouchableOpacity style={styles.toggleBtn} onPress={onToggle} activeOpacity={0.7}>
+          <Text style={styles.toggleText}>M</Text>
+        </TouchableOpacity>
+        <View style={styles.zButtonsBottom}>
+          <TouchableOpacity
+            style={styles.toggleBtn}
+            onPress={() => setZOffset(zOffset + 1)}
+            activeOpacity={0.7}
+            accessibilityLabel="Ver piso superior"
+            accessibilityRole="button"
+          >
+            <Text style={styles.toggleText}>▲</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.toggleBtn}
+            onPress={() => setZOffset(zOffset - 1)}
+            activeOpacity={0.7}
+            accessibilityLabel="Ver piso inferior"
+            accessibilityRole="button"
+          >
+            <Text style={styles.toggleText}>▼</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
-  inlineContainer: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    borderColor: 'rgba(0, 200, 0, 0.2)',
-    borderWidth: 1,
-    padding: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  inlineEmpty: {
-    flex: 1,
-    backgroundColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   wrapperClosed: {
     position: 'absolute',
     top: 4,
@@ -283,18 +324,34 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
-  exitLine: {
+  recenterBtn: {
     position: 'absolute',
-    height: 1,
-    backgroundColor: 'rgba(0, 200, 0, 0.2)',
-    transformOrigin: 'left center',
-  },
-  roomDot: {
-    position: 'absolute',
-  },
-  currentRoomDot: {
-    backgroundColor: 'rgba(255, 255, 0, 0.8)',
+    right: 10,
+    bottom: 10,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(0, 100, 0, 0.85)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.6)',
+    borderColor: 'rgba(0, 200, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  recenterText: {
+    color: '#0f0',
+    fontSize: 14,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
+    lineHeight: 16,
+  },
+  rightColumn: {
+    width: 32,
+    height: 204,
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+  },
+  zButtonsBottom: {
+    flexDirection: 'column',
   },
 });

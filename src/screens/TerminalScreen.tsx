@@ -27,7 +27,7 @@ import { TelnetService } from '../services/telnetService';
 import { SettingsScreen } from './SettingsScreen';
 import { parseAnsi } from '../utils/ansiParser';
 import { AnsiText } from '../components/AnsiText';
-import { MiniMap } from '../components/MiniMap';
+import { MiniMap, MiniMapHandle } from '../components/MiniMap';
 import { VitalBars } from '../components/VitalBars';
 import { ButtonGrid, GRID_COLS, GRID_ROWS } from '../components/ButtonGrid';
 import { ButtonEditModal } from '../components/ButtonEditModal';
@@ -65,13 +65,13 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [mapVisible, setMapVisible] = useState(true);
   const [currentRoom, setCurrentRoom] = useState<MapRoom | null>(null);
-  const [nearbyRooms, setNearbyRooms] = useState<MapRoom[]>([]);
   const [hp, setHp] = useState(0);
   const [hpMax, setHpMax] = useState(0);
   const [energy, setEnergy] = useState(0);
   const [energyMax, setEnergyMax] = useState(0);
   const [searchResults, setSearchResults] = useState<MapRoom[]>([]);
   const [searchVisible, setSearchVisible] = useState(false);
+  const [previewRoomId, setPreviewRoomId] = useState<number | null>(null);
   const [walking, setWalking] = useState(false);
   const [fontSize, setFontSize] = useState(14);
   const [uiMode, setUiMode] = useState<'completo' | 'blind'>('completo');
@@ -503,6 +503,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   };
 
   const mapServiceRef = useRef(new MapService());
+  const miniMapRef = useRef<MiniMapHandle | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -561,8 +562,6 @@ export function TerminalScreen({ route, navigation }: Props) {
                       // [LOCATE logs removed ✓ Encontrada:', room.n);
                       mapSvc.setCurrentRoom(room.id);
                       setCurrentRoom(room);
-                      const nearby = mapSvc.getNearbyRooms(room.x, room.y, room.z, 15);
-                      setNearbyRooms(nearby);
                       setLocateFeedback('success');
                       setTimeout(() => setLocateFeedback(null), 2000);
 
@@ -631,8 +630,6 @@ export function TerminalScreen({ route, navigation }: Props) {
             if (room) {
               mapServiceRef.current.setCurrentRoom(room.id);
               setCurrentRoom(room);
-              const nearby = mapServiceRef.current.getNearbyRooms(room.x, room.y, room.z, 15);
-              setNearbyRooms(nearby);
             }
           }
           // If not localized yet: ignore Room.Actual, wait for manual ojear
@@ -641,8 +638,6 @@ export function TerminalScreen({ route, navigation }: Props) {
           const room = mapServiceRef.current.moveByDirection(dir);
           if (room) {
             setCurrentRoom(room);
-            const nearby = mapServiceRef.current.getNearbyRooms(room.x, room.y, room.z, 15);
-            setNearbyRooms(nearby);
 
             // Blind mode: announce room change
             if (uiMode === 'blind') {
@@ -998,9 +993,14 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   const handleSendInput = () => {
     if (inputText.trim()) {
-      sendCommand(inputText);
+      const trimmed = inputText.trim();
+      sendCommand(trimmed);
+      // Close keyboard on irsala so the user can see the results list.
+      if (/^irsala\s+\S/i.test(trimmed)) {
+        Keyboard.dismiss();
+      }
       // Preserve common conversation prefixes so the user can keep typing.
-      const firstWord = inputText.trim().split(/\s+/)[0];
+      const firstWord = trimmed.split(/\s+/)[0];
       if (firstWord && /^(responder|decir)$/i.test(firstWord)) {
         setInputText(firstWord + ' ');
       } else {
@@ -1494,8 +1494,9 @@ export function TerminalScreen({ route, navigation }: Props) {
           {uiMode === 'completo' && (
             <View style={styles.miniMapContainer} pointerEvents="box-none">
               <MiniMap
+                ref={miniMapRef}
+                mapService={mapServiceRef.current}
                 currentRoom={currentRoom}
-                nearbyRooms={nearbyRooms}
                 visible={mapVisible}
                 onToggle={() => setMapVisible(!mapVisible)}
                 walking={walking}
@@ -1779,8 +1780,9 @@ export function TerminalScreen({ route, navigation }: Props) {
             {uiMode === 'completo' && (
               <View style={styles.miniMapContainer} pointerEvents="box-none">
                 <MiniMap
+                  ref={miniMapRef}
+                  mapService={mapServiceRef.current}
                   currentRoom={currentRoom}
-                  nearbyRooms={nearbyRooms}
                   visible={mapVisible}
                   onToggle={() => setMapVisible(!mapVisible)}
                   walking={walking}
@@ -2061,11 +2063,29 @@ export function TerminalScreen({ route, navigation }: Props) {
       <RoomSearchResults
         rooms={searchResults}
         visible={searchVisible}
+        highlightedRoomId={previewRoomId}
         onSelect={(room) => {
-          setSearchVisible(false);
-          walkTo(room);
+          if (uiMode === 'completo') {
+            if (previewRoomId === room.id) {
+              setPreviewRoomId(null);
+              setSearchVisible(false);
+              miniMapRef.current?.resetView();
+              walkTo(room);
+            } else {
+              setPreviewRoomId(room.id);
+              miniMapRef.current?.previewRoom(room);
+            }
+          } else {
+            setPreviewRoomId(null);
+            setSearchVisible(false);
+            walkTo(room);
+          }
         }}
-        onClose={() => setSearchVisible(false)}
+        onClose={() => {
+          setSearchVisible(false);
+          setPreviewRoomId(null);
+          miniMapRef.current?.resetView();
+        }}
       />
     </SafeAreaView>
   );
