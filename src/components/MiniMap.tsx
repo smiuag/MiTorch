@@ -10,6 +10,8 @@ interface MiniMapProps {
   onToggle: () => void;
   walking?: boolean;
   onStop?: () => void;
+  selectedRoomId?: number | null;
+  onSelectRoom?: (room: MapRoom) => void;
 }
 
 export interface MiniMapHandle {
@@ -25,7 +27,7 @@ const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
 
 export const MiniMap = forwardRef<MiniMapHandle, MiniMapProps>(function MiniMap(
-  { mapService, currentRoom, visible, onToggle },
+  { mapService, currentRoom, visible, onToggle, selectedRoomId, onSelectRoom },
   ref
 ) {
   const [zoom, setZoom] = useState(1);
@@ -60,7 +62,16 @@ export const MiniMap = forwardRef<MiniMapHandle, MiniMapProps>(function MiniMap(
     startPan: { x: 0, y: 0 },
     pinchStartDist: 0,
     pinchStartZoom: 1,
+    tapStartX: 0,
+    tapStartY: 0,
+    tapStartTime: 0,
+    hasMoved: false,
+    wasPinch: false,
   });
+
+  const dotsRef = useRef<{ sx: number; sy: number; room: MapRoom }[]>([]);
+  const onSelectRoomRef = useRef(onSelectRoom);
+  onSelectRoomRef.current = onSelectRoom;
 
   const panResponder = useRef(
     PanResponder.create({
@@ -70,12 +81,18 @@ export const MiniMap = forwardRef<MiniMapHandle, MiniMapProps>(function MiniMap(
 
       onPanResponderGrant: (evt) => {
         const touches = evt.nativeEvent.touches;
+        gesture.current.tapStartX = evt.nativeEvent.locationX;
+        gesture.current.tapStartY = evt.nativeEvent.locationY;
+        gesture.current.tapStartTime = Date.now();
+        gesture.current.hasMoved = false;
+        gesture.current.wasPinch = false;
         if (touches.length >= 2) {
           const dx = touches[0].pageX - touches[1].pageX;
           const dy = touches[0].pageY - touches[1].pageY;
           gesture.current.pinchStartDist = Math.sqrt(dx * dx + dy * dy);
           gesture.current.pinchStartZoom = zoomRef.current;
           gesture.current.mode = 'pinch';
+          gesture.current.wasPinch = true;
         } else {
           gesture.current.startPan = { ...panRef.current };
           gesture.current.mode = 'pan';
@@ -84,7 +101,11 @@ export const MiniMap = forwardRef<MiniMapHandle, MiniMapProps>(function MiniMap(
 
       onPanResponderMove: (evt, g) => {
         const touches = evt.nativeEvent.touches;
+        if (Math.abs(g.dx) > 4 || Math.abs(g.dy) > 4) {
+          gesture.current.hasMoved = true;
+        }
         if (touches.length >= 2) {
+          gesture.current.wasPinch = true;
           const dx = touches[0].pageX - touches[1].pageX;
           const dy = touches[0].pageY - touches[1].pageY;
           const dist = Math.sqrt(dx * dx + dy * dy);
@@ -108,7 +129,22 @@ export const MiniMap = forwardRef<MiniMapHandle, MiniMapProps>(function MiniMap(
       },
 
       onPanResponderRelease: () => {
+        const duration = Date.now() - gesture.current.tapStartTime;
+        const wasTap = !gesture.current.hasMoved && !gesture.current.wasPinch && duration < 400;
         gesture.current.mode = 'none';
+        if (!wasTap || !onSelectRoomRef.current) return;
+        const tx = gesture.current.tapStartX;
+        const ty = gesture.current.tapStartY;
+        let nearest: { room: MapRoom; dist: number } | null = null;
+        for (const dot of dotsRef.current) {
+          const dx = dot.sx - tx;
+          const dy = dot.sy - ty;
+          const d = Math.sqrt(dx * dx + dy * dy);
+          if (d <= 18 && (nearest === null || d < nearest.dist)) {
+            nearest = { room: dot.room, dist: d };
+          }
+        }
+        if (nearest) onSelectRoomRef.current(nearest.room);
       },
       onPanResponderTerminate: () => {
         gesture.current.mode = 'none';
@@ -152,6 +188,7 @@ export const MiniMap = forwardRef<MiniMapHandle, MiniMapProps>(function MiniMap(
       }
     }
 
+    dotsRef.current = dots.map(({ sx, sy, room }) => ({ sx, sy, room }));
     return { lines, dots };
   }, [currentRoom, zoom, pan, zOffset, mapService]);
 
@@ -203,6 +240,20 @@ export const MiniMap = forwardRef<MiniMapHandle, MiniMapProps>(function MiniMap(
                   strokeWidth={1}
                 />
               ))}
+              {selectedRoomId != null &&
+                mapContent.dots
+                  .filter((d) => d.room.id === selectedRoomId)
+                  .map(({ sx, sy, room }) => (
+                    <Circle
+                      key={`aura-${room.id}`}
+                      cx={sx}
+                      cy={sy}
+                      r={CURRENT_ROOM_SIZE}
+                      fill="none"
+                      stroke="rgba(255,180,0,0.9)"
+                      strokeWidth={2.5}
+                    />
+                  ))}
               {mapContent.dots.map(({ sx, sy, room, isCurrent }) => {
                 const r = (isCurrent ? CURRENT_ROOM_SIZE : ROOM_SIZE) / 2;
                 const fill = isCurrent

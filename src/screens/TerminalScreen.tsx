@@ -768,7 +768,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
     const path = mapSvc.findPath(current.id, targetRoom.id);
     if (!path || path.length === 0) {
-      addLine('--- No se encuentra camino ---');
+      addLine('--- No existe un camino conocido hasta la sala indicada ---');
       return;
     }
 
@@ -1501,6 +1501,15 @@ export function TerminalScreen({ route, navigation }: Props) {
                 onToggle={() => setMapVisible(!mapVisible)}
                 walking={walking}
                 onStop={stopWalk}
+                selectedRoomId={previewRoomId}
+                onSelectRoom={(room) => {
+                  if (previewRoomId === room.id) {
+                    setPreviewRoomId(null);
+                    walkTo(room);
+                  } else {
+                    setPreviewRoomId(room.id);
+                  }
+                }}
               />
             </View>
           )}
@@ -1787,6 +1796,15 @@ export function TerminalScreen({ route, navigation }: Props) {
                   onToggle={() => setMapVisible(!mapVisible)}
                   walking={walking}
                   onStop={stopWalk}
+                  selectedRoomId={previewRoomId}
+                  onSelectRoom={(room) => {
+                    if (previewRoomId === room.id) {
+                      setPreviewRoomId(null);
+                      walkTo(room);
+                    } else {
+                      setPreviewRoomId(room.id);
+                    }
+                  }}
                 />
               </View>
             )}
