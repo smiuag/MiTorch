@@ -30,11 +30,6 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
   const updateSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     let updated = { ...settings, [key]: value };
 
-    // When switching to blind mode, auto-set encoding to latin1 (ISO-8859-1)
-    if (key === 'uiMode' && value === 'blind') {
-      updated = { ...updated, encoding: 'latin1' };
-    }
-
     // Rebuild gestures when switching modes
     if (key === 'uiMode') {
       updated = rebuildGestures(updated);
@@ -262,7 +257,7 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
               <View style={styles.rowInfo}>
                 <Text style={styles.rowTitle}>Codificación</Text>
                 <Text style={styles.rowDesc}>
-                  {settings.uiMode === 'blind' ? 'Automáticamente ISO-8859-1 en blind mode' : 'Selecciona la codificación para la conexión'}
+                  Selecciona la codificación para la conexión
                 </Text>
               </View>
               <TouchableOpacity

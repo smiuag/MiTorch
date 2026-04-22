@@ -6,7 +6,11 @@
       "PowerShell(. .\\\\reset-dev.ps1)",
       "Bash(npm start *)",
       "Bash(npm run *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(adb reverse *)",
+      "Bash(git check-ignore *)"
     ]
   },
   "model": "claude-opus-4-7"
