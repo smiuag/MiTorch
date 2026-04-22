@@ -56,30 +56,47 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
   };
 
 
-  return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backBtn}
-          accessible={true}
-          accessibilityLabel="Back"
-          accessibilityRole="button"
-          accessibilityHint="Return to server list"
-        >
-          <Text style={styles.backText}>{'< Volver'}</Text>
-        </TouchableOpacity>
-        <Text
-          style={styles.title}
-          accessible={true}
-          accessibilityLabel="Settings"
-          accessibilityRole="header"
-        >
-          Configuración
-        </Text>
-      </View>
+  // When opened from the terminal modal, the modal already provides its
+  // own header (close button) and safe-area insets. Rendering another
+  // SafeAreaView here breaks the ScrollView height, so use a plain View
+  // and skip the redundant inner header.
+  const isInTerminalModal = sourceLocation === 'terminal';
+  const Container: React.ComponentType<any> = isInTerminalModal ? View : SafeAreaView;
+  const containerProps = isInTerminalModal
+    ? { style: styles.container }
+    : { style: styles.container, edges: ['top', 'left', 'right', 'bottom'] };
 
-      <ScrollView style={styles.section} contentContainerStyle={styles.sectionContent}>
+  return (
+    <Container {...containerProps}>
+      {!isInTerminalModal && (
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.backBtn}
+            accessible={true}
+            accessibilityLabel="Back"
+            accessibilityRole="button"
+            accessibilityHint="Return to server list"
+          >
+            <Text style={styles.backText}>{'< Volver'}</Text>
+          </TouchableOpacity>
+          <Text
+            style={styles.title}
+            accessible={true}
+            accessibilityLabel="Settings"
+            accessibilityRole="header"
+          >
+            Configuración
+          </Text>
+        </View>
+      )}
+
+      <ScrollView
+        style={styles.section}
+        contentContainerStyle={styles.sectionContent}
+        nestedScrollEnabled={true}
+        showsVerticalScrollIndicator={true}
+      >
         {/* Font Size Section - FIRST */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Configuración general</Text>
@@ -765,7 +782,7 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
         </SafeAreaView>
       </Modal>
 
-    </SafeAreaView>
+    </Container>
   );
 }
 

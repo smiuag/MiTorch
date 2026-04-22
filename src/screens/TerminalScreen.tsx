@@ -2021,7 +2021,17 @@ export function TerminalScreen({ route, navigation }: Props) {
         animationType="slide"
         onRequestClose={() => setSettingsModalVisible(false)}
       >
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }}>
+        <View
+          style={{
+            width: width,
+            height: height,
+            backgroundColor: '#000',
+            paddingTop: insets.top,
+            paddingBottom: insets.bottom,
+            paddingLeft: insets.left,
+            paddingRight: insets.right,
+          }}
+        >
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#111', borderBottomWidth: 1, borderBottomColor: '#333' }}>
             <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#00cc00', fontFamily: 'monospace' }}>
               Configuración
@@ -2035,14 +2045,16 @@ export function TerminalScreen({ route, navigation }: Props) {
               <Text style={{ fontSize: 24, color: '#00cc00' }}>✕</Text>
             </TouchableOpacity>
           </View>
-          <SettingsScreen
-            navigation={navigation}
-            sourceLocation="terminal"
-            onFontSizeChange={setFontSize}
-            onSoundToggle={(enabled) => silentModeEnabledRef.current = !enabled}
-            onGesturesEnabledChange={(enabled) => gesturesEnabledRef.current = enabled}
-          />
-        </SafeAreaView>
+          <View style={{ flex: 1, minHeight: 0 }}>
+            <SettingsScreen
+              navigation={navigation}
+              sourceLocation="terminal"
+              onFontSizeChange={setFontSize}
+              onSoundToggle={(enabled) => silentModeEnabledRef.current = !enabled}
+              onGesturesEnabledChange={(enabled) => gesturesEnabledRef.current = enabled}
+            />
+          </View>
+        </View>
       </Modal>
 
       {/* Room Search Results */}
