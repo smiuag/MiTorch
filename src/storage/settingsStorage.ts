@@ -12,6 +12,7 @@ export interface AppSettings {
   gestures: GestureConfig[];
   soundsEnabled: boolean;
   enabledSounds: Record<string, boolean>;
+  keepAwakeEnabled: boolean;
 }
 
 export const AVAILABLE_SOUNDS = {
@@ -43,6 +44,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   encoding: 'utf8',
   gesturesEnabled: true,
   soundsEnabled: false,
+  keepAwakeEnabled: true,
   enabledSounds: Object.keys(AVAILABLE_SOUNDS).reduce((acc, sound) => ({
     ...acc,
     [sound]: false,
@@ -76,7 +78,7 @@ export async function loadSettings(): Promise<AppSettings> {
   if (!json) {
     settings = { ...DEFAULT_SETTINGS };
   } else {
-    settings = JSON.parse(json);
+    settings = { ...DEFAULT_SETTINGS, ...JSON.parse(json) };
   }
   // Rebuild sounds to ensure proper defaults based on UI mode
   return rebuildSounds(settings);

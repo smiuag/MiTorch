@@ -197,6 +197,25 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
           </>
         )}
 
+        <View style={[styles.sectionHeader, styles.marginTop]}>
+          <Text style={styles.sectionTitle}>Pantalla</Text>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Mantener pantalla encendida</Text>
+            <Text style={styles.rowDesc}>
+              Evita que el teléfono se bloquee por inactividad mientras estás conectado al servidor.
+            </Text>
+          </View>
+          <Switch
+            value={settings.keepAwakeEnabled}
+            onValueChange={(value) => updateSetting('keepAwakeEnabled', value)}
+            trackColor={{ false: '#333', true: '#0c0' }}
+            thumbColor={settings.keepAwakeEnabled ? '#000' : '#666'}
+          />
+        </View>
+
         {/* Gestures Section - Only in complete mode */}
         {settings.uiMode === 'completo' && (
           <>

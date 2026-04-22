@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, MudLine, GestureConfig, GestureType } from '../types';
@@ -54,6 +55,8 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [lines, setLines] = useState<MudLine[]>([]);
   const [inputText, setInputText] = useState('');
   const [connected, setConnected] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [keepAwakeEnabled, setKeepAwakeEnabled] = useState(true);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [mapVisible, setMapVisible] = useState(true);
   const [currentRoom, setCurrentRoom] = useState<MapRoom | null>(null);
@@ -156,6 +159,9 @@ export function TerminalScreen({ route, navigation }: Props) {
         }
         if (settings.gesturesEnabled !== undefined) {
           gesturesEnabledRef.current = settings.gesturesEnabled;
+        }
+        if (settings.keepAwakeEnabled !== undefined) {
+          setKeepAwakeEnabled(settings.keepAwakeEnabled);
         }
         if (settings.gestures) {
           gesturesRef.current = settings.gestures;
@@ -538,6 +544,7 @@ export function TerminalScreen({ route, navigation }: Props) {
       },
       onConnect: () => {
         setConnected(true);
+        setConnecting(false);
         autoLoginRef.current = false;
         setLoginFailed(false);
         if (uiMode === 'blind') {
@@ -546,6 +553,7 @@ export function TerminalScreen({ route, navigation }: Props) {
       },
       onClose: () => {
         setConnected(false);
+        setConnecting(false);
         autoLoginRef.current = false;
         setLoginFailed(false);
         if (uiMode === 'blind') {
@@ -553,6 +561,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         }
       },
       onError: (err: string) => {
+        setConnecting(false);
         Alert.alert('Error de conexión', err);
         if (uiMode === 'blind') {
           AccessibilityInfo.announceForAccessibility(`Error: ${err}`);
@@ -654,12 +663,29 @@ export function TerminalScreen({ route, navigation }: Props) {
 
     const telnet = new TelnetService(server, handler, encoding);
     telnetRef.current = telnet;
+    setConnecting(true);
     telnet.connect();
 
     return () => {
       telnet.disconnect();
     };
   }, [server, uiMode, encoding]);
+
+  const handleReconnect = useCallback(() => {
+    if (connecting) return;
+    telnetRef.current?.disconnect();
+    setConnecting(true);
+    telnetRef.current?.connect();
+  }, [connecting]);
+
+  useEffect(() => {
+    if (connected && keepAwakeEnabled) {
+      activateKeepAwakeAsync('mud-session');
+      return () => {
+        deactivateKeepAwake('mud-session');
+      };
+    }
+  }, [connected, keepAwakeEnabled]);
 
   const stopWalk = useCallback(() => {
     if (walkTimeoutRef.current) {
@@ -1558,14 +1584,16 @@ export function TerminalScreen({ route, navigation }: Props) {
             </>
           ) : (
             <TouchableOpacity
-              style={[styles.input, styles.reconnectButton]}
-              onPress={() => telnetRef.current?.connect()}
+              style={[styles.input, styles.reconnectButton, connecting && { opacity: 0.5 }]}
+              onPress={handleReconnect}
+              disabled={connecting}
               accessible={true}
-              accessibilityLabel="Reconectar"
+              accessibilityLabel={connecting ? 'Conectando' : 'Reconectar'}
               accessibilityRole="button"
-              accessibilityHint="Reconéctate al servidor"
+              accessibilityState={{ disabled: connecting }}
+              accessibilityHint={connecting ? 'Conectando al servidor' : 'Reconéctate al servidor'}
             >
-              <Text style={styles.reconnectText}>Reconectar</Text>
+              <Text style={styles.reconnectText}>{connecting ? 'Conectando…' : 'Reconectar'}</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -1828,14 +1856,16 @@ export function TerminalScreen({ route, navigation }: Props) {
               </>
             ) : (
               <TouchableOpacity
-                style={[styles.input, styles.reconnectButton]}
-                onPress={() => telnetRef.current?.connect()}
+                style={[styles.input, styles.reconnectButton, connecting && { opacity: 0.5 }]}
+                onPress={handleReconnect}
+                disabled={connecting}
                 accessible={true}
-                accessibilityLabel="Reconectar"
+                accessibilityLabel={connecting ? 'Conectando' : 'Reconectar'}
                 accessibilityRole="button"
-                accessibilityHint="Reconéctate al servidor"
+                accessibilityState={{ disabled: connecting }}
+                accessibilityHint={connecting ? 'Conectando al servidor' : 'Reconéctate al servidor'}
               >
-                <Text style={styles.reconnectText}>Reconectar</Text>
+                <Text style={styles.reconnectText}>{connecting ? 'Conectando…' : 'Reconectar'}</Text>
               </TouchableOpacity>
             )}
           </View>
