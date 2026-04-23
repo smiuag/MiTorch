@@ -235,41 +235,6 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
           />
         </View>
 
-        <View style={styles.row}>
-          <View style={styles.rowInfo}>
-            <Text style={styles.rowTitle}>Conexión en segundo plano</Text>
-            <Text style={styles.rowDesc}>
-              Mantiene el MUD conectado aunque el teléfono esté bloqueado o la app en segundo plano. Necesario para escuchar mensajes sin tener la app abierta. Requiere permiso de notificaciones.
-            </Text>
-          </View>
-          <Switch
-            value={settings.backgroundConnectionEnabled}
-            onValueChange={async (value) => {
-              if (value) {
-                const result = await requestNotificationPermission();
-                if (result === 'blocked') {
-                  Alert.alert(
-                    'Permiso necesario',
-                    'Has denegado el permiso de notificaciones. Para habilitar la conexión en segundo plano, ábrelo en los ajustes del sistema.',
-                    [
-                      { text: 'Cancelar', style: 'cancel' },
-                      { text: 'Abrir ajustes', onPress: () => openNotificationSettings() },
-                    ]
-                  );
-                } else if (result === 'denied') {
-                  Alert.alert(
-                    'Permiso denegado',
-                    'Sin permiso de notificaciones la conexión no podrá mantenerse cuando bloquees el teléfono.'
-                  );
-                }
-              }
-              updateSetting('backgroundConnectionEnabled', value);
-            }}
-            trackColor={{ false: '#333', true: '#0c0' }}
-            thumbColor={settings.backgroundConnectionEnabled ? '#000' : '#666'}
-          />
-        </View>
-
         {/* Gestures Section - Only in complete mode */}
         {settings.uiMode === 'completo' && (
           <>
@@ -443,7 +408,9 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
                   );
                 }
               }
-              const updated = { ...settings, notificationsEnabled: value };
+              const updated = value
+                ? { ...settings, notificationsEnabled: true, backgroundConnectionEnabled: true }
+                : { ...settings, notificationsEnabled: false };
               setSettings(updated);
               saveSettings(updated);
               if (value) {
@@ -691,9 +658,27 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
 
           <FlatList
             data={Object.entries(AVAILABLE_NOTIFICATIONS)}
+            ListHeaderComponent={(
+              <View style={styles.soundRow}>
+                <View style={styles.soundRowInfo}>
+                  <Text style={styles.rowTitle}>Conexión en segundo plano</Text>
+                  <Text style={styles.rowDesc}>
+                    Mantiene el MUD conectado aunque el teléfono esté bloqueado o la app en segundo plano. Necesario para escuchar mensajes sin tener la app abierta.
+                  </Text>
+                </View>
+                <Switch
+                  value={settings.backgroundConnectionEnabled}
+                  onValueChange={(value) => {
+                    updateSetting('backgroundConnectionEnabled', value);
+                  }}
+                  trackColor={{ false: '#333', true: '#0c0' }}
+                  thumbColor={settings.backgroundConnectionEnabled ? '#000' : '#666'}
+                />
+              </View>
+            )}
             renderItem={({ item: [notifId, notifLabel] }) => (
-              <View style={styles.row}>
-                <View style={styles.rowInfo}>
+              <View style={styles.soundRow}>
+                <View style={styles.soundRowInfo}>
                   <Text style={styles.rowTitle}>{notifLabel}</Text>
                 </View>
                 <Switch
