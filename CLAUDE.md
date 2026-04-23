@@ -613,6 +613,8 @@ Call the `save*` function from the storage module (e.g., `saveLayout(layout)`). 
 ## Temas Pendientes
 
 - **Revisar botones de modo blind de consultar vida, energía...**
+- **Varios paneles de botones para modo completo** (como ya existen en blind con el botón "Cambiar" entre Panel 1 y Panel 2).
+- **Valorar tener logs** (sistema de logging persistente para depurar en campo, especialmente para casos tipo "usuario de Paraguay" donde el contacto directo es complicado).
 
 ## Desarrollos por ahora no necesarios
 

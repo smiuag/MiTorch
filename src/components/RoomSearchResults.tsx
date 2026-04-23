@@ -8,9 +8,10 @@ interface RoomSearchResultsProps {
   onSelect: (room: MapRoom) => void;
   onClose: () => void;
   highlightedRoomId?: number | null;
+  uiMode?: 'completo' | 'blind';
 }
 
-export function RoomSearchResults({ rooms, visible, onSelect, onClose, highlightedRoomId }: RoomSearchResultsProps) {
+export function RoomSearchResults({ rooms, visible, onSelect, onClose, highlightedRoomId, uiMode }: RoomSearchResultsProps) {
   if (!visible || rooms.length === 0) return null;
 
   return (
@@ -48,16 +49,27 @@ export function RoomSearchResults({ rooms, visible, onSelect, onClose, highlight
         accessibilityLabel="Room list"
         accessibilityRole="list"
         renderItem={({ item }) => {
-          const exits = Object.keys(item.e || {}).sort().join(', ');
+          // Exits: blind users want insertion order (natural), not alphabetical.
+          const exitsOrdered = Object.keys(item.e || {});
+          const exits = exitsOrdered.join(', ');
           const isHighlighted = highlightedRoomId === item.id;
+          // Blind mode: merge name + exits into a single label so TalkBack reads
+          // the whole line on a single swipe. Drop the hint to keep it concise.
+          const isBlind = uiMode === 'blind';
+          const accessibilityLabel = isBlind
+            ? (exits ? `${item.n}- ${exits}` : item.n)
+            : item.n;
+          const accessibilityHint = isBlind
+            ? undefined
+            : `Navigate to ${item.n}. Exits: ${exits || 'none'}`;
           return (
             <TouchableOpacity
               style={[styles.roomItem, isHighlighted && styles.roomItemHighlighted]}
               onPress={() => onSelect(item)}
               accessible={true}
-              accessibilityLabel={item.n}
+              accessibilityLabel={accessibilityLabel}
               accessibilityRole="button"
-              accessibilityHint={`Navigate to ${item.n}. Exits: ${exits || 'none'}`}
+              accessibilityHint={accessibilityHint}
             >
               <View style={[styles.colorDot, { backgroundColor: item.c ?? '#0b0' }]} />
               <View style={styles.roomInfo}>

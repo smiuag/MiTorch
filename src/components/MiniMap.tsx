@@ -25,6 +25,18 @@ const CURRENT_ROOM_SIZE = 9;
 const BASE_VIEW_RADIUS = 13.5;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
+const CLUSTER_ZOOM_THRESHOLD = 0.4;
+
+type Cell = {
+  sx: number;
+  sy: number;
+  centerX: number;
+  centerY: number;
+  rooms: MapRoom[];
+  isCurrent: boolean;
+  hasSelected: boolean;
+  color?: string;
+};
 
 export const MiniMap = forwardRef<MiniMapHandle, MiniMapProps>(function MiniMap(
   { mapService, currentRoom, visible, onToggle, selectedRoomId, onSelectRoom },
@@ -54,8 +66,33 @@ export const MiniMap = forwardRef<MiniMapHandle, MiniMapProps>(function MiniMap(
 
   const zoomRef = useRef(zoom);
   const panRef = useRef(pan);
+  const currentRoomRef = useRef(currentRoom);
   zoomRef.current = zoom;
   panRef.current = pan;
+  currentRoomRef.current = currentRoom;
+
+  const pendingUpdate = useRef<{ pan?: { x: number; y: number }; zoom?: number }>({});
+  const rafId = useRef<number | null>(null);
+
+  const flushPending = () => {
+    const p = pendingUpdate.current;
+    if (p.pan) setPan(p.pan);
+    if (p.zoom !== undefined) setZoom(p.zoom);
+    pendingUpdate.current = {};
+    rafId.current = null;
+  };
+  const scheduleUpdate = () => {
+    if (rafId.current == null) {
+      rafId.current = requestAnimationFrame(flushPending);
+    }
+  };
+  const cancelPending = () => {
+    if (rafId.current != null) {
+      cancelAnimationFrame(rafId.current);
+      rafId.current = null;
+    }
+    flushPending();
+  };
 
   const gesture = useRef({
     mode: 'none' as 'none' | 'pan' | 'pinch',
@@ -69,7 +106,7 @@ export const MiniMap = forwardRef<MiniMapHandle, MiniMapProps>(function MiniMap(
     wasPinch: false,
   });
 
-  const dotsRef = useRef<{ sx: number; sy: number; room: MapRoom }[]>([]);
+  const cellsRef = useRef<Cell[]>([]);
   const onSelectRoomRef = useRef(onSelectRoom);
   onSelectRoomRef.current = onSelectRoom;
 
@@ -117,36 +154,49 @@ export const MiniMap = forwardRef<MiniMapHandle, MiniMapProps>(function MiniMap(
           }
           const ratio = dist / gesture.current.pinchStartDist;
           const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, gesture.current.pinchStartZoom * ratio));
-          setZoom(newZoom);
+          pendingUpdate.current.zoom = newZoom;
+          scheduleUpdate();
         } else if (touches.length === 1 && gesture.current.mode === 'pan') {
-          const visibleRadius = BASE_VIEW_RADIUS / zoomRef.current;
+          const effectiveZoom = pendingUpdate.current.zoom ?? zoomRef.current;
+          const visibleRadius = BASE_VIEW_RADIUS / effectiveZoom;
           const scale = (MAP_SIZE / 2) / visibleRadius;
-          setPan({
+          pendingUpdate.current.pan = {
             x: gesture.current.startPan.x - g.dx / scale,
             y: gesture.current.startPan.y + g.dy / scale,
-          });
+          };
+          scheduleUpdate();
         }
       },
 
       onPanResponderRelease: () => {
+        cancelPending();
         const duration = Date.now() - gesture.current.tapStartTime;
         const wasTap = !gesture.current.hasMoved && !gesture.current.wasPinch && duration < 400;
         gesture.current.mode = 'none';
-        if (!wasTap || !onSelectRoomRef.current) return;
+        if (!wasTap) return;
         const tx = gesture.current.tapStartX;
         const ty = gesture.current.tapStartY;
-        let nearest: { room: MapRoom; dist: number } | null = null;
-        for (const dot of dotsRef.current) {
-          const dx = dot.sx - tx;
-          const dy = dot.sy - ty;
+        let nearest: { cell: Cell; dist: number } | null = null;
+        for (const cell of cellsRef.current) {
+          const dx = cell.sx - tx;
+          const dy = cell.sy - ty;
           const d = Math.sqrt(dx * dx + dy * dy);
           if (d <= 18 && (nearest === null || d < nearest.dist)) {
-            nearest = { room: dot.room, dist: d };
+            nearest = { cell, dist: d };
           }
         }
-        if (nearest) onSelectRoomRef.current(nearest.room);
+        if (!nearest) return;
+        if (nearest.cell.rooms.length === 1) {
+          onSelectRoomRef.current?.(nearest.cell.rooms[0]);
+        } else {
+          const cr = currentRoomRef.current;
+          if (!cr) return;
+          setZoom(1);
+          setPan({ x: nearest.cell.centerX - cr.x, y: nearest.cell.centerY - cr.y });
+        }
       },
       onPanResponderTerminate: () => {
+        cancelPending();
         gesture.current.mode = 'none';
       },
     })
@@ -160,6 +210,7 @@ export const MiniMap = forwardRef<MiniMapHandle, MiniMapProps>(function MiniMap(
     const cx = currentRoom.x + pan.x;
     const cy = currentRoom.y + pan.y;
     const viewZ = currentRoom.z + zOffset;
+    const clusterMode = zoom < CLUSTER_ZOOM_THRESHOLD;
 
     const rooms = mapService.getNearbyRooms(cx, cy, viewZ, visibleRadius * 1.3);
 
@@ -168,29 +219,115 @@ export const MiniMap = forwardRef<MiniMapHandle, MiniMapProps>(function MiniMap(
       sy: -(y - cy) * scale + MAP_SIZE / 2,
     });
 
+    const cells: Cell[] = [];
     const lines: { x1: number; y1: number; x2: number; y2: number; key: string }[] = [];
-    const dots: { sx: number; sy: number; room: MapRoom; isCurrent: boolean }[] = [];
-    const roomMap = new Map(rooms.map((r) => [r.id, r]));
-    const seen = new Set<string>();
 
-    for (const room of rooms) {
-      const { sx, sy } = toScreen(room.x, room.y);
-      dots.push({ sx, sy, room, isCurrent: zOffset === 0 && room.id === currentRoom.id });
+    if (!clusterMode) {
+      const roomMap = new Map(rooms.map((r) => [r.id, r]));
+      const seen = new Set<string>();
+      for (const room of rooms) {
+        const { sx, sy } = toScreen(room.x, room.y);
+        cells.push({
+          sx,
+          sy,
+          centerX: room.x,
+          centerY: room.y,
+          rooms: [room],
+          isCurrent: zOffset === 0 && room.id === currentRoom.id,
+          hasSelected: room.id === selectedRoomId,
+          color: room.c,
+        });
+        for (const destId of Object.values(room.e)) {
+          const dest = roomMap.get(destId);
+          if (!dest) continue;
+          const key = `${Math.min(room.id, destId)}-${Math.max(room.id, destId)}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const { sx: dx, sy: dy } = toScreen(dest.x, dest.y);
+          lines.push({ x1: sx, y1: sy, x2: dx, y2: dy, key });
+        }
+      }
+    } else {
+      const cellSize = Math.max(1, Math.ceil(3 / zoom));
+      const cellKey = (x: number, y: number) =>
+        `${Math.floor(x / cellSize)},${Math.floor(y / cellSize)}`;
 
-      for (const destId of Object.values(room.e)) {
-        const dest = roomMap.get(destId);
-        if (!dest) continue;
-        const key = `${Math.min(room.id, destId)}-${Math.max(room.id, destId)}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const { sx: dx, sy: dy } = toScreen(dest.x, dest.y);
-        lines.push({ x1: sx, y1: sy, x2: dx, y2: dy, key });
+      const buckets = new Map<string, MapRoom[]>();
+      const roomToCell = new Map<number, string>();
+      for (const room of rooms) {
+        const key = cellKey(room.x, room.y);
+        roomToCell.set(room.id, key);
+        const arr = buckets.get(key);
+        if (arr) arr.push(room);
+        else buckets.set(key, [room]);
+      }
+
+      const cellsByKey = new Map<string, Cell>();
+      for (const [key, group] of buckets.entries()) {
+        let sumX = 0;
+        let sumY = 0;
+        let isCurrent = false;
+        let hasSelected = false;
+        const colorCounts = new Map<string | undefined, number>();
+        for (const r of group) {
+          sumX += r.x;
+          sumY += r.y;
+          if (zOffset === 0 && r.id === currentRoom.id) isCurrent = true;
+          if (r.id === selectedRoomId) hasSelected = true;
+          colorCounts.set(r.c, (colorCounts.get(r.c) ?? 0) + 1);
+        }
+        let predominantColor: string | undefined;
+        let maxCount = -1;
+        for (const [c, count] of colorCounts.entries()) {
+          if (count > maxCount) {
+            maxCount = count;
+            predominantColor = c;
+          }
+        }
+        const centerX = sumX / group.length;
+        const centerY = sumY / group.length;
+        const { sx, sy } = toScreen(centerX, centerY);
+        const cell: Cell = {
+          sx,
+          sy,
+          centerX,
+          centerY,
+          rooms: group,
+          isCurrent,
+          hasSelected,
+          color: predominantColor,
+        };
+        cells.push(cell);
+        cellsByKey.set(key, cell);
+      }
+
+      const edgeSeen = new Set<string>();
+      for (const room of rooms) {
+        const srcKey = roomToCell.get(room.id);
+        if (!srcKey) continue;
+        for (const destId of Object.values(room.e)) {
+          const destKey = roomToCell.get(destId);
+          if (!destKey || destKey === srcKey) continue;
+          const edgeKey = srcKey < destKey ? `${srcKey}|${destKey}` : `${destKey}|${srcKey}`;
+          if (edgeSeen.has(edgeKey)) continue;
+          edgeSeen.add(edgeKey);
+          const src = cellsByKey.get(srcKey);
+          const dst = cellsByKey.get(destKey);
+          if (!src || !dst) continue;
+          lines.push({
+            x1: src.sx,
+            y1: src.sy,
+            x2: dst.sx,
+            y2: dst.sy,
+            key: edgeKey,
+          });
+        }
       }
     }
 
-    dotsRef.current = dots.map(({ sx, sy, room }) => ({ sx, sy, room }));
-    return { lines, dots };
-  }, [currentRoom, zoom, pan, zOffset, mapService]);
+    cellsRef.current = cells;
+    return { lines, cells, clusterMode };
+  }, [currentRoom, zoom, pan, zOffset, mapService, selectedRoomId]);
 
   const resetView = () => {
     setZoom(1);
@@ -240,36 +377,42 @@ export const MiniMap = forwardRef<MiniMapHandle, MiniMapProps>(function MiniMap(
                   strokeWidth={1}
                 />
               ))}
-              {selectedRoomId != null &&
-                mapContent.dots
-                  .filter((d) => d.room.id === selectedRoomId)
-                  .map(({ sx, sy, room }) => (
-                    <Circle
-                      key={`aura-${room.id}`}
-                      cx={sx}
-                      cy={sy}
-                      r={CURRENT_ROOM_SIZE}
-                      fill="none"
-                      stroke="rgba(255,180,0,0.9)"
-                      strokeWidth={2.5}
-                    />
-                  ))}
-              {mapContent.dots.map(({ sx, sy, room, isCurrent }) => {
-                const r = (isCurrent ? CURRENT_ROOM_SIZE : ROOM_SIZE) / 2;
-                const fill = isCurrent
+
+              {mapContent.cells
+                .filter((c) => c.hasSelected)
+                .map((c) => (
+                  <Circle
+                    key={`aura-${c.rooms[0].id}`}
+                    cx={c.sx}
+                    cy={c.sy}
+                    r={CURRENT_ROOM_SIZE}
+                    fill="none"
+                    stroke="rgba(255,180,0,0.9)"
+                    strokeWidth={2.5}
+                  />
+                ))}
+
+              {mapContent.cells.map((cell) => {
+                const isCluster = cell.rooms.length > 1;
+                const size = cell.isCurrent
+                  ? CURRENT_ROOM_SIZE
+                  : isCluster && cell.rooms.length > 3
+                  ? ROOM_SIZE * 1.2
+                  : ROOM_SIZE;
+                const fill = cell.isCurrent
                   ? 'rgba(255,255,0,0.85)'
-                  : room.c
-                  ? `${room.c}cc`
+                  : cell.color
+                  ? `${cell.color}cc`
                   : 'rgba(0,180,0,0.7)';
                 return (
                   <Circle
-                    key={room.id}
-                    cx={sx}
-                    cy={sy}
-                    r={r}
+                    key={`cell-${cell.rooms[0].id}`}
+                    cx={cell.sx}
+                    cy={cell.sy}
+                    r={size / 2}
                     fill={fill}
-                    stroke={isCurrent ? 'rgba(255,255,255,0.7)' : undefined}
-                    strokeWidth={isCurrent ? 1 : 0}
+                    stroke={cell.isCurrent ? 'rgba(255,255,255,0.7)' : undefined}
+                    strokeWidth={cell.isCurrent ? 1 : 0}
                   />
                 );
               })}

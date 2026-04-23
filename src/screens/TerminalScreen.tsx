@@ -43,6 +43,8 @@ import { useSounds } from '../contexts/SoundContext';
 import { NORMAL_MODE, BLIND_MODE } from '../config/gridConfig';
 import { BlindChannelModal, ChannelMessage, nextMsgId } from '../components/BlindChannelModal';
 import { loadChannelAliases, saveChannelAliases } from '../storage/channelStorage';
+import { loadNicks, recordNickSeen, filterNicks } from '../storage/nickStorage';
+import { NickAutocomplete } from '../components/NickAutocomplete';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Terminal'>;
 
@@ -100,6 +102,10 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [hpHistory, setHpHistory] = useState<{ delta: number; label: string }[]>([]);
   const [currentBlindPanel, setCurrentBlindPanel] = useState(1);
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
+  const [inputSelection, setInputSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [inputFocused, setInputFocused] = useState(false);
+  const [nickSuggestions, setNickSuggestions] = useState<string[]>([]);
 
   const fontSizeRef = useRef(14);
   const telnetRef = useRef<TelnetService | null>(null);
@@ -112,6 +118,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const playSoundRef = useRef(playSound);
   const walkStepRef = useRef(0);
   const walkActiveRef = useRef(false);
+  const pendingStealthSearchRef = useRef(false);
   const isAtBottomRef = useRef(true);
   const flatListRef = useRef<FlatList<MudLine>>(null);
   const lastLineBlankRef = useRef(false);
@@ -141,8 +148,11 @@ export function TerminalScreen({ route, navigation }: Props) {
   const scrollVelocityRef = useRef(0);
   const scrollMomentumRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const currentScrollOffsetRef = useRef(0);
+  const isProgrammaticScrollRef = useRef(false);
+  const programmaticScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const isMountedRef = useRef(true);
+  const inWhoBlockRef = useRef(false);
 
   // Cleanup all pending timeouts on unmount
   useEffect(() => {
@@ -159,6 +169,21 @@ export function TerminalScreen({ route, navigation }: Props) {
       appStateRef.current = state;
     });
     return () => sub.remove();
+  }, []);
+
+  // Track soft-keyboard height so we can dock the nick autocomplete bar to
+  // its top edge. Hide the bar when the keyboard is dismissed.
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (e) => {
+      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
   }, []);
 
   // Clear the command input whenever the user dismisses the soft keyboard
@@ -289,8 +314,9 @@ export function TerminalScreen({ route, navigation }: Props) {
     })();
   }, [server, uiMode]);
 
-  // Process a single line with blind mode filters and add to display
-  const processingAndAddLine = (text: string, isChannelMessage: boolean = false) => {
+  // Process a single line with blind mode filters and add to display.
+  // Pass `deferSetState=true` when batching multiple lines to avoid N re-renders.
+  const processingAndAddLine = (text: string, isChannelMessage: boolean = false, deferSetState: boolean = false) => {
     // Auto-login: Try to log in with saved credentials if available and not yet attempted
     if (!autoLoginRef.current && server.username && server.password) {
       const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
@@ -446,17 +472,13 @@ export function TerminalScreen({ route, navigation }: Props) {
     if (linesRef.current.length > MAX_LINES) {
       linesRef.current = linesRef.current.slice(-MAX_LINES);
     }
-    setLines([...linesRef.current]);
+    if (!deferSetState) {
+      setLines([...linesRef.current]);
+    }
 
-    // Channel messages: always write to terminal, NEVER announce (even if silent mode is off)
+    // Channel messages: always write to terminal, NEVER announce (even if silent mode is off).
+    // Auto-scroll is handled by FlatList's onContentSizeChange/onLayout.
     if (isChannelMessage) {
-      if (isAtBottomRef.current) {
-        const id = setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: false });
-          pendingTimeoutsRef.current.delete(id);
-        }, 50);
-        pendingTimeoutsRef.current.add(id);
-      }
       return;
     }
 
@@ -484,22 +506,17 @@ export function TerminalScreen({ route, navigation }: Props) {
         blindModeService.announceMessage(cleanText, 'low');
       }
     }
-
-    if (isAtBottomRef.current) {
-      const id = setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: false });
-        pendingTimeoutsRef.current.delete(id);
-      }, 50);
-      pendingTimeoutsRef.current.add(id);
-    }
+    // Auto-scroll is handled by FlatList's onContentSizeChange/onLayout.
   };
 
   const addLine = processingAndAddLine;
 
   const addMultipleLines = (texts: string[]) => {
     texts.forEach(text => {
-      processingAndAddLine(text);
+      processingAndAddLine(text, false, true);
     });
+    // Single flush after the batch to avoid N re-renders and mid-batch scrolls.
+    setLines([...linesRef.current]);
   };
 
   const mapServiceRef = useRef(new MapService());
@@ -511,15 +528,10 @@ export function TerminalScreen({ route, navigation }: Props) {
     })();
   }, []);
 
+  // Warm the nick cache so the autocomplete bar is responsive on first keypress.
   useEffect(() => {
-    if (lines.length > 0) {
-      setTimeout(() => {
-        if (isAtBottomRef.current) {
-          flatListRef.current?.scrollToEnd({ animated: false });
-        }
-      }, 200);
-    }
-  }, [lines.length]);
+    loadNicks();
+  }, []);
 
   // Keep silentModeEnabled ref in sync so processingAndAddLine can read current value
   useEffect(() => {
@@ -548,6 +560,24 @@ export function TerminalScreen({ route, navigation }: Props) {
               recentLinesRef.current.push(clean);
               if (recentLinesRef.current.length > 30) {
                 recentLinesRef.current.shift();
+              }
+
+              // Nick detection — two sources:
+              //  1) WHO block: lines between "] Mortales [" and "[ Hay N mortales en …]"
+              //  2) Direct communications: "Nick te dice/pregunta/exclama/susurra/grita/responde"
+              if (/\]\s*Mortales\s*\[/i.test(clean)) {
+                inWhoBlockRef.current = true;
+              } else if (/\[\s*Hay\s+\S+\s+mortales/i.test(clean)) {
+                inWhoBlockRef.current = false;
+              } else if (inWhoBlockRef.current) {
+                const firstToken = clean.split(/\s+/)[0];
+                if (firstToken && /^[A-Za-zÀ-ÿ'][A-Za-zÀ-ÿ'0-9]{1,}$/.test(firstToken)) {
+                  recordNickSeen(firstToken);
+                }
+              }
+              const dmMatch = clean.match(/([A-Za-zÀ-ÿ'][A-Za-zÀ-ÿ'0-9]+)\s+te\s+(?:dice|pregunta|exclama|susurra|grita|responde)\b/i);
+              if (dmMatch) {
+                recordNickSeen(dmMatch[1]);
               }
 
               // Check if we're locating and found the room
@@ -753,7 +783,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     setWalking(false);
   }, []);
 
-  const walkTo = useCallback((targetRoom: MapRoom) => {
+  const walkTo = useCallback((targetRoom: MapRoom, options?: { stealth?: boolean }) => {
     if (walkActiveRef.current) return;
     if (walkTimeoutRef.current) {
       clearTimeout(walkTimeoutRef.current);
@@ -775,7 +805,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     walkActiveRef.current = true;
     setWalking(true);
     setSearchVisible(false);
-    walkPathRef.current = path;
+    walkPathRef.current = options?.stealth ? path.map((dir) => `sigilar ${dir}`) : path;
     walkStepRef.current = 0;
 
     const STEP_DELAY = 1100;
@@ -808,7 +838,9 @@ export function TerminalScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (waitingForIrsalaAfterLocateRef.current && currentRoom) {
       waitingForIrsalaAfterLocateRef.current = false;
-      setInputText('irsala ');
+      const nextText = 'irsala ';
+      setInputText(nextText);
+      setInputSelection({ start: nextText.length, end: nextText.length });
       const id = setTimeout(() => {
         textInputRef.current?.focus();
         pendingTimeoutsRef.current.delete(id);
@@ -818,7 +850,9 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, [currentRoom]);
 
   const handleAddTextButton = useCallback((command: string) => {
-    setInputText(command + ' ');
+    const nextText = command + ' ';
+    setInputText(nextText);
+    setInputSelection({ start: nextText.length, end: nextText.length });
     // blur+focus reliably pops the soft keyboard on Android — calling
     // .focus() alone is a no-op when the input already had logical focus.
     suppressClearOnHideRef.current = true;
@@ -830,7 +864,18 @@ export function TerminalScreen({ route, navigation }: Props) {
     pendingTimeoutsRef.current.add(id);
   }, []);
 
-  const sendCommand = useCallback((command: string) => {
+  const sendCommand = useCallback((command: string, skipHistory?: boolean) => {
+    // ";;" acts as a command separator: split and dispatch each piece in order.
+    // Guarded by skipHistory so recursive calls don't re-split or duplicate history.
+    if (!skipHistory && command.includes(';;')) {
+      const parts = command.split(';;').map((s) => s.trim()).filter(Boolean);
+      if (parts.length > 1) {
+        if (!skipHistory) setCommandHistory([command, ...commandHistory]);
+        for (const part of parts) sendCommand(part, true);
+        return;
+      }
+    }
+
     // Intercept "parar" or "stop" to stop walking
     if ((command.toLowerCase() === 'parar' || command.toLowerCase() === 'stop') && walking) {
       stopWalk();
@@ -849,42 +894,46 @@ export function TerminalScreen({ route, navigation }: Props) {
       if (!currentRoom) {
         waitingForIrsalaAfterLocateRef.current = true;
         handleLocate();
-        setCommandHistory([command, ...commandHistory]);
+        if (!skipHistory) setCommandHistory([command, ...commandHistory]);
         return;
       }
 
       // If localized, open input with "irsala " pre-filled (same as completo mode)
-      setInputText('irsala ');
+      const nextText = 'irsala ';
+      setInputText(nextText);
+      setInputSelection({ start: nextText.length, end: nextText.length });
       setTimeout(() => {
         textInputRef.current?.focus();
       }, 100);
-      setCommandHistory([command, ...commandHistory]);
+      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
       return;
     }
 
-    // Intercept irsala command
-    const irsalaMatch = command.match(/^irsala\s+(.+)$/i);
+    // Intercept irsala / sigilarsala command
+    const irsalaMatch = command.match(/^(sigilarsala|irsala)\s+(.+)$/i);
     if (irsalaMatch) {
-      const query = irsalaMatch[1];
+      const stealth = irsalaMatch[1].toLowerCase() === 'sigilarsala';
+      const query = irsalaMatch[2];
       const mapSvc = mapServiceRef.current;
       if (mapSvc.isLoaded) {
         const results = mapSvc.searchRooms(query);
         if (results.length === 0) {
           addLine(`--- No se encontró ninguna sala con "${query}" ---`);
         } else if (results.length === 1) {
-          walkTo(results[0]);
+          walkTo(results[0], { stealth });
         } else {
+          pendingStealthSearchRef.current = stealth;
           setSearchResults(results);
           setSearchVisible(true);
         }
       }
-      setCommandHistory([command, ...commandHistory]);
+      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
       return;
     }
 
     // Intercept LOCATE command
     if (command.toLowerCase() === 'locate') {
-      setCommandHistory([command, ...commandHistory]);
+      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
       handleLocate();
       return;
     }
@@ -900,7 +949,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         setStatFeedback({ type: 'vida', message });
         setTimeout(() => setStatFeedback(null), 2000);
       }
-      setCommandHistory([command, ...commandHistory]);
+      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
       return;
     }
 
@@ -912,7 +961,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         setStatFeedback({ type: 'energia', message });
         setTimeout(() => setStatFeedback(null), 2000);
       }
-      setCommandHistory([command, ...commandHistory]);
+      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
       return;
     }
 
@@ -925,7 +974,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         setStatFeedback({ type: 'salidas', message: `Salidas: ${exits}` });
         setTimeout(() => setStatFeedback(null), 2000);
       }
-      setCommandHistory([command, ...commandHistory]);
+      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
       return;
     }
 
@@ -938,7 +987,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         setStatFeedback({ type: 'xp', message: xpMessage });
         setTimeout(() => setStatFeedback(null), 2000);
       }
-      setCommandHistory([command, ...commandHistory]);
+      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
       return;
     }
 
@@ -954,7 +1003,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         setStatFeedback({ type: 'daño', message: damageMessage });
         setTimeout(() => setStatFeedback(null), 2000);
       }
-      setCommandHistory([command, ...commandHistory]);
+      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
       return;
     }
 
@@ -967,7 +1016,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         setStatFeedback({ type: 'enemigos', message: `Enemigos: ${enemiesMessage}` });
         setTimeout(() => setStatFeedback(null), 2000);
       }
-      setCommandHistory([command, ...commandHistory]);
+      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
       return;
     }
 
@@ -981,7 +1030,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
     if (connected) {
       telnetRef.current?.send(command);
-      setCommandHistory([command, ...commandHistory]);
+      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
     }
 
     // Cancel walk if any other command is sent
@@ -995,8 +1044,8 @@ export function TerminalScreen({ route, navigation }: Props) {
     if (inputText.trim()) {
       const trimmed = inputText.trim();
       sendCommand(trimmed);
-      // Close keyboard on irsala so the user can see the results list.
-      if (/^irsala\s+\S/i.test(trimmed)) {
+      // Close keyboard on irsala/sigilarsala so the user can see the results list.
+      if (/^(irsala|sigilarsala)\s+\S/i.test(trimmed)) {
         Keyboard.dismiss();
       }
       // Preserve common conversation prefixes so the user can keep typing.
@@ -1136,21 +1185,96 @@ export function TerminalScreen({ route, navigation }: Props) {
   const handleFlatListScroll = (event: any) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     currentScrollOffsetRef.current = contentOffset.y;
+    // Ignore at-bottom recomputation while a programmatic scroll is in flight;
+    // intermediate animation frames would otherwise flip isAtBottomRef to false.
+    if (isProgrammaticScrollRef.current) return;
     const isAtEnd = contentOffset.y >= contentSize.height - layoutMeasurement.height - 50;
     isAtBottomRef.current = isAtEnd;
     setIsAtBottom(isAtEnd);
     setShowScrollToBottom(!isAtEnd && lines.length > 0);
   };
 
+  const runProgrammaticScroll = (animated: boolean) => {
+    if (!flatListRef.current) return;
+    isProgrammaticScrollRef.current = true;
+    flatListRef.current.scrollToEnd({ animated });
+    if (programmaticScrollTimeoutRef.current) {
+      clearTimeout(programmaticScrollTimeoutRef.current);
+      pendingTimeoutsRef.current.delete(programmaticScrollTimeoutRef.current);
+    }
+    const id = setTimeout(() => {
+      isProgrammaticScrollRef.current = false;
+      programmaticScrollTimeoutRef.current = null;
+      pendingTimeoutsRef.current.delete(id);
+    }, animated ? 400 : 50);
+    programmaticScrollTimeoutRef.current = id;
+    pendingTimeoutsRef.current.add(id);
+  };
+
+  // Fired by FlatList when the measured content size changes (new lines rendered,
+  // font reflows, etc.). Scroll to end only if the user hasn't scrolled up.
+  const handleTerminalContentSizeChange = useCallback(() => {
+    if (isAtBottomRef.current) runProgrammaticScroll(false);
+  }, []);
+
+  // Fired when the FlatList viewport itself changes size (orientation flip,
+  // keyboard show/hide, split-pane resize). Same policy: re-pin to bottom.
+  const handleTerminalLayout = useCallback(() => {
+    if (isAtBottomRef.current) runProgrammaticScroll(false);
+  }, []);
+
   const handleScrollToBottom = () => {
     isAtBottomRef.current = true;
     setIsAtBottom(true);
     setShowScrollToBottom(false);
-    flatListRef.current?.scrollToEnd({ animated: true });
+    runProgrammaticScroll(true);
   };
 
   const handleScrollToTop = () => {
     flatListRef.current?.scrollToIndex({ index: 0, animated: true });
+  };
+
+  // Word under cursor for the nick autocomplete.
+  const getCurrentWordBounds = (text: string, cursor: number) => {
+    let start = cursor;
+    while (start > 0 && /\S/.test(text[start - 1])) start--;
+    let end = cursor;
+    while (end < text.length && /\S/.test(text[end])) end++;
+    return { start, end, word: text.slice(start, end) };
+  };
+
+  // Recompute suggestions whenever the text, cursor, or mode changes.
+  useEffect(() => {
+    if (uiMode !== 'blind') {
+      setNickSuggestions([]);
+      return;
+    }
+    const { word } = getCurrentWordBounds(inputText, inputSelection.end);
+    // Only suggest when at least one character is typed — otherwise the bar
+    // would show the full recent list every time the keyboard appears.
+    if (word.length < 1) {
+      setNickSuggestions([]);
+      return;
+    }
+    const matches = filterNicks(word, 8).map((e) => e.nick);
+    // Don't suggest the word itself if it's already a complete match.
+    setNickSuggestions(matches.filter((n) => n.toLowerCase() !== word.toLowerCase()));
+  }, [inputText, inputSelection, uiMode]);
+
+  const handleSelectNickSuggestion = (nick: string) => {
+    const cursor = inputSelection.end;
+    const { start, end } = getCurrentWordBounds(inputText, cursor);
+    const before = inputText.slice(0, start);
+    const after = inputText.slice(end);
+    // Insert nick + trailing space so the user can continue typing.
+    const insertion = nick + ' ';
+    const newText = before + insertion + after;
+    const newCursor = start + insertion.length;
+    setInputText(newText);
+    setInputSelection({ start: newCursor, end: newCursor });
+    setHistoryIndex(-1);
+    // Defensive: re-focus the input in case the chip tap dropped focus.
+    textInputRef.current?.focus();
   };
 
   const handleUpArrow = () => {
@@ -1392,7 +1516,6 @@ export function TerminalScreen({ route, navigation }: Props) {
           }}
         >
           <FlatList
-            scrollToEndDelay={100}
             ref={flatListRef}
             data={lines}
             keyExtractor={item => String(item.id)}
@@ -1405,6 +1528,8 @@ export function TerminalScreen({ route, navigation }: Props) {
             scrollEventThrottle={16}
             onScroll={handleFlatListScroll}
             onScrollEndDrag={handleFlatListScroll}
+            onContentSizeChange={handleTerminalContentSizeChange}
+            onLayout={handleTerminalLayout}
             style={styles.flatList}
             accessible={true}
             accessibilityLabel={`Terminal con ${lines.length} líneas`}
@@ -1527,6 +1652,14 @@ export function TerminalScreen({ route, navigation }: Props) {
           </View>
         )}
 
+        {/* Nick autocomplete bar (blind mode only) — sits right above the
+            input row; adjustResize docks it above the soft keyboard. */}
+        <NickAutocomplete
+          visible={uiMode === 'blind' && inputFocused}
+          suggestions={nickSuggestions}
+          onSelect={handleSelectNickSuggestion}
+        />
+
         {/* Input Row */}
         <View style={[styles.inputSection, { height: inputHeight }, uiMode === 'completo' && { marginTop: 2 }]}>
           {connected ? (
@@ -1540,7 +1673,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                   accessibilityRole="button"
                   accessibilityHint={`Lee los mensajes en voz alta. Estado: ${silentModeEnabled ? 'ON' : 'OFF'}`}
                 >
-                  <Text style={[styles.sendButtonText, { fontSize: 28 }]}>{silentModeEnabled ? '🔇' : '🔊'}</Text>
+                  <Text style={[styles.sendButtonText, { fontSize: 14 }]}>{silentModeEnabled ? 'Silencio' : 'Sonido'}</Text>
                 </TouchableOpacity>
               )}
 
@@ -1552,7 +1685,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                   accessibilityLabel="Abrir canales"
                   accessibilityRole="button"
                 >
-                  <Text style={[styles.sendButtonText, { fontSize: 28 }]}>💬</Text>
+                  <Text style={[styles.sendButtonText, { fontSize: 14 }]}>Canales</Text>
                 </TouchableOpacity>
               )}
 
@@ -1585,10 +1718,14 @@ export function TerminalScreen({ route, navigation }: Props) {
                 placeholder="Comando..."
                 placeholderTextColor="#888"
                 value={inputText}
+                selection={inputSelection}
                 onChangeText={(text) => {
                   setInputText(text);
                   setHistoryIndex(-1);
                 }}
+                onSelectionChange={(e) => setInputSelection(e.nativeEvent.selection)}
+                onFocus={() => setInputFocused(true)}
+                onBlur={() => setInputFocused(false)}
                 onSubmitEditing={handleSendInput}
                 blurOnSubmit={false}
                 returnKeyType="send"
@@ -1611,7 +1748,9 @@ export function TerminalScreen({ route, navigation }: Props) {
                 accessibilityRole="button"
                 accessibilityHint="Envía el comando actual al servidor"
               >
-                <Text style={[styles.sendButtonText, uiMode === 'blind' && { fontSize: 28 }]}>›</Text>
+                <Text style={[styles.sendButtonText, uiMode === 'blind' && { fontSize: 14 }]}>
+                  {uiMode === 'blind' ? 'Enviar' : '›'}
+                </Text>
               </TouchableOpacity>
 
               {uiMode === 'completo' && (
@@ -1640,14 +1779,20 @@ export function TerminalScreen({ route, navigation }: Props) {
               )}
 
               <TouchableOpacity
-                style={[styles.compactButton, { backgroundColor: '#663366' }]}
+                style={[
+                  styles.compactButton,
+                  { backgroundColor: '#663366' },
+                  uiMode === 'blind' && styles.blindTextButton,
+                ]}
                 onPress={() => setSettingsModalVisible(true)}
                 accessible={true}
                 accessibilityLabel="Configuración"
                 accessibilityRole="button"
                 accessibilityHint="Abre la configuración de la aplicación"
               >
-                <Text style={styles.compactButtonText}>⚙️</Text>
+                <Text style={[styles.compactButtonText, uiMode === 'blind' && { fontSize: 14 }]}>
+                  {uiMode === 'blind' ? 'Ajustes' : '⚙️'}
+                </Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -1756,7 +1901,6 @@ export function TerminalScreen({ route, navigation }: Props) {
             }}
           >
             <FlatList
-              scrollToEndDelay={100}
               ref={flatListRef}
               data={lines}
               keyExtractor={item => String(item.id)}
@@ -1769,6 +1913,8 @@ export function TerminalScreen({ route, navigation }: Props) {
               scrollEventThrottle={16}
               onScroll={handleFlatListScroll}
               onScrollEndDrag={handleFlatListScroll}
+              onContentSizeChange={handleTerminalContentSizeChange}
+              onLayout={handleTerminalLayout}
               style={styles.flatList}
               accessible={true}
               accessibilityLabel={`Terminal con ${lines.length} líneas`}
@@ -1810,6 +1956,13 @@ export function TerminalScreen({ route, navigation }: Props) {
             )}
           </View>
 
+          {/* Nick autocomplete bar (blind mode only). */}
+          <NickAutocomplete
+            visible={uiMode === 'blind' && inputFocused}
+            suggestions={nickSuggestions}
+            onSelect={handleSelectNickSuggestion}
+          />
+
           {/* Input Row - Horizontal */}
           <View style={[styles.inputSection, { height: inputHeight }]}>
             {connected ? (
@@ -1823,7 +1976,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                     accessibilityRole="button"
                     accessibilityHint={`Lee los mensajes en voz alta. Estado: ${silentModeEnabled ? 'ON' : 'OFF'}`}
                   >
-                    <Text style={[styles.sendButtonText, { fontSize: 28 }]}>{silentModeEnabled ? '🔇' : '🔊'}</Text>
+                    <Text style={[styles.sendButtonText, { fontSize: 14 }]}>{silentModeEnabled ? 'Silencio' : 'Sonido'}</Text>
                   </TouchableOpacity>
                 )}
 
@@ -1835,7 +1988,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                     accessibilityLabel="Abrir canales"
                     accessibilityRole="button"
                   >
-                    <Text style={[styles.sendButtonText, { fontSize: 28 }]}>💬</Text>
+                    <Text style={[styles.sendButtonText, { fontSize: 14 }]}>Canales</Text>
                   </TouchableOpacity>
                 )}
 
@@ -1868,10 +2021,14 @@ export function TerminalScreen({ route, navigation }: Props) {
                   placeholder="Comando..."
                   placeholderTextColor="#888"
                   value={inputText}
+                  selection={inputSelection}
                   onChangeText={(text) => {
                     setInputText(text);
                     setHistoryIndex(-1);
                   }}
+                  onSelectionChange={(e) => setInputSelection(e.nativeEvent.selection)}
+                  onFocus={() => setInputFocused(true)}
+                  onBlur={() => setInputFocused(false)}
                   onSubmitEditing={handleSendInput}
                   blurOnSubmit={false}
                   returnKeyType="send"
@@ -1894,7 +2051,9 @@ export function TerminalScreen({ route, navigation }: Props) {
                   accessibilityRole="button"
                   accessibilityHint="Envía el comando actual al servidor"
                 >
-                  <Text style={[styles.sendButtonText, uiMode === 'blind' && { fontSize: 28 }]}>›</Text>
+                  <Text style={[styles.sendButtonText, uiMode === 'blind' && { fontSize: 14 }]}>
+                    {uiMode === 'blind' ? 'Enviar' : '›'}
+                  </Text>
                 </TouchableOpacity>
 
                 {uiMode === 'completo' && (
@@ -1923,14 +2082,20 @@ export function TerminalScreen({ route, navigation }: Props) {
                 )}
 
                 <TouchableOpacity
-                  style={[styles.compactButton, { backgroundColor: '#663366' }]}
+                  style={[
+                    styles.compactButton,
+                    { backgroundColor: '#663366' },
+                    uiMode === 'blind' && styles.blindTextButton,
+                  ]}
                   onPress={() => setSettingsModalVisible(true)}
                   accessible={true}
                   accessibilityLabel="Configuración"
                   accessibilityRole="button"
                   accessibilityHint="Abre la configuración de la aplicación"
                 >
-                  <Text style={styles.compactButtonText}>⚙️</Text>
+                  <Text style={[styles.compactButtonText, uiMode === 'blind' && { fontSize: 14 }]}>
+                    {uiMode === 'blind' ? 'Ajustes' : '⚙️'}
+                  </Text>
                 </TouchableOpacity>
               </>
             ) : (
@@ -2082,29 +2247,36 @@ export function TerminalScreen({ route, navigation }: Props) {
         rooms={searchResults}
         visible={searchVisible}
         highlightedRoomId={previewRoomId}
+        uiMode={uiMode}
         onSelect={(room) => {
           if (uiMode === 'completo') {
             if (previewRoomId === room.id) {
+              const stealth = pendingStealthSearchRef.current;
+              pendingStealthSearchRef.current = false;
               setPreviewRoomId(null);
               setSearchVisible(false);
               miniMapRef.current?.resetView();
-              walkTo(room);
+              walkTo(room, { stealth });
             } else {
               setPreviewRoomId(room.id);
               miniMapRef.current?.previewRoom(room);
             }
           } else {
+            const stealth = pendingStealthSearchRef.current;
+            pendingStealthSearchRef.current = false;
             setPreviewRoomId(null);
             setSearchVisible(false);
-            walkTo(room);
+            walkTo(room, { stealth });
           }
         }}
         onClose={() => {
+          pendingStealthSearchRef.current = false;
           setSearchVisible(false);
           setPreviewRoomId(null);
           miniMapRef.current?.resetView();
         }}
       />
+
     </SafeAreaView>
   );
 }
@@ -2304,5 +2476,10 @@ const styles = StyleSheet.create({
   compactButtonText: {
     fontSize: 20,
     fontWeight: 'bold',
+  },
+  // Width override for blind-mode "compact" buttons that show text instead of an icon.
+  blindTextButton: {
+    width: undefined,
+    paddingHorizontal: 12,
   },
 });

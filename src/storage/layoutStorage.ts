@@ -39,6 +39,7 @@ export function createDefaultLayout(): ButtonLayout {
     { id: genId(), col: 4, row: 0, label: 'Res', command: 'responder', color: '#662266', textColor: '#fff', addText: true },
     { id: genId(), col: 6, row: 0, label: 'STOP', command: 'stop', color: '#662222', textColor: '#fff' },
     { id: genId(), col: 7, row: 0, label: 'IR', command: 'irsala', color: '#662266', textColor: '#fff', addText: true },
+    { id: genId(), col: 7, row: 1, label: 'SIG', command: 'sigilarsala', color: '#443366', textColor: '#fff', addText: true },
     { id: genId(), col: 8, row: 0, label: 'LOC', command: 'locate', color: '#223366', textColor: '#fff' },
     // Row 2: _, _, NO, N, NE, AR, _, _
     { id: genId(), col: 3, row: 2, label: 'NO', command: 'noroeste', color: '#662222', textColor: '#fff' },
@@ -77,7 +78,7 @@ export function createBlindModeLayout(): ButtonLayout {
     { id: genId(), col: 3, row: 1, label: 'AR', command: 'ar', color: '#663322', textColor: '#fff', blindPanel: 1 },
     // Row 2: O, [CENTER SWITCH], E, AB
     { id: genId(), col: 0, row: 2, label: 'O', command: 'oeste', color: '#662222', textColor: '#fff', blindPanel: 1 },
-    { id: genId(), col: 1, row: 2, label: '⇄', command: '__SWITCH_PANEL__', color: '#336666', textColor: '#88ccff', blindPanel: 1, fixed: true },
+    { id: genId(), col: 1, row: 2, label: 'Cambiar', command: '__SWITCH_PANEL__', color: '#336666', textColor: '#88ccff', blindPanel: 1, fixed: true },
     { id: genId(), col: 2, row: 2, label: 'E', command: 'este', color: '#662222', textColor: '#fff', blindPanel: 1 },
     { id: genId(), col: 3, row: 2, label: 'AB', command: 'ab', color: '#663322', textColor: '#fff', blindPanel: 1 },
     // Row 3: SO, S, SE, DE, FU
@@ -107,7 +108,7 @@ export function createBlindModeLayout(): ButtonLayout {
     { id: genId(), col: 4, row: 1, label: '-', command: '', color: '#444444', textColor: '#fff', blindPanel: 2 },
     // Row 2: Stealth directions O, SWITCH, E, AB + empty
     { id: genId(), col: 0, row: 2, label: 'O', command: 'sigilar oeste', color: '#662222', textColor: '#fff', blindPanel: 2 },
-    { id: genId(), col: 1, row: 2, label: '⇄', command: '__SWITCH_PANEL__', color: '#336666', textColor: '#88ccff', blindPanel: 2 },
+    { id: genId(), col: 1, row: 2, label: 'Cambiar', command: '__SWITCH_PANEL__', color: '#336666', textColor: '#88ccff', blindPanel: 2 },
     { id: genId(), col: 2, row: 2, label: 'E', command: 'sigilar este', color: '#662222', textColor: '#fff', blindPanel: 2 },
     { id: genId(), col: 3, row: 2, label: 'AB', command: 'sigilar ab', color: '#663322', textColor: '#fff', blindPanel: 2 },
     { id: genId(), col: 4, row: 2, label: '-', command: '', color: '#444444', textColor: '#fff', blindPanel: 2 },
@@ -123,17 +124,42 @@ export function createBlindModeLayout(): ButtonLayout {
 }
 
 function migrateLayout(layout: ButtonLayout): ButtonLayout {
-  // Migrate secondaryCommand to alternativeCommands
   const migratedButtons = layout.buttons.map(btn => {
-    if (btn.secondaryCommand && !btn.alternativeCommands) {
-      return {
-        ...btn,
-        alternativeCommands: [btn.secondaryCommand],
-        secondaryCommand: undefined
+    let next = btn;
+    // Migrate secondaryCommand to alternativeCommands
+    if (next.secondaryCommand && !next.alternativeCommands) {
+      next = {
+        ...next,
+        alternativeCommands: [next.secondaryCommand],
+        secondaryCommand: undefined,
       };
     }
-    return btn;
+    // Blind-mode panel-switch button: icon "⇄" replaced with brief text
+    if (next.command === '__SWITCH_PANEL__' && next.label === '⇄') {
+      next = { ...next, label: 'Cambiar' };
+    }
+    return next;
   });
+
+  // Add SIG (sigilarsala) button below IR in completo layout if missing
+  // and the target slot (7,1) is free. Blind-mode layouts use different
+  // coordinates so this only affects the completo default layout.
+  const hasIrCompleto = migratedButtons.some(b => b.col === 7 && b.row === 0 && b.command === 'irsala' && !b.blindPanel);
+  const hasSigilarsala = migratedButtons.some(b => b.command === 'sigilarsala' && !b.blindPanel);
+  const slotFree = !migratedButtons.some(b => b.col === 7 && b.row === 1 && !b.blindPanel);
+  if (hasIrCompleto && !hasSigilarsala && slotFree) {
+    migratedButtons.push({
+      id: genId(),
+      col: 7,
+      row: 1,
+      label: 'SIG',
+      command: 'sigilarsala',
+      color: '#443366',
+      textColor: '#fff',
+      addText: true,
+    });
+  }
+
   return { buttons: migratedButtons };
 }
 
