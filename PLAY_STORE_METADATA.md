@@ -143,27 +143,18 @@ smiaug@proton.me
 
 ## Screenshots (Need 2-8)
 
-**Required:**
-1. **Main terminal screen** - showing ANSI colors and text
-2. **Button grid** - showing customizable commands
-3. **Map interface** - showing room visualization
-4. **Blind mode** - showing accessible interface
-5. **Channels view** - showing message organization
-6. **Settings screen** - showing configuration options
-7. **Server list** - showing multi-server support
-8. **Portrait + Landscape** - showing responsive design
+**Location in repo:** `store-screenshots/`
 
-**Recommended text for each:**
-```
-1. "Terminal with ANSI color support"
-2. "Customizable button macros for quick commands"
-3. "Interactive map system for navigation"
-4. "Accessible Blind Mode with TalkBack support"
-5. "Organize messages by channel"
-6. "Full configuration and accessibility settings"
-7. "Connect to multiple MUD servers"
-8. "Responsive design for all orientations"
-```
+**Currently ready (5 images, 1280x2276 px, 9:16 ratio):**
+- `01-terminal.jpg`
+- `02-terminal.jpg`
+- `03-terminal.jpg`
+- `04-terminal.jpg`
+- `05-terminal.jpg`
+
+Capturas directas del Redmi Note 15 recortadas a 9:16 para cumplir el ratio que exige Play Console.
+
+**To upload:** Play Console → Store listing → Graphic assets → Phone screenshots → subir los JPG de `store-screenshots/` en el orden que quieras (el primero es el que aparece destacado en la ficha).
 
 ---
 

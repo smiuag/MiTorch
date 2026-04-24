@@ -29,17 +29,20 @@ interface BlindChannelModalProps {
   onClose: () => void;
   channels: string[];
   channelAliases: Record<string, string>;
+  channelOrder: string[];
   channelMessages: ChannelMessage[];
   onSendMessage: (cmd: string) => void;
   onAliasChange: (channel: string, alias: string) => void;
+  onOrderChange: (order: string[]) => void;
   fontSize: number;
 }
 
-const CHANNEL_ORDER = ['chat', 'grupo', 'bando', 'gremio', 'familia', 'clan'];
+const DEFAULT_CHANNEL_ORDER = ['chat', 'grupo', 'bando', 'gremio', 'familia', 'clan'];
 
-function sortChannels(channels: string[]): string[] {
+function sortChannels(channels: string[], savedOrder: string[]): string[] {
   const sorted: string[] = [];
-  for (const ch of CHANNEL_ORDER) {
+  const baseOrder = savedOrder.length > 0 ? savedOrder : DEFAULT_CHANNEL_ORDER;
+  for (const ch of baseOrder) {
     if (channels.includes(ch)) sorted.push(ch);
   }
   for (const ch of channels) {
@@ -53,9 +56,11 @@ export function BlindChannelModal({
   onClose,
   channels,
   channelAliases,
+  channelOrder,
   channelMessages,
   onSendMessage,
   onAliasChange,
+  onOrderChange,
   fontSize,
 }: BlindChannelModalProps) {
   const [activeChannel, setActiveChannel] = useState<string | null>(null);
@@ -68,7 +73,18 @@ export function BlindChannelModal({
   const aliasInputRef = useRef<TextInput>(null);
   const messagesListRef = useRef<FlatList>(null);
 
-  const sortedChannels = useMemo(() => sortChannels(channels), [channels]);
+  const sortedChannels = useMemo(() => sortChannels(channels, channelOrder), [channels, channelOrder]);
+
+  const moveChannel = useCallback((channel: string, direction: 'left' | 'right') => {
+    const current = sortedChannels;
+    const idx = current.indexOf(channel);
+    if (idx < 0) return;
+    const targetIdx = direction === 'left' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= current.length) return;
+    const next = [...current];
+    [next[idx], next[targetIdx]] = [next[targetIdx], next[idx]];
+    onOrderChange(next);
+  }, [sortedChannels, onOrderChange]);
 
   const filteredMessages = useMemo(() => {
     if (!activeChannel) return [];
@@ -377,6 +393,34 @@ export function BlindChannelModal({
                 placeholderTextColor="#555"
                 accessibilityLabel="Nuevo alias"
               />
+              {editingChannel && (() => {
+                const idx = sortedChannels.indexOf(editingChannel);
+                const canLeft = idx > 0;
+                const canRight = idx >= 0 && idx < sortedChannels.length - 1;
+                return (
+                  <View style={styles.reorderRow}>
+                    <Text style={styles.reorderLabel}>Posición:</Text>
+                    <TouchableOpacity
+                      style={[styles.reorderBtn, !canLeft && styles.reorderBtnDisabled]}
+                      onPress={() => canLeft && moveChannel(editingChannel, 'left')}
+                      disabled={!canLeft}
+                      accessibilityLabel="Mover a la izquierda"
+                      accessibilityRole="button"
+                    >
+                      <Text style={styles.reorderBtnText}>← Izquierda</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.reorderBtn, !canRight && styles.reorderBtnDisabled]}
+                      onPress={() => canRight && moveChannel(editingChannel, 'right')}
+                      disabled={!canRight}
+                      accessibilityLabel="Mover a la derecha"
+                      accessibilityRole="button"
+                    >
+                      <Text style={styles.reorderBtnText}>Derecha →</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })()}
               <View style={styles.editModalButtons}>
                 <TouchableOpacity
                   style={styles.editCancelBtn}
@@ -430,7 +474,9 @@ const styles = StyleSheet.create({
     fontSize: 24,
   },
   channelSelectorScroll: {
-    maxHeight: 50,
+    height: 44,
+    flexGrow: 0,
+    flexShrink: 0,
     backgroundColor: '#0a0a0a',
     borderBottomWidth: 1,
     borderBottomColor: '#222',
@@ -439,10 +485,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 6,
     gap: 6,
+    alignItems: 'center',
   },
   channelButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,
+    minHeight: 30,
+    justifyContent: 'center',
     borderRadius: 4,
     backgroundColor: '#1a1a2a',
     borderWidth: 1,
@@ -615,6 +664,35 @@ const styles = StyleSheet.create({
   editSaveText: {
     color: '#000',
     fontSize: 13,
+    fontWeight: 'bold',
+  },
+  reorderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+    flexWrap: 'wrap',
+  },
+  reorderLabel: {
+    color: '#aaa',
+    fontSize: 12,
+  },
+  reorderBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 4,
+    backgroundColor: '#334466',
+    borderWidth: 1,
+    borderColor: '#556688',
+  },
+  reorderBtnDisabled: {
+    backgroundColor: '#222',
+    borderColor: '#333',
+    opacity: 0.4,
+  },
+  reorderBtnText: {
+    color: '#fff',
+    fontSize: 12,
     fontWeight: 'bold',
   },
 });

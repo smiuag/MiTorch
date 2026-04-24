@@ -44,7 +44,7 @@ import { soundConfigService } from '../services/soundConfigService';
 import { useSounds } from '../contexts/SoundContext';
 import { NORMAL_MODE, BLIND_MODE } from '../config/gridConfig';
 import { BlindChannelModal, ChannelMessage, nextMsgId } from '../components/BlindChannelModal';
-import { loadChannelAliases, saveChannelAliases } from '../storage/channelStorage';
+import { loadChannelAliases, saveChannelAliases, loadChannelOrder, saveChannelOrder } from '../storage/channelStorage';
 import { loadNicks, recordNickSeen, filterNicks } from '../storage/nickStorage';
 import { NickAutocomplete } from '../components/NickAutocomplete';
 
@@ -97,6 +97,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [channels, setChannels] = useState<string[]>([]);
   const [channelMessages, setChannelMessages] = useState<ChannelMessage[]>([]);
   const [channelAliases, setChannelAliases] = useState<Record<string, string>>({});
+  const [channelOrder, setChannelOrder] = useState<string[]>([]);
   const [blindChannelModalVisible, setBlindChannelModalVisible] = useState(false);
   const [playerXP, setPlayerXP] = useState(0);
   const [roomEnemies, setRoomEnemies] = useState('');
@@ -380,9 +381,11 @@ export function TerminalScreen({ route, navigation }: Props) {
       );
       setButtonLayout({ buttons });
 
-      // Load channel aliases for this server
+      // Load channel aliases and order for this server
       const aliases = await loadChannelAliases(server.id);
       setChannelAliases(aliases);
+      const order = await loadChannelOrder(server.id);
+      setChannelOrder(order);
 
       // Load map for locate command
       await mapServiceRef.current.load();
@@ -2286,6 +2289,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           onClose={() => setBlindChannelModalVisible(false)}
           channels={channels}
           channelAliases={channelAliases}
+          channelOrder={channelOrder}
           channelMessages={channelMessages}
           onSendMessage={(cmd) => {
             telnetRef.current?.send(cmd);
@@ -2295,6 +2299,10 @@ export function TerminalScreen({ route, navigation }: Props) {
             const updated = { ...channelAliases, [ch]: alias };
             setChannelAliases(updated);
             saveChannelAliases(server.id, updated);
+          }}
+          onOrderChange={(order) => {
+            setChannelOrder(order);
+            saveChannelOrder(server.id, order);
           }}
           fontSize={fontSize}
         />

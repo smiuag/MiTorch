@@ -143,7 +143,8 @@ export function generateLogHtml(
 
   <div class="row">
     <button class="ctrl secondary" onclick="clearFilters()">Limpiar filtros</button>
-    <button class="ctrl secondary" onclick="copyVisible()">Copiar visibles</button>
+    <button class="ctrl secondary" onclick="copyVisible()">Copiar con formato</button>
+    <button class="ctrl secondary" onclick="copyCleanHtml()">Copiar HTML limpio</button>
   </div>
 
   <div class="row">
@@ -346,6 +347,45 @@ async function copyVisible() {
     document.body.removeChild(ta);
     if (ok) { showStatus('Copiado como HTML plano'); return; }
   } catch (e) { /* try next */ }
+
+  showStatus('No se pudo copiar. Selecciona manualmente y usa Ctrl+C.', true);
+}
+
+function buildCleanHtml(lines) {
+  return lines.map(el => {
+    const ts = el.querySelector('.ts');
+    const msg = el.querySelector('.msg');
+    const tsText = ts ? ts.textContent : '';
+    const msgHtml = msg ? msg.innerHTML : '';
+    return (tsText ? tsText + ' ' : '') + msgHtml;
+  }).join('<br>\\n');
+}
+
+async function copyCleanHtml() {
+  const visible = allLines.filter(el => !el.classList.contains('hidden'));
+  if (visible.length === 0) { showStatus('No hay líneas visibles para copiar', true); return; }
+  const clean = buildCleanHtml(visible);
+
+  // Primary: writeText (plain) — puts HTML source as text
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(clean);
+      showStatus('Copiado HTML limpio de ' + visible.length + ' líneas');
+      return;
+    }
+  } catch (e) { /* try next */ }
+
+  // Fallback: textarea hack
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = clean;
+    ta.style.position = 'fixed'; ta.style.top = '-1000px'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (ok) { showStatus('Copiado HTML limpio de ' + visible.length + ' líneas'); return; }
+  } catch (e) { /* fall through */ }
 
   showStatus('No se pudo copiar. Selecciona manualmente y usa Ctrl+C.', true);
 }
