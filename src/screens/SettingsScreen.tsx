@@ -7,9 +7,14 @@ import { RootStackParamList, GestureConfig } from '../types';
 import { loadSettings, saveSettings, AppSettings, rebuildGestures, AVAILABLE_SOUNDS, AVAILABLE_NOTIFICATIONS, rebuildSounds } from '../storage/settingsStorage';
 import { DEFAULT_SETTINGS } from '../storage/settingsStorage';
 import { blindModeService } from '../services/blindModeService';
+import { logService, ExportRange, slugifyServerName } from '../services/logService';
+import { loadServers } from '../storage/serverStorage';
+import { LogsMaxLines } from '../storage/settingsStorage';
 import { useSounds } from '../contexts/SoundContext';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Settings'> & {
+type Props = {
+  navigation: NativeStackScreenProps<RootStackParamList, 'Settings'>['navigation'];
+  route?: NativeStackScreenProps<RootStackParamList, 'Settings'>['route'];
   sourceLocation?: 'terminal' | 'serverlist';
   onFontSizeChange?: (size: number) => void;
   onSoundToggle?: (enabled: boolean) => void;
@@ -23,6 +28,7 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
   const [gestureModalVisible, setGestureModalVisible] = useState(false);
   const [soundModalVisible, setSoundModalVisible] = useState(false);
   const [notificationModalVisible, setNotificationModalVisible] = useState(false);
+  const [exportRangeModalVisible, setExportRangeModalVisible] = useState(false);
 
   useEffect(() => {
     loadSettings().then(setSettings);
@@ -97,11 +103,59 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
         nestedScrollEnabled={true}
         showsVerticalScrollIndicator={true}
       >
-        {/* Font Size Section - FIRST */}
-        <View style={styles.sectionHeader}>
+        {/* Mode Buttons - FIRST (only show outside terminal modal) */}
+        {sourceLocation !== 'terminal' && (
+          <View style={styles.modeButtonsRow}>
+            <TouchableOpacity
+              style={[
+                styles.modeButton,
+                settings.uiMode === 'completo' && styles.modeButtonActive,
+              ]}
+              onPress={() => updateSetting('uiMode', 'completo')}
+              accessible={true}
+              accessibilityLabel="Normal mode"
+              accessibilityRole="radio"
+              accessibilityState={{ selected: settings.uiMode === 'completo' }}
+            >
+              <Text
+                style={[
+                  styles.modeButtonText,
+                  settings.uiMode === 'completo' && styles.modeButtonTextActive,
+                ]}
+              >
+                Normal
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.modeButton,
+                settings.uiMode === 'blind' && styles.modeButtonActive,
+              ]}
+              onPress={() => updateSetting('uiMode', 'blind')}
+              accessible={true}
+              accessibilityLabel="Accessible mode"
+              accessibilityRole="radio"
+              accessibilityState={{ selected: settings.uiMode === 'blind' }}
+            >
+              <Text
+                style={[
+                  styles.modeButtonText,
+                  settings.uiMode === 'blind' && styles.modeButtonTextActive,
+                ]}
+              >
+                Accesible
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Configuración general Section */}
+        <View style={[styles.sectionHeader, styles.marginTop]}>
           <Text style={styles.sectionTitle}>Configuración general</Text>
         </View>
 
+        {/* Font Size */}
         <View style={styles.row}>
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Tamaño de fuente</Text>
@@ -154,131 +208,38 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
           </View>
         </View>
 
-        {/* UI Mode Section - Only show outside terminal modal */}
+        {/* Encoding Section - Only show outside terminal modal */}
         {sourceLocation !== 'terminal' && (
-          <>
-            <View style={[styles.sectionHeader, styles.marginTop]}>
-              <Text style={styles.sectionTitle}>Interfaz</Text>
+          <View style={styles.row}>
+            <View style={styles.rowInfo}>
+              <Text style={styles.rowTitle}>Codificación</Text>
+              <Text style={styles.rowDesc}>
+                Selecciona la codificación para la conexión
+              </Text>
             </View>
-
-            <View style={styles.modeRow}>
-              <View style={styles.rowInfo}>
-                <Text style={styles.rowTitle}>Modo de interfaz</Text>
-                <Text style={styles.rowDesc}>
-                  Mostrar todos los controles o solo lo esencial para lectores de pantalla.
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.modeButtonsRow}>
-              <TouchableOpacity
-                style={[
-                  styles.modeButton,
-                  settings.uiMode === 'completo' && styles.modeButtonActive,
-                ]}
-                onPress={() => updateSetting('uiMode', 'completo')}
-                accessible={true}
-                accessibilityLabel="Complete mode"
-                accessibilityRole="radio"
-                accessibilityState={{ selected: settings.uiMode === 'completo' }}
-              >
-                <Text
-                  style={[
-                    styles.modeButtonText,
-                    settings.uiMode === 'completo' && styles.modeButtonTextActive,
-                  ]}
-                >
-                  Completo
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.modeButton,
-                  settings.uiMode === 'blind' && styles.modeButtonActive,
-                ]}
-                onPress={() => updateSetting('uiMode', 'blind')}
-                accessible={true}
-                accessibilityLabel="Blind mode"
-                accessibilityRole="radio"
-                accessibilityState={{ selected: settings.uiMode === 'blind' }}
-              >
-                <Text
-                  style={[
-                    styles.modeButtonText,
-                    settings.uiMode === 'blind' && styles.modeButtonTextActive,
-                  ]}
-                >
-                  Blind mode
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
-
-        <View style={[styles.sectionHeader, styles.marginTop]}>
-          <Text style={styles.sectionTitle}>Pantalla</Text>
-        </View>
-
-        <View style={styles.row}>
-          <View style={styles.rowInfo}>
-            <Text style={styles.rowTitle}>Mantener pantalla encendida</Text>
-            <Text style={styles.rowDesc}>
-              Evita que el teléfono se bloquee por inactividad mientras estás conectado al servidor.
-            </Text>
+            <TouchableOpacity
+              style={styles.encodingBtn}
+              onPress={() => setEncodingModalVisible(true)}
+            >
+              <Text style={styles.encodingBtnText}>
+                {settings.encoding === 'utf8' ? 'UTF-8' : (settings.encoding || 'UTF-8').toUpperCase()}
+              </Text>
+            </TouchableOpacity>
           </View>
-          <Switch
-            value={settings.keepAwakeEnabled}
-            onValueChange={(value) => updateSetting('keepAwakeEnabled', value)}
-            trackColor={{ false: '#333', true: '#0c0' }}
-            thumbColor={settings.keepAwakeEnabled ? '#000' : '#666'}
-          />
-        </View>
+        )}
 
         {/* Gestures Section - Only in complete mode */}
         {settings.uiMode === 'completo' && (
-          <>
-            <View style={[styles.sectionHeader, styles.marginTop]}>
-              <Text style={styles.sectionTitle}>Atajos de gestos</Text>
+          <View style={styles.row}>
+            <View style={styles.rowInfo}>
+              <Text style={styles.rowTitle}>Usar atajos de gestos</Text>
+              <Text style={styles.rowDesc}>
+                Ejecuta comandos con gestos en la zona del terminal (doble tap, swipes).
+              </Text>
             </View>
-
-            <View style={styles.row}>
-              <View style={styles.rowInfo}>
-                <Text style={styles.rowTitle}>Usar atajos de gestos</Text>
-                <Text style={styles.rowDesc}>
-                  Ejecuta comandos con gestos en la zona del terminal (doble tap, swipes).
-                </Text>
-              </View>
-              <Switch
-                value={settings.gesturesEnabled}
-                onValueChange={(value) => {
-                  updateSetting('gesturesEnabled', value);
-                  if (value) {
-                    let gestures = settings.gestures || [];
-                    let isFirstTime = false;
-                    if (gestures.length === 0) {
-                      gestures = DEFAULT_SETTINGS.gestures;
-                      isFirstTime = true;
-                    } else {
-                      const validTypes = new Set(DEFAULT_SETTINGS.gestures.map(g => g.type));
-                      gestures = gestures.filter(g => validTypes.has(g.type));
-                    }
-                    const updated = { ...settings, gesturesEnabled: true, gestures };
-                    setSettings(updated);
-                    if (isFirstTime) {
-                      saveSettings(updated);
-                    }
-                    setGestureModalVisible(true);
-                  }
-                }}
-                trackColor={{ false: '#333', true: '#0c0' }}
-                thumbColor={settings.gesturesEnabled ? '#000' : '#666'}
-              />
-            </View>
-
             {settings.gesturesEnabled && (
               <TouchableOpacity
-                style={[styles.row, styles.gestureConfigBtn]}
+                style={styles.configIconBtn}
                 onPress={() => {
                   let gestures = settings.gestures || [];
                   let isFirstTime = false;
@@ -297,43 +258,44 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
                   setGestureModalVisible(true);
                 }}
               >
-                <Text style={styles.gestureConfigBtnText}>⚙ Configurar atajos</Text>
+                <Text style={styles.configIcon}>✏️</Text>
               </TouchableOpacity>
             )}
-          </>
+            <Switch
+              value={settings.gesturesEnabled}
+              onValueChange={(value) => {
+                updateSetting('gesturesEnabled', value);
+                if (value) {
+                  let gestures = settings.gestures || [];
+                  let isFirstTime = false;
+                  if (gestures.length === 0) {
+                    gestures = DEFAULT_SETTINGS.gestures;
+                    isFirstTime = true;
+                  } else {
+                    const validTypes = new Set(DEFAULT_SETTINGS.gestures.map(g => g.type));
+                    gestures = gestures.filter(g => validTypes.has(g.type));
+                  }
+                  const updated = { ...settings, gesturesEnabled: true, gestures };
+                  setSettings(updated);
+                  if (isFirstTime) {
+                    saveSettings(updated);
+                  }
+                  setGestureModalVisible(true);
+                }
+              }}
+              trackColor={{ false: '#333', true: '#0c0' }}
+              thumbColor={settings.gesturesEnabled ? '#000' : '#666'}
+            />
+          </View>
         )}
 
-        {/* Encoding Section - Only show outside terminal modal */}
-        {sourceLocation !== 'terminal' && (
-          <>
-            <View style={[styles.sectionHeader, styles.marginTop]}>
-              <Text style={styles.sectionTitle}>Codificación de caracteres</Text>
-            </View>
 
-            <View style={styles.row}>
-              <View style={styles.rowInfo}>
-                <Text style={styles.rowTitle}>Codificación</Text>
-                <Text style={styles.rowDesc}>
-                  Selecciona la codificación para la conexión
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.encodingBtn}
-                onPress={() => setEncodingModalVisible(true)}
-              >
-                <Text style={styles.encodingBtnText}>
-                  {settings.encoding === 'utf8' ? 'UTF-8' : (settings.encoding || 'UTF-8').toUpperCase()}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
-
-        {/* Sounds Section */}
+        {/* UI Section */}
         <View style={[styles.sectionHeader, styles.marginTop]}>
-          <Text style={styles.sectionTitle}>Sonidos</Text>
+          <Text style={styles.sectionTitle}>UI</Text>
         </View>
 
+        {/* Sounds Section */}
         <View style={styles.row}>
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Usar sonidos</Text>
@@ -343,6 +305,14 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
                 : 'Activa sonidos para eventos del juego'}
             </Text>
           </View>
+          {settings.soundsEnabled && (
+            <TouchableOpacity
+              style={styles.configIconBtn}
+              onPress={() => setSoundModalVisible(true)}
+            >
+              <Text style={styles.configIcon}>✏️</Text>
+            </TouchableOpacity>
+          )}
           <Switch
             value={settings.soundsEnabled}
             onValueChange={(value) => {
@@ -366,20 +336,23 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
           />
         </View>
 
-        {settings.soundsEnabled && (
-          <TouchableOpacity
-            style={[styles.row, styles.gestureConfigBtn]}
-            onPress={() => setSoundModalVisible(true)}
-          >
-            <Text style={styles.gestureConfigBtnText}>🔊 Configurar sonidos</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Notifications Section */}
-        <View style={[styles.sectionHeader, styles.marginTop]}>
-          <Text style={styles.sectionTitle}>Notificaciones</Text>
+        {/* Pantalla encendida */}
+        <View style={styles.row}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Mantener pantalla encendida</Text>
+            <Text style={styles.rowDesc}>
+              Evita que el teléfono se bloquee por inactividad mientras estás conectado al servidor.
+            </Text>
+          </View>
+          <Switch
+            value={settings.keepAwakeEnabled}
+            onValueChange={(value) => updateSetting('keepAwakeEnabled', value)}
+            trackColor={{ false: '#333', true: '#0c0' }}
+            thumbColor={settings.keepAwakeEnabled ? '#000' : '#666'}
+          />
         </View>
 
+        {/* Notifications Section */}
         <View style={styles.row}>
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Usar notificaciones</Text>
@@ -387,6 +360,14 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
               Avisos del sistema para eventos del juego (ej. BONK). Funcionan también con la pantalla bloqueada si tienes activa la conexión en segundo plano.
             </Text>
           </View>
+          {settings.notificationsEnabled && (
+            <TouchableOpacity
+              style={styles.configIconBtn}
+              onPress={() => setNotificationModalVisible(true)}
+            >
+              <Text style={styles.configIcon}>✏️</Text>
+            </TouchableOpacity>
+          )}
           <Switch
             value={settings.notificationsEnabled}
             onValueChange={async (value) => {
@@ -422,16 +403,161 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
           />
         </View>
 
-        {settings.notificationsEnabled && (
-          <TouchableOpacity
-            style={[styles.row, styles.gestureConfigBtn]}
-            onPress={() => setNotificationModalVisible(true)}
-          >
-            <Text style={styles.gestureConfigBtnText}>🔔 Configurar notificaciones</Text>
-          </TouchableOpacity>
+        {/* Logs Section */}
+        <View style={[styles.sectionHeader, styles.marginTop]}>
+          <Text style={styles.sectionTitle}>Logs</Text>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Guardar logs para soporte</Text>
+            <Text style={styles.rowDesc}>
+              Captura la actividad del terminal para exportarla como HTML (útil para compartir con soporte o subir a deathlogs.com). Desactivar borra todos los logs.
+            </Text>
+          </View>
+          <Switch
+            value={settings.logsEnabled}
+            onValueChange={(value) => {
+              const updated = { ...settings, logsEnabled: value };
+              setSettings(updated);
+              saveSettings(updated);
+              logService.configure(value, updated.logsMaxLines);
+            }}
+            trackColor={{ false: '#333', true: '#0c0' }}
+            thumbColor={settings.logsEnabled ? '#000' : '#666'}
+          />
+        </View>
+
+        {settings.logsEnabled && (
+          <>
+            <View style={styles.row}>
+              <View style={styles.rowInfo}>
+                <Text style={styles.rowTitle}>Tamaño máximo</Text>
+                <Text style={styles.rowDesc}>
+                  Cuántas líneas como máximo guarda el log. Al superar el tope se borran las más antiguas.
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
+                  {([5000, 10000, 20000, 50000, 100000] as LogsMaxLines[]).map((n) => {
+                    const active = settings.logsMaxLines === n;
+                    const labelMB = n <= 5000 ? '~1 MB' : n <= 10000 ? '~2 MB' : n <= 20000 ? '~4 MB' : n <= 50000 ? '~10 MB' : '~20 MB';
+                    return (
+                      <TouchableOpacity
+                        key={n}
+                        style={[styles.logSizeBtn, active && styles.logSizeBtnActive]}
+                        onPress={() => {
+                          const updated = { ...settings, logsMaxLines: n };
+                          setSettings(updated);
+                          saveSettings(updated);
+                          logService.configure(true, n);
+                        }}
+                        accessible={true}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected: active }}
+                        accessibilityLabel={`${n.toLocaleString('es')} líneas ${labelMB}`}
+                      >
+                        <Text style={[styles.logSizeText, active && styles.logSizeTextActive]}>
+                          {n.toLocaleString('es')}
+                        </Text>
+                        <Text style={[styles.logSizeSubtext, active && styles.logSizeTextActive]}>
+                          {labelMB}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.row}>
+              <TouchableOpacity
+                style={styles.logActionBtn}
+                onPress={() => setExportRangeModalVisible(true)}
+                accessible={true}
+                accessibilityLabel="Exportar log"
+                accessibilityRole="button"
+              >
+                <Text style={styles.logActionBtnText}>Exportar log</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.logActionBtn, styles.logActionBtnDanger]}
+                onPress={() => {
+                  Alert.alert(
+                    'Borrar todos los logs',
+                    '¿Seguro que quieres borrar todos los logs guardados? No se puede deshacer.',
+                    [
+                      { text: 'Cancelar', style: 'cancel' },
+                      {
+                        text: 'Borrar',
+                        style: 'destructive',
+                        onPress: async () => {
+                          await logService.clearAll();
+                        },
+                      },
+                    ]
+                  );
+                }}
+                accessible={true}
+                accessibilityLabel="Borrar todos los logs"
+                accessibilityRole="button"
+              >
+                <Text style={styles.logActionBtnText}>Borrar logs</Text>
+              </TouchableOpacity>
+            </View>
+          </>
         )}
 
       </ScrollView>
+
+      {/* Export Range Modal */}
+      <Modal
+        visible={exportRangeModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setExportRangeModalVisible(false)}
+      >
+        <View style={styles.exportRangeOverlay}>
+          <View style={styles.exportRangeBox}>
+            <Text style={styles.exportRangeTitle} accessibilityRole="header">¿Qué rango exportar?</Text>
+            {(['24h', '7d', 'all'] as ExportRange[]).map((range) => {
+              const label = range === '24h' ? 'Últimas 24 horas' : range === '7d' ? 'Últimos 7 días' : 'Todo';
+              return (
+                <TouchableOpacity
+                  key={range}
+                  style={styles.exportRangeBtn}
+                  onPress={async () => {
+                    setExportRangeModalVisible(false);
+                    try {
+                      const servers = await loadServers();
+                      const serverHostMap: Record<string, string> = {};
+                      for (const s of servers) {
+                        serverHostMap[slugifyServerName(s.name)] = s.host;
+                      }
+                      await logService.exportToHtml(range, serverHostMap);
+                    } catch (e: any) {
+                      Alert.alert('No se pudo exportar', e?.message ?? String(e));
+                    }
+                  }}
+                  accessible={true}
+                  accessibilityLabel={label}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.exportRangeBtnText}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity
+              style={[styles.exportRangeBtn, styles.exportRangeCancel]}
+              onPress={() => setExportRangeModalVisible(false)}
+              accessible={true}
+              accessibilityLabel="Cancelar"
+              accessibilityRole="button"
+            >
+              <Text style={styles.exportRangeBtnText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Gesture Configuration Modal */}
       <Modal
@@ -825,6 +951,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: '#2a2a2a',
+    marginBottom: 10,
   },
   rowInfo: {
     flex: 1,
@@ -842,8 +969,43 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'monospace',
   },
+  rowControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  configButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    backgroundColor: '#0a3a0a',
+    borderWidth: 1,
+    borderColor: '#0c0',
+  },
+  configButtonText: {
+    color: '#0c0',
+    fontSize: 12,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+  },
+  configIconBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    backgroundColor: '#0a3a0a',
+    borderWidth: 1,
+    borderColor: '#0c0',
+    marginRight: 8,
+  },
+  configIcon: {
+    fontSize: 16,
+    color: '#0c0',
+  },
+  configIconDisabled: {
+    color: '#333',
+  },
   marginTop: {
-    marginTop: 12,
+    marginTop: 0,
   },
   fontSizeControls: {
     flexDirection: 'row',
@@ -893,6 +1055,7 @@ const styles = StyleSheet.create({
   modeButtonsRow: {
     flexDirection: 'row',
     gap: 12,
+    marginBottom: 24,
   },
   modeButton: {
     flex: 1,
@@ -992,15 +1155,18 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
   },
   gestureConfigBtn: {
-    justifyContent: 'center',
-    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#0a3a0a',
+    borderWidth: 1,
+    borderColor: '#0c0',
+    borderRadius: 6,
   },
   gestureConfigBtnText: {
     color: '#0c0',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 'bold',
     fontFamily: 'monospace',
-    textAlign: 'center',
   },
   gestureModalContainer: {
     flex: 1,
@@ -1206,5 +1372,98 @@ const styles = StyleSheet.create({
   },
   soundPreviewBtnText: {
     fontSize: 18,
+  },
+  logSizeBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#444',
+    backgroundColor: '#1a1a1a',
+    marginRight: 8,
+    marginBottom: 8,
+    alignItems: 'center',
+    minWidth: 80,
+  },
+  logSizeBtnActive: {
+    backgroundColor: '#336633',
+    borderColor: '#558855',
+  },
+  logSizeText: {
+    color: '#ccc',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  logSizeSubtext: {
+    color: '#888',
+    fontSize: 11,
+  },
+  logSizeTextActive: {
+    color: '#fff',
+  },
+  logActionBtn: {
+    flex: 1,
+    backgroundColor: '#334466',
+    borderWidth: 1,
+    borderColor: '#556688',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  logActionBtnDanger: {
+    backgroundColor: '#663333',
+    borderColor: '#884444',
+    marginRight: 0,
+  },
+  logActionBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  exportRangeOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  exportRangeBox: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+    padding: 20,
+    minWidth: 280,
+    maxWidth: 400,
+  },
+  exportRangeTitle: {
+    color: '#00cc00',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  exportRangeBtn: {
+    backgroundColor: '#336633',
+    borderWidth: 1,
+    borderColor: '#558855',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  exportRangeCancel: {
+    backgroundColor: '#443333',
+    borderColor: '#664444',
+    marginBottom: 0,
+    marginTop: 6,
+  },
+  exportRangeBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: 'bold',
   },
 });

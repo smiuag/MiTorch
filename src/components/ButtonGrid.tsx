@@ -46,7 +46,6 @@ function ButtonCell({
   onEditButton,
   onSwapButtons,
   onSecondaryCommand,
-  onOpenActionModal,
 }: {
   col: number;
   row: number;
@@ -226,7 +225,6 @@ export function ButtonGrid({
   minimalista = false,
   minCols = GRID_COLS,
   minRows = GRID_ROWS,
-  onOpenActionModal,
 }: ButtonGridProps) {
   const { width } = useWindowDimensions();
 
@@ -347,7 +345,6 @@ export function ButtonGrid({
                 onEditButton={() => onEditButton(storage.col, storage.row)}
                 onSwapButtons={onSwapButtons ? () => onSwapButtons(storage.col, storage.row) : undefined}
                 onSecondaryCommand={handleSecondaryCommand}
-                onOpenActionModal={onOpenActionModal}
               />
             );
           })}

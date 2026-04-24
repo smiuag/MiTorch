@@ -15,6 +15,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, ServerProfile } from '../types';
 import { loadServers, saveServers } from '../storage/serverStorage';
 import { loadSettings, saveSettings } from '../storage/settingsStorage';
+import { loadServerLayout, saveServerLayout } from '../storage/layoutStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ServerList'>;
 
@@ -127,6 +128,8 @@ export function ServerListScreen({ navigation }: Props) {
       id: generateId(),
       name: `${server.name} (copia)`,
     };
+    const originalLayout = await loadServerLayout(server.id);
+    await saveServerLayout(newServer.id, originalLayout);
     const updated = [...servers, newServer];
     setServers(updated);
     await saveServers(updated);
@@ -260,10 +263,10 @@ export function ServerListScreen({ navigation }: Props) {
               onPress={() => handleSelectMode('completo')}
               accessible={true}
               accessibilityRole="button"
-              accessibilityLabel="Modo Completo"
+              accessibilityLabel="Modo Normal"
               accessibilityHint="Interfaz visual con mapa, barras de vida y botones"
             >
-              <Text style={styles.modeOptionTitle}>🖥 Modo Completo</Text>
+              <Text style={styles.modeOptionTitle}>🖥 Modo Normal</Text>
               <Text style={styles.modeOptionDesc}>Interfaz visual con mapa, barras de vida y botones</Text>
             </TouchableOpacity>
 
@@ -272,10 +275,10 @@ export function ServerListScreen({ navigation }: Props) {
               onPress={() => handleSelectMode('blind')}
               accessible={true}
               accessibilityRole="button"
-              accessibilityLabel="Blind Mode"
+              accessibilityLabel="Modo Accesible"
               accessibilityHint="Interfaz accesible optimizada para lector de pantalla"
             >
-              <Text style={styles.modeOptionTitle}>👁 Blind Mode</Text>
+              <Text style={styles.modeOptionTitle}>👁 Modo Accesible</Text>
               <Text style={styles.modeOptionDesc}>Interfaz accesible optimizada para lector de pantalla</Text>
             </TouchableOpacity>
           </View>

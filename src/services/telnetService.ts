@@ -12,7 +12,10 @@ const SB = 250;   // Subnegotiation Begin
 const SE = 240;   // Subnegotiation End
 const NOP = 241;  // No-op (used for keep-alive)
 
+import { logService } from './logService';
+
 const KEEPALIVE_INTERVAL_MS = 60_000;
+const BUFFER_TIMEOUT_MS = 20;
 
 // Telnet options we care about
 const OPT_ECHO = 1;
@@ -37,6 +40,8 @@ export class TelnetService {
   private encoding: string;
   private proxyUrl: string = 'wss://mitorch.onrender.com';
   private keepAliveTimer: ReturnType<typeof setInterval> | null = null;
+  private bufferedLine: string | null = null;
+  private bufferTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(server: ServerProfile, handler: TelnetEventHandler, encoding: string = 'utf8') {
     this.server = server;
@@ -200,10 +205,8 @@ export class TelnetService {
     let text: string;
 
     try {
-      // Try to decode using the specified encoding
       text = Buffer.from(bytes).toString(this.encoding as BufferEncoding);
     } catch (e) {
-      // Fallback to UTF-8 if specified encoding fails
       console.warn(`[telnetService] Failed to decode with ${this.encoding}: ${e}`);
       text = Buffer.from(bytes).toString('utf8');
     }
@@ -213,7 +216,10 @@ export class TelnetService {
         // telnetService logs removed ⚠️ ENCODING:', this.encoding, '| bytes:', bytes.length, '| text length:', text.length);
         // telnetService logs removed First 100 chars:', JSON.stringify(text.slice(0, 100)));
       }
-      this.handler.onData(text);
+      const lines = text.split('\n');
+      for (const line of lines) {
+        this.processLine(line.trim());
+      }
     }
   }
 
@@ -294,6 +300,7 @@ export class TelnetService {
   }
 
   send(text: string): void {
+    logService.appendCommand(text);
     const data = text + '\r\n';
     this.writeToSocket(Buffer.from(data, 'utf8'));
   }
@@ -310,6 +317,8 @@ export class TelnetService {
   }
 
   disconnect(): void {
+    this.flushBuffer();
+    this.cancelBufferTimeout();
     this.stopKeepAlive();
     if (this.socket) {
       try {
@@ -342,6 +351,54 @@ export class TelnetService {
     if (this.keepAliveTimer) {
       clearInterval(this.keepAliveTimer);
       this.keepAliveTimer = null;
+    }
+  }
+
+  private flushBuffer(): void {
+    if (this.bufferedLine) {
+      this.handler.onData(this.bufferedLine);
+      this.bufferedLine = null;
+    }
+  }
+
+  private processLine(line: string): void {
+    if (!line) return;
+
+    const startsWithUppercase = /^[A-ZÁÉÍÓÚ]/.test(line);
+    const startsWithLowercase = /^[a-záéíóú]/.test(line);
+
+    if (this.bufferedLine && startsWithLowercase) {
+      this.bufferedLine += ' ' + line;
+      this.resetBufferTimeout();
+    } else if (this.bufferedLine && startsWithUppercase) {
+      this.flushBuffer();
+      this.bufferedLine = line;
+      this.startBufferTimeout();
+    } else {
+      if (this.bufferedLine) {
+        this.flushBuffer();
+      }
+      this.bufferedLine = line;
+      this.startBufferTimeout();
+    }
+  }
+
+  private startBufferTimeout(): void {
+    this.cancelBufferTimeout();
+    this.bufferTimeout = setTimeout(() => {
+      this.flushBuffer();
+    }, BUFFER_TIMEOUT_MS);
+  }
+
+  private resetBufferTimeout(): void {
+    this.cancelBufferTimeout();
+    this.startBufferTimeout();
+  }
+
+  private cancelBufferTimeout(): void {
+    if (this.bufferTimeout) {
+      clearTimeout(this.bufferTimeout);
+      this.bufferTimeout = null;
     }
   }
 

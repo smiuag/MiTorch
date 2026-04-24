@@ -75,3 +75,4 @@ export interface GestureConfig {
   command: string;
   opensKeyboard: boolean;
 }
+

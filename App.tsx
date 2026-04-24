@@ -17,7 +17,7 @@ export default function App() {
         theme={DarkTheme}
         documentTitle={{
           enabled: false,
-          formatter: (options) => `BlowTorch - ${options.title}`,
+          formatter: (options) => `BlowTorch - ${options?.title ?? ''}`,
         }}
       >
         <StatusBar hidden={true} />
@@ -35,7 +35,6 @@ export default function App() {
             options={{
               headerShown: false,
               title: 'Server List',
-              accessibilityLabel: 'Server List Screen',
             }}
           />
           <Stack.Screen
@@ -53,7 +52,6 @@ export default function App() {
             options={{
               headerShown: false,
               title: 'Settings',
-              accessibilityLabel: 'Settings Screen',
             }}
           />
         </Stack.Navigator>

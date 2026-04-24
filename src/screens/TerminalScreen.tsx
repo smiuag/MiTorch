@@ -14,6 +14,7 @@ import {
   Dimensions,
   AppState,
   Keyboard,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -23,7 +24,7 @@ import { detectNotification, fireNotification, stripAnsi } from '../services/not
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, MudLine, GestureConfig, GestureType } from '../types';
-import { TelnetService } from '../services/telnetService';
+import { TelnetService, TelnetEventHandler } from '../services/telnetService';
 import { SettingsScreen } from './SettingsScreen';
 import { parseAnsi } from '../utils/ansiParser';
 import { AnsiText } from '../components/AnsiText';
@@ -37,6 +38,7 @@ import { MapService, MapRoom } from '../services/mapService';
 import { ButtonLayout, createDefaultLayout, createBlindModeLayout, loadLayout, saveLayout, loadServerLayout, saveServerLayout } from '../storage/layoutStorage';
 import { loadServers, saveServers } from '../storage/serverStorage';
 import { blindModeService } from '../services/blindModeService';
+import { logService } from '../services/logService';
 import { playerStatsService } from '../services/playerStatsService';
 import { soundConfigService } from '../services/soundConfigService';
 import { useSounds } from '../contexts/SoundContext';
@@ -107,6 +109,8 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [inputFocused, setInputFocused] = useState(false);
   const [nickSuggestions, setNickSuggestions] = useState<string[]>([]);
+  const [exitConfirmVisible, setExitConfirmVisible] = useState(false);
+  const [exitToastVisible, setExitToastVisible] = useState(false);
 
   const fontSizeRef = useRef(14);
   const telnetRef = useRef<TelnetService | null>(null);
@@ -135,6 +139,8 @@ export function TerminalScreen({ route, navigation }: Props) {
   const notificationsEnabledRef = useRef(false);
   const enabledNotificationsRef = useRef<Record<string, boolean>>({});
   const appStateRef = useRef(AppState.currentState);
+  const exitPendingRef = useRef(false);
+  const exitToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Set true right before a programmatic blur so the keyboardDidHide
   // listener does not also wipe the input.
   const suppressClearOnHideRef = useRef(false);
@@ -234,6 +240,10 @@ export function TerminalScreen({ route, navigation }: Props) {
         if (settings.enabledNotifications) {
           enabledNotificationsRef.current = settings.enabledNotifications;
         }
+        logService.configure(
+          settings.logsEnabled ?? false,
+          settings.logsMaxLines ?? 20000
+        );
       })();
 
       // Reset blind mode service history periodically
@@ -243,6 +253,70 @@ export function TerminalScreen({ route, navigation }: Props) {
 
       return () => clearInterval(historyResetInterval);
     }, [])
+  );
+
+  const confirmExit = useCallback(() => {
+    if (exitToastTimeoutRef.current) {
+      clearTimeout(exitToastTimeoutRef.current);
+      exitToastTimeoutRef.current = null;
+    }
+    exitPendingRef.current = false;
+    setExitConfirmVisible(false);
+    setExitToastVisible(false);
+    navigation.goBack();
+  }, [navigation]);
+
+  const cancelExit = useCallback(() => {
+    if (exitToastTimeoutRef.current) {
+      clearTimeout(exitToastTimeoutRef.current);
+      exitToastTimeoutRef.current = null;
+    }
+    exitPendingRef.current = false;
+    setExitConfirmVisible(false);
+    setExitToastVisible(false);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      const onBack = () => {
+        if (exitPendingRef.current) {
+          confirmExit();
+          return true;
+        }
+        if (
+          settingsModalVisible ||
+          editButtonVisible ||
+          blindChannelModalVisible ||
+          searchVisible
+        ) {
+          return false;
+        }
+        exitPendingRef.current = true;
+        if (uiMode === 'blind') {
+          setExitConfirmVisible(true);
+          AccessibilityInfo.announceForAccessibility(
+            '¿Salir y desconectar? Pulsa atrás de nuevo para confirmar.'
+          );
+        } else {
+          setExitToastVisible(true);
+          exitToastTimeoutRef.current = setTimeout(() => {
+            exitPendingRef.current = false;
+            setExitToastVisible(false);
+            exitToastTimeoutRef.current = null;
+          }, 2500);
+        }
+        return true;
+      };
+      const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+      return () => {
+        sub.remove();
+        if (exitToastTimeoutRef.current) {
+          clearTimeout(exitToastTimeoutRef.current);
+          exitToastTimeoutRef.current = null;
+        }
+        exitPendingRef.current = false;
+      };
+    }, [uiMode, confirmExit, settingsModalVisible, editButtonVisible, blindChannelModalVisible, searchVisible])
   );
 
 
@@ -344,6 +418,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         const id = setTimeout(() => {
           // [AUTO-LOGIN logs removed Sending password');
           telnetRef.current?.send(server.password!);
+          logService.markLoginComplete();
           pendingTimeoutsRef.current.delete(id);
         }, 200);
         pendingTimeoutsRef.current.add(id);
@@ -371,6 +446,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
     // Skip lines that are only template variables like <VERSION>, <NAME>, etc
     if (/^\s*<[A-Z_]+>\s*$/.test(text)) return;
+
 
     // Detect sound FIRST (before any filtering) so it works in all modes
     const soundPath = detectSound(text);
@@ -547,6 +623,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   useEffect(() => {
     const handler: TelnetEventHandler = {
       onData: (text: string) => {
+        logService.appendIncoming(text);
         if (isCapturingAliasRef.current) {
           aliasBufferRef.current.push(text);
           if (aliasTimerRef.current) clearTimeout(aliasTimerRef.current);
@@ -628,6 +705,10 @@ export function TerminalScreen({ route, navigation }: Props) {
         setConnecting(false);
         autoLoginRef.current = false;
         setLoginFailed(false);
+        logService.logConnect(server.host, server.port);
+        if (!server.username || !server.password) {
+          logService.markLoginComplete();
+        }
         if (uiMode === 'blind') {
           AccessibilityInfo.announceForAccessibility('Conectado');
         }
@@ -637,6 +718,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         setConnecting(false);
         autoLoginRef.current = false;
         setLoginFailed(false);
+        logService.logDisconnect();
         if (uiMode === 'blind') {
           AccessibilityInfo.announceForAccessibility('Desconectado');
         }
@@ -738,6 +820,7 @@ export function TerminalScreen({ route, navigation }: Props) {
       },
     };
 
+    logService.setCurrentServer(server.name, server.host, server.password);
     const telnet = new TelnetService(server, handler, encoding);
     telnetRef.current = telnet;
     setConnecting(true);
@@ -2164,7 +2247,6 @@ export function TerminalScreen({ route, navigation }: Props) {
                 minimalista={isMinimalista}
                 minCols={gridCols}
                 minRows={horizontalGridRows}
-                onOpenActionModal={(col, row) => setCurrentActionButton({ col, row })}
               />
             </View>
           </View>
@@ -2195,6 +2277,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           />
         );
       })()}
+
 
       {/* Channel Modal */}
       {(uiMode === 'blind' || uiMode === 'completo') && (
@@ -2249,7 +2332,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           </View>
           <View style={{ flex: 1, minHeight: 0 }}>
             <SettingsScreen
-              navigation={navigation}
+              navigation={navigation as unknown as NativeStackScreenProps<RootStackParamList, 'Settings'>['navigation']}
               sourceLocation="terminal"
               onFontSizeChange={setFontSize}
               onSoundToggle={(enabled) => silentModeEnabledRef.current = !enabled}
@@ -2293,6 +2376,57 @@ export function TerminalScreen({ route, navigation }: Props) {
           miniMapRef.current?.resetView();
         }}
       />
+
+      {/* Exit confirmation modal (blind mode) */}
+      <Modal
+        visible={exitConfirmVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={cancelExit}
+      >
+        <View style={styles.exitModalOverlay}>
+          <View style={styles.exitModalBox}>
+            <Text style={styles.exitModalTitle} accessibilityRole="header">
+              ¿Salir y desconectar?
+            </Text>
+            <Text style={styles.exitModalDesc}>
+              Se cerrará la conexión al servidor.
+            </Text>
+            <View style={styles.exitModalButtons}>
+              <TouchableOpacity
+                style={[styles.exitModalButton, styles.exitModalButtonCancel]}
+                onPress={cancelExit}
+                accessible={true}
+                accessibilityRole="button"
+                accessibilityLabel="Cancelar, volver al terminal"
+              >
+                <Text style={styles.exitModalButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.exitModalButton, styles.exitModalButtonConfirm]}
+                onPress={confirmExit}
+                accessible={true}
+                accessibilityRole="button"
+                accessibilityLabel="Sí, salir y desconectar"
+              >
+                <Text style={styles.exitModalButtonText}>Sí, salir</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Exit toast (normal mode) */}
+      {exitToastVisible && (
+        <View
+          style={[styles.exitToast, { bottom: insets.bottom + 40 }]}
+          pointerEvents="none"
+        >
+          <Text style={styles.exitToastText}>
+            Pulsa atrás de nuevo para salir
+          </Text>
+        </View>
+      )}
 
     </SafeAreaView>
   );
@@ -2498,5 +2632,67 @@ const styles = StyleSheet.create({
   blindTextButton: {
     width: undefined,
     paddingHorizontal: 12,
+  },
+  exitModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  exitModalBox: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+    padding: 20,
+    minWidth: 280,
+    maxWidth: 400,
+  },
+  exitModalTitle: {
+    color: '#00cc00',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  exitModalDesc: {
+    color: '#ccc',
+    fontSize: 14,
+    marginBottom: 20,
+  },
+  exitModalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  exitModalButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 4,
+    marginLeft: 8,
+  },
+  exitModalButtonCancel: {
+    backgroundColor: '#333',
+  },
+  exitModalButtonConfirm: {
+    backgroundColor: '#662222',
+  },
+  exitModalButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  exitToast: {
+    position: 'absolute',
+    left: 24,
+    right: 24,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    borderRadius: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  exitToastText: {
+    color: '#fff',
+    fontSize: 14,
   },
 });

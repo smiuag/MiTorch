@@ -3,6 +3,8 @@ import { GestureConfig } from '../types';
 
 const SETTINGS_KEY = 'aljhtar_settings';
 
+export type LogsMaxLines = 5000 | 10000 | 20000 | 50000 | 100000;
+
 export interface AppSettings {
   fontSize: number;
   uiMode: 'completo' | 'blind';
@@ -16,6 +18,8 @@ export interface AppSettings {
   backgroundConnectionEnabled: boolean;
   notificationsEnabled: boolean;
   enabledNotifications: Record<string, boolean>;
+  logsEnabled: boolean;
+  logsMaxLines: LogsMaxLines;
 }
 
 export const AVAILABLE_NOTIFICATIONS = {
@@ -63,6 +67,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     ...acc,
     [n]: false,
   }), {}),
+  logsEnabled: false,
+  logsMaxLines: 20000,
   gestures: [
     { type: 'doubletap', enabled: true, command: 'responder ', opensKeyboard: true },
     { type: 'swipe_up', enabled: true, command: 'norte', opensKeyboard: false },

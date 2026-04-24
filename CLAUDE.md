@@ -610,11 +610,76 @@ Lines flow through: `incoming text` → `parseAnsi()` → `MudLine[]` → `FlatL
 
 Call the `save*` function from the storage module (e.g., `saveLayout(layout)`). These are async.
 
+## Sistema de logs para soporte
+
+Sistema opcional (off por defecto) para capturar la actividad del terminal y exportarla como HTML, pensado para que el usuario comparta fragmentos con soporte o los suba a sitios como deathlogs.com.
+
+### Diseño
+
+**Almacenamiento (archivo único, compartido entre servidores):**
+- Ruta: `${Paths.document}/logs/log.txt`.
+- Directorio privado del sandbox de la app — invisible desde exploradores de archivos, sin permisos.
+- Cada línea: `[ISO timestamp] [server-key] contenido` (ANSI crudo preservado).
+- `server-key` derivado del **nombre** del `ServerProfile` (slug: lowercase, espacios a guiones, sin caracteres especiales). Cada entrada de la lista de servidores tiene su propio tag.
+- Comandos del usuario se prefijan con `>` tras el tag de servidor.
+- Marcadores de conexión/desconexión: líneas `[ISO] [server-key] === Conectado a HOST:PORT ===` / `=== Desconectado ===`.
+
+**Buffer y flush:**
+- Buffer en memoria (array de strings) gestionado por `LogService` (singleton tipo `TelnetService`).
+- Flush a disco cada **5 s** o cada **100 líneas**, lo primero. Minimiza I/O.
+- Un `LogService` único sobrevive al ciclo de vida del `TerminalScreen` y a las reconexiones (vive mientras viva el proceso JS, que con foreground service es persistente).
+
+**Cap de tamaño (configurable por el usuario):**
+- Ajuste `maxLogLines` en Settings: 5.000 / 10.000 / 20.000 / 50.000 / 100.000 líneas.
+- Default: 20.000 (~3-4 MB).
+- Al superar el cap: truncar las líneas más antiguas (desde la cabecera del archivo) sin avisar.
+- Si el usuario baja el cap y había más líneas guardadas: truncar al nuevo tope inmediatamente (sin confirmación).
+
+**Sanitización:**
+- Solo la contraseña: cuando el auto-login mande `server.password`, la línea correspondiente NO se escribe al log.
+- No se sanitiza username, host, ni nicks de otros jugadores.
+
+**Toggle ON/OFF:**
+- Off por defecto — la mayoría de usuarios no necesitan logs.
+- Al activar: empieza a escribir desde cero (no recupera nada anterior).
+- Al desactivar: **borrar el archivo de log inmediatamente** (privacidad y limpieza).
+
+**Borrado manual:**
+- Botón "Borrar todos los logs" en Settings (solo visible si toggle ON).
+
+**Export:**
+- Botón "Exportar log" en Settings (solo visible si toggle ON y hay archivo de log).
+- Modal al pulsar: "¿Qué rango quieres exportar? [Últimas 24h] [Últimos 7 días] [Todo]".
+- Genera HTML en `${Paths.cache}/blowtorch-log-export.html` (cache, porque es desechable una vez compartido).
+- Abre el HTML en el navegador via `Linking.openURL(contentUri)` donde `contentUri = await getContentUriAsync(fileUri)` de `expo-file-system/legacy`.
+- Si `Linking.openURL` falla (algunos dispositivos no resuelven content:// a text/html), fallback: añadir `expo-sharing` en el futuro.
+
+**Generador HTML:**
+- Parser reutiliza la lógica de `src/utils/ansiParser.ts` para convertir ANSI → `<span style="color: #xxx">`.
+- Cada línea como `<div data-ts="ISO" data-server="server-key">`.
+- Cabecera con filtros JavaScript embebidos:
+  - Dropdown "Servidor" poblado dinámicamente con los `data-server` encontrados.
+  - Inputs "Desde"/"Hasta" (datetime-local).
+  - Buscador de texto en vivo.
+  - Botón "Copiar visibles" que selecciona solo `<div>` no ocultos y copia HTML con formato al portapapeles.
+  - Atajos: "Últimos 30 min", "Última hora", "Hoy".
+- Enlace a **deathlogs.com**:
+  - Si hay un servidor filtrado y su `host` (lookup del `ServerProfile`) contiene `reinosdeleyenda.es` → `https://deathlogs.com/list_log.php?m_id=10`.
+  - Si no → `https://deathlogs.com/`.
+
+### Archivos involucrados
+
+- `src/services/logService.ts` (NUEVO): singleton con buffer, flush, trim, export, sanitización.
+- `src/utils/logHtmlGenerator.ts` (NUEVO): genera el HTML con filtros embebidos.
+- `src/services/telnetService.ts`: llama `logService.appendIncoming(serverKey, text)` en `onData`.
+- `src/screens/TerminalScreen.tsx`: llama `logService.appendCommand(serverKey, cmd)` antes de enviar comandos. Avisa a `logService.setCurrentServer` al conectar.
+- `src/screens/SettingsScreen.tsx`: UI del toggle, selector de tamaño, botones borrar/exportar, confirmación de export.
+- `src/storage/settingsStorage.ts`: persistencia de `logsEnabled` y `maxLogLines`.
+- `src/types/index.ts`: extensión de `AppSettings`.
+
 ## Temas Pendientes
 
 - **Revisar botones de modo blind de consultar vida, energía...**
-- **Varios paneles de botones para modo completo** (como ya existen en blind con el botón "Cambiar" entre Panel 1 y Panel 2).
-- **Valorar tener logs** (sistema de logging persistente para depurar en campo, especialmente para casos tipo "usuario de Paraguay" donde el contacto directo es complicado).
 
 ## Desarrollos por ahora no necesarios
 

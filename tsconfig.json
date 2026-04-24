@@ -1,6 +1,11 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    "baseUrl": ".",
+    "paths": {
+      "expo-file-system": ["node_modules/expo/node_modules/expo-file-system"],
+      "expo-file-system/legacy": ["node_modules/expo/node_modules/expo-file-system/legacy"]
+    }
   }
 }

@@ -68,7 +68,7 @@ class BlindModeService {
   private promptFilterRegexes: RegExp[] = [];
 
   constructor() {
-    this.filters = { ...blindModeFiltersData.filters };
+    this.filters = { ...blindModeFiltersData.filters } as Record<string, FilterGroup>;
     this.activeFilters = new Set(
       blindModeFiltersData.classConfigs.generica.enabledFilters
     );
