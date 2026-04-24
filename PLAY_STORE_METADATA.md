@@ -136,7 +136,7 @@ BlowTorch v3.X.X
 Replace `[YOUR_EMAIL]` in legal docs with the same email you put here:
 
 ```
-[YOUR_CONTACT_EMAIL]
+smiaug@proton.me
 ```
 
 ---
@@ -191,14 +191,14 @@ ANSI Colors • Maps • Buttons • Blind Mode"
 
 ## Privacy Policy URL
 ```
-https://[YOUR_DOMAIN]/privacy-policy.html
+https://smiuag.github.io/MiTorch/privacy-policy.html
 ```
 
 ---
 
 ## Support Email
 ```
-[YOUR_CONTACT_EMAIL]
+smiaug@proton.me
 ```
 
 ---

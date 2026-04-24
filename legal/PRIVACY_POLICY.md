@@ -61,8 +61,8 @@ We may update this policy. Changes take effect immediately upon posting. Your co
 ## Contact
 
 For questions about this privacy policy:
-- Email: [YOUR_CONTACT_EMAIL]
-- GitHub: [Your Repository URL]
+- Email: smiaug@proton.me
+- GitHub: https://github.com/smiuag/MiTorch
 
 ---
 

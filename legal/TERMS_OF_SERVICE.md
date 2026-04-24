@@ -67,8 +67,8 @@ We may update these terms at any time. Continued use of BlowTorch constitutes ac
 ## 10. Contact
 
 For questions about these terms:
-- Email: [YOUR_CONTACT_EMAIL]
-- GitHub: [Your Repository URL]
+- Email: smiaug@proton.me
+- GitHub: https://github.com/smiuag/MiTorch
 
 ## 11. Governing Law
 
