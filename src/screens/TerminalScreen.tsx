@@ -101,6 +101,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [roomAllies, setRoomAllies] = useState('');
   const [hpHistory, setHpHistory] = useState<{ delta: number; label: string }[]>([]);
   const [currentBlindPanel, setCurrentBlindPanel] = useState(1);
+  const [currentCompletoPanel, setCurrentCompletoPanel] = useState(1);
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
   const [inputSelection, setInputSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -1020,11 +1021,16 @@ export function TerminalScreen({ route, navigation }: Props) {
       return;
     }
 
-    // Handle panel switch in blind mode
+    // Handle panel switch (blind or completo)
     if (command === '__SWITCH_PANEL__') {
-      const nextPanel = currentBlindPanel === 1 ? 2 : 1;
-      setCurrentBlindPanel(nextPanel);
-      AccessibilityInfo.announceForAccessibility(`Panel ${nextPanel}`);
+      if (uiMode === 'blind') {
+        const nextPanel = currentBlindPanel === 1 ? 2 : 1;
+        setCurrentBlindPanel(nextPanel);
+        AccessibilityInfo.announceForAccessibility(`Panel ${nextPanel}`);
+      } else {
+        const nextPanel = currentCompletoPanel === 1 ? 2 : 1;
+        setCurrentCompletoPanel(nextPanel);
+      }
       return;
     }
 
@@ -1038,7 +1044,7 @@ export function TerminalScreen({ route, navigation }: Props) {
       stopWalk();
       addLine('--- Movimiento cancelado ---');
     }
-  }, [connected, commandHistory, walking, stopWalk, walkTo, handleLocate, addLine, hp, hpMax, energy, energyMax, uiMode, currentBlindPanel]);
+  }, [connected, commandHistory, walking, stopWalk, walkTo, handleLocate, addLine, hp, hpMax, energy, energyMax, uiMode, currentBlindPanel, currentCompletoPanel]);
 
   const handleSendInput = () => {
     if (inputText.trim()) {
@@ -1060,13 +1066,13 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   const handleEditButton = (col: number, row: number) => {
     // Don't allow editing fixed buttons (like SWITCH and IR)
-    // In blind mode, filter by current panel
+    // Filter by current panel for the active mode
     const button = buttonLayout?.buttons.find(b => {
       if (b.col !== col || b.row !== row) return false;
       if (uiMode === 'blind') {
         return !b.blindPanel || b.blindPanel === currentBlindPanel;
       }
-      return true;
+      return !b.completoPanel || b.completoPanel === currentCompletoPanel;
     });
     if (button?.fixed) {
       return;
@@ -1084,16 +1090,18 @@ export function TerminalScreen({ route, navigation }: Props) {
       const storageRow = editButtonRow;
 
       const updated = buttonLayout.buttons.filter(b => {
-        // In blind mode, also check blindPanel to avoid removing buttons from other panels
+        // Also check panel to avoid removing buttons from other panels in the same slot
         if (uiMode === 'blind') {
           return !(b.col === storageCol && b.row === storageRow && b.blindPanel === currentBlindPanel);
         }
-        return !(b.col === storageCol && b.row === storageRow);
+        return !(b.col === storageCol && b.row === storageRow && (b.completoPanel ?? currentCompletoPanel) === currentCompletoPanel);
       });
       if (btn.label && btn.label !== '—') {
-        // Ensure blindPanel is preserved when saving
+        // Ensure the right panel is preserved when saving
         if (uiMode === 'blind') {
           btn.blindPanel = currentBlindPanel;
+        } else {
+          btn.completoPanel = currentCompletoPanel;
         }
         updated.push(btn);
       }
@@ -1113,9 +1121,13 @@ export function TerminalScreen({ route, navigation }: Props) {
   const handleDeleteButton = async () => {
     if (!buttonLayout) return;
 
-    const updated = buttonLayout.buttons.filter(
-      b => !(b.col === editButtonCol && b.row === editButtonRow)
-    );
+    const updated = buttonLayout.buttons.filter(b => {
+      if (b.col !== editButtonCol || b.row !== editButtonRow) return true;
+      if (uiMode === 'blind') {
+        return b.blindPanel !== undefined && b.blindPanel !== currentBlindPanel;
+      }
+      return b.completoPanel !== undefined && b.completoPanel !== currentCompletoPanel;
+    });
 
     const newLayout = { buttons: updated };
     setButtonLayout(newLayout);
@@ -1151,7 +1163,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           if (uiMode === 'blind') {
             return !b.blindPanel || b.blindPanel === currentBlindPanel;
           }
-          return true;
+          return !b.completoPanel || b.completoPanel === currentCompletoPanel;
         });
       };
 
@@ -1159,8 +1171,11 @@ export function TerminalScreen({ route, navigation }: Props) {
       const targetBtn = findButton(targetCol, targetRow);
 
       const updated = buttonLayout.buttons.map(b => {
-        // In blind mode, only swap buttons from the same panel
+        // Only swap buttons from the same panel as the active one
         if (uiMode === 'blind' && b.blindPanel !== currentBlindPanel) {
+          return b;
+        }
+        if (uiMode !== 'blind' && b.completoPanel !== undefined && b.completoPanel !== currentCompletoPanel) {
           return b;
         }
         if (b.col === sourceCol && b.row === sourceRow) {
@@ -1409,10 +1424,12 @@ export function TerminalScreen({ route, navigation }: Props) {
   // Grid dimensions from config
   const isMinimalista = uiMode === 'blind';
 
-  // Filter buttons by current blind panel
-  const filteredButtons = uiMode === 'blind' && buttonLayout
-    ? buttonLayout.buttons.filter(btn => !btn.blindPanel || btn.blindPanel === currentBlindPanel)
-    : buttonLayout?.buttons || [];
+  // Filter buttons by current panel (per mode)
+  const filteredButtons = buttonLayout
+    ? (uiMode === 'blind'
+        ? buttonLayout.buttons.filter(btn => !btn.blindPanel || btn.blindPanel === currentBlindPanel)
+        : buttonLayout.buttons.filter(btn => !btn.completoPanel || btn.completoPanel === currentCompletoPanel))
+    : [];
   const modeConfig = isMinimalista ? BLIND_MODE : NORMAL_MODE;
   const gridCols = modeConfig.vertical.cols;
   const gridRows = modeConfig.vertical.rows;
@@ -2168,7 +2185,7 @@ export function TerminalScreen({ route, navigation }: Props) {
               if (uiMode === 'blind') {
                 return !b.blindPanel || b.blindPanel === currentBlindPanel;
               }
-              return true;
+              return !b.completoPanel || b.completoPanel === currentCompletoPanel;
             }) || null}
             onSave={handleSaveEditButton}
             onDelete={handleDeleteButton}

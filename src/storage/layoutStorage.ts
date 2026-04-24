@@ -14,6 +14,7 @@ export interface LayoutButton {
   locked?: boolean;
   fixed?: boolean;
   blindPanel?: 1 | 2; // Panel 1 or 2 for blind mode buttons
+  completoPanel?: 1 | 2; // Panel 1 or 2 for completo mode buttons
 }
 
 export interface ButtonLayout {
@@ -32,34 +33,52 @@ function genId() {
 }
 
 export function createDefaultLayout(): ButtonLayout {
-  // 9x6 grid with empty row 1, directions from row 2-4, LOC at (8,0)
-  const buttons: LayoutButton[] = [
+  // Panel 1: full command set (Decir/Res/STOP/IR/SIG/LOC + directions)
+  const panel1: LayoutButton[] = [
+    { id: genId(), col: 0, row: 0, label: 'Panel', command: '__SWITCH_PANEL__', color: '#336666', textColor: '#88ccff', completoPanel: 1, fixed: true, locked: true },
     // Row 0: Decir, Responder, _, _, STOP, IR, LOC
-    { id: genId(), col: 3, row: 0, label: 'Decir', command: 'decir', color: '#662266', textColor: '#fff', addText: true },
-    { id: genId(), col: 4, row: 0, label: 'Res', command: 'responder', color: '#662266', textColor: '#fff', addText: true },
-    { id: genId(), col: 6, row: 0, label: 'STOP', command: 'stop', color: '#662222', textColor: '#fff' },
-    { id: genId(), col: 7, row: 0, label: 'IR', command: 'irsala', color: '#662266', textColor: '#fff', addText: true },
-    { id: genId(), col: 7, row: 1, label: 'SIG', command: 'sigilarsala', color: '#443366', textColor: '#fff', addText: true },
-    { id: genId(), col: 8, row: 0, label: 'LOC', command: 'locate', color: '#223366', textColor: '#fff' },
-    // Row 2: _, _, NO, N, NE, AR, _, _
-    { id: genId(), col: 3, row: 2, label: 'NO', command: 'noroeste', color: '#662222', textColor: '#fff' },
-    { id: genId(), col: 4, row: 2, label: 'N', command: 'norte', color: '#662222', textColor: '#fff' },
-    { id: genId(), col: 5, row: 2, label: 'NE', command: 'noreste', color: '#662222', textColor: '#fff' },
-    { id: genId(), col: 6, row: 2, label: 'AR', command: 'ar', color: '#663322', textColor: '#fff' },
-    // Row 3: O, _, E, AB, _, _
-    { id: genId(), col: 3, row: 3, label: 'O', command: 'oeste', color: '#662222', textColor: '#fff' },
-    { id: genId(), col: 5, row: 3, label: 'E', command: 'este', color: '#662222', textColor: '#fff' },
-    { id: genId(), col: 6, row: 3, label: 'AB', command: 'ab', color: '#663322', textColor: '#fff' },
-    // Row 4: SO, S, SE, DE, _, _
-    { id: genId(), col: 3, row: 4, label: 'SO', command: 'sudoeste', color: '#662222', textColor: '#fff' },
-    { id: genId(), col: 4, row: 4, label: 'S', command: 'sur', color: '#662222', textColor: '#fff' },
-    { id: genId(), col: 5, row: 4, label: 'SE', command: 'sudeste', color: '#662222', textColor: '#fff' },
-    { id: genId(), col: 6, row: 4, label: 'DE', command: 'dentro', color: '#663322', textColor: '#fff' },
-    // Row 5: FU, _, _
-    { id: genId(), col: 6, row: 5, label: 'FU', command: 'fuera', color: '#663322', textColor: '#fff' },
+    { id: genId(), col: 3, row: 0, label: 'Decir', command: 'decir', color: '#662266', textColor: '#fff', addText: true, completoPanel: 1 },
+    { id: genId(), col: 4, row: 0, label: 'Res', command: 'responder', color: '#662266', textColor: '#fff', addText: true, completoPanel: 1 },
+    { id: genId(), col: 6, row: 0, label: 'STOP', command: 'stop', color: '#662222', textColor: '#fff', completoPanel: 1 },
+    { id: genId(), col: 7, row: 0, label: 'IR', command: 'irsala', color: '#662266', textColor: '#fff', addText: true, completoPanel: 1 },
+    { id: genId(), col: 7, row: 1, label: 'SIG', command: 'sigilarsala', color: '#443366', textColor: '#fff', addText: true, completoPanel: 1 },
+    { id: genId(), col: 8, row: 0, label: 'LOC', command: 'locate', color: '#223366', textColor: '#fff', completoPanel: 1 },
+    // Row 2: NO, N, NE, AR
+    { id: genId(), col: 3, row: 2, label: 'NO', command: 'noroeste', color: '#662222', textColor: '#fff', completoPanel: 1 },
+    { id: genId(), col: 4, row: 2, label: 'N', command: 'norte', color: '#662222', textColor: '#fff', completoPanel: 1 },
+    { id: genId(), col: 5, row: 2, label: 'NE', command: 'noreste', color: '#662222', textColor: '#fff', completoPanel: 1 },
+    { id: genId(), col: 6, row: 2, label: 'AR', command: 'ar', color: '#663322', textColor: '#fff', completoPanel: 1 },
+    // Row 3: O, E, AB
+    { id: genId(), col: 3, row: 3, label: 'O', command: 'oeste', color: '#662222', textColor: '#fff', completoPanel: 1 },
+    { id: genId(), col: 5, row: 3, label: 'E', command: 'este', color: '#662222', textColor: '#fff', completoPanel: 1 },
+    { id: genId(), col: 6, row: 3, label: 'AB', command: 'ab', color: '#663322', textColor: '#fff', completoPanel: 1 },
+    // Row 4: SO, S, SE, DE
+    { id: genId(), col: 3, row: 4, label: 'SO', command: 'sudoeste', color: '#662222', textColor: '#fff', completoPanel: 1 },
+    { id: genId(), col: 4, row: 4, label: 'S', command: 'sur', color: '#662222', textColor: '#fff', completoPanel: 1 },
+    { id: genId(), col: 5, row: 4, label: 'SE', command: 'sudeste', color: '#662222', textColor: '#fff', completoPanel: 1 },
+    { id: genId(), col: 6, row: 4, label: 'DE', command: 'dentro', color: '#663322', textColor: '#fff', completoPanel: 1 },
+    // Row 5: FU
+    { id: genId(), col: 6, row: 5, label: 'FU', command: 'fuera', color: '#663322', textColor: '#fff', completoPanel: 1 },
   ];
 
-  return { buttons };
+  // Panel 2: directions mirror panel 1; rest empty for user customization
+  const panel2: LayoutButton[] = [
+    { id: genId(), col: 0, row: 0, label: 'Panel', command: '__SWITCH_PANEL__', color: '#336666', textColor: '#88ccff', completoPanel: 2, fixed: true, locked: true },
+    { id: genId(), col: 3, row: 2, label: 'NO', command: 'noroeste', color: '#662222', textColor: '#fff', completoPanel: 2 },
+    { id: genId(), col: 4, row: 2, label: 'N', command: 'norte', color: '#662222', textColor: '#fff', completoPanel: 2 },
+    { id: genId(), col: 5, row: 2, label: 'NE', command: 'noreste', color: '#662222', textColor: '#fff', completoPanel: 2 },
+    { id: genId(), col: 6, row: 2, label: 'AR', command: 'ar', color: '#663322', textColor: '#fff', completoPanel: 2 },
+    { id: genId(), col: 3, row: 3, label: 'O', command: 'oeste', color: '#662222', textColor: '#fff', completoPanel: 2 },
+    { id: genId(), col: 5, row: 3, label: 'E', command: 'este', color: '#662222', textColor: '#fff', completoPanel: 2 },
+    { id: genId(), col: 6, row: 3, label: 'AB', command: 'ab', color: '#663322', textColor: '#fff', completoPanel: 2 },
+    { id: genId(), col: 3, row: 4, label: 'SO', command: 'sudoeste', color: '#662222', textColor: '#fff', completoPanel: 2 },
+    { id: genId(), col: 4, row: 4, label: 'S', command: 'sur', color: '#662222', textColor: '#fff', completoPanel: 2 },
+    { id: genId(), col: 5, row: 4, label: 'SE', command: 'sudeste', color: '#662222', textColor: '#fff', completoPanel: 2 },
+    { id: genId(), col: 6, row: 4, label: 'DE', command: 'dentro', color: '#663322', textColor: '#fff', completoPanel: 2 },
+    { id: genId(), col: 6, row: 5, label: 'FU', command: 'fuera', color: '#663322', textColor: '#fff', completoPanel: 2 },
+  ];
+
+  return { buttons: [...panel1, ...panel2] };
 }
 
 export function createBlindModeLayout(): ButtonLayout {
@@ -158,6 +177,19 @@ function migrateLayout(layout: ButtonLayout): ButtonLayout {
       textColor: '#fff',
       addText: true,
     });
+  }
+
+  // Add panel-switch buttons at (0,0) for completo layouts that don't yet
+  // use the panel system. Only applies if no button already uses
+  // completoPanel and slot (0,0) is free in the completo layout.
+  const hasCompletoPanel = migratedButtons.some(b => b.completoPanel !== undefined);
+  const hasCompletoSwitch = migratedButtons.some(b => b.command === '__SWITCH_PANEL__' && b.completoPanel !== undefined);
+  const completoSlotFree = !migratedButtons.some(b => b.col === 0 && b.row === 0 && !b.blindPanel);
+  if (!hasCompletoPanel && !hasCompletoSwitch && completoSlotFree && hasIrCompleto) {
+    migratedButtons.push(
+      { id: genId(), col: 0, row: 0, label: 'Panel', command: '__SWITCH_PANEL__', color: '#336666', textColor: '#88ccff', completoPanel: 1, fixed: true, locked: true },
+      { id: genId(), col: 0, row: 0, label: 'Panel', command: '__SWITCH_PANEL__', color: '#336666', textColor: '#88ccff', completoPanel: 2, fixed: true, locked: true },
+    );
   }
 
   return { buttons: migratedButtons };
