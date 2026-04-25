@@ -20,6 +20,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { startBackgroundConnection, stopBackgroundConnection } from '../services/foregroundService';
+import BlowTorchForeground, { addWalkStepListener, addWalkDoneListener } from '../../modules/blowtorch-foreground';
 import { detectNotification, fireNotification, stripAnsi } from '../services/notificationService';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -119,7 +120,6 @@ export function TerminalScreen({ route, navigation }: Props) {
   const isCapturingAliasRef = useRef(false);
   const aliasBufferRef = useRef<string[]>([]);
   const aliasTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const walkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const walkPathRef = useRef<string[]>([]);
   const playSoundRef = useRef(playSound);
   const walkStepRef = useRef(0);
@@ -177,6 +177,27 @@ export function TerminalScreen({ route, navigation }: Props) {
       appStateRef.current = state;
     });
     return () => sub.remove();
+  }, []);
+
+  // Native walk: each tick from the foreground module triggers a telnet send.
+  // Living in native (Handler.postDelayed) keeps the cadence even when JS
+  // setTimeout is paused while the app is backgrounded.
+  useEffect(() => {
+    const stepSub = addWalkStepListener((e) => {
+      if (!walkActiveRef.current) return;
+      walkStepRef.current = e.index + 1;
+      telnetRef.current?.send(e.command);
+    });
+    const doneSub = addWalkDoneListener(() => {
+      walkPathRef.current = [];
+      walkStepRef.current = 0;
+      walkActiveRef.current = false;
+      if (isMountedRef.current) setWalking(false);
+    });
+    return () => {
+      stepSub.remove();
+      doneSub.remove();
+    };
   }, []);
 
   // Track soft-keyboard height so we can dock the nick autocomplete bar to
@@ -860,9 +881,8 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, [connected, server.name, backgroundConnectionEnabled]);
 
   const stopWalk = useCallback(() => {
-    if (walkTimeoutRef.current) {
-      clearTimeout(walkTimeoutRef.current);
-      walkTimeoutRef.current = null;
+    if (walkActiveRef.current) {
+      BlowTorchForeground.cancelWalk().catch(() => {});
     }
     walkPathRef.current = [];
     walkStepRef.current = 0;
@@ -872,10 +892,6 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   const walkTo = useCallback((targetRoom: MapRoom, options?: { stealth?: boolean }) => {
     if (walkActiveRef.current) return;
-    if (walkTimeoutRef.current) {
-      clearTimeout(walkTimeoutRef.current);
-      walkTimeoutRef.current = null;
-    }
 
     const mapSvc = mapServiceRef.current;
     const current = mapSvc.getCurrentRoom();
@@ -896,23 +912,12 @@ export function TerminalScreen({ route, navigation }: Props) {
     walkStepRef.current = 0;
 
     const STEP_DELAY = 1100;
-    const processNextStep = () => {
-      if (!isMountedRef.current) return;
-      const step = walkStepRef.current;
-      const allPaths = walkPathRef.current;
-      if (step < allPaths.length && walkActiveRef.current) {
-        telnetRef.current?.send(allPaths[step]);
-        walkStepRef.current = step + 1;
-        walkTimeoutRef.current = setTimeout(processNextStep, STEP_DELAY);
-      } else {
-        walkTimeoutRef.current = null;
-        walkPathRef.current = [];
-        walkStepRef.current = 0;
-        walkActiveRef.current = false;
-        if (isMountedRef.current) setWalking(false);
-      }
-    };
-    processNextStep();
+    BlowTorchForeground.startWalk(walkPathRef.current, STEP_DELAY).catch(() => {
+      walkActiveRef.current = false;
+      walkPathRef.current = [];
+      walkStepRef.current = 0;
+      if (isMountedRef.current) setWalking(false);
+    });
   }, []);
 
   const handleLocate = useCallback(() => {

@@ -142,9 +142,9 @@ export function generateLogHtml(
   </div>
 
   <div class="row">
-    <button class="ctrl secondary" onclick="clearFilters()">Limpiar filtros</button>
-    <button class="ctrl secondary" onclick="copyVisible()">Copiar con formato</button>
-    <button class="ctrl secondary" onclick="copyCleanHtml()">Copiar HTML limpio</button>
+    <button class="ctrl secondary" onclick="clearFilters()">Limpiar</button>
+    <button class="ctrl secondary" onclick="copyVisible()">Copiar</button>
+    <button class="ctrl secondary" onclick="copyCleanHtml()">Copiar HTML</button>
   </div>
 
   <div class="row">
