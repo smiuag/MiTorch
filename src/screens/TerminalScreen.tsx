@@ -15,7 +15,9 @@ import {
   AppState,
   Keyboard,
   BackHandler,
+  Pressable,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
@@ -78,6 +80,8 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [searchVisible, setSearchVisible] = useState(false);
   const [previewRoomId, setPreviewRoomId] = useState<number | null>(null);
   const [walking, setWalking] = useState(false);
+  const [selectionAnchorId, setSelectionAnchorId] = useState<number | null>(null);
+  const [selectionTargetId, setSelectionTargetId] = useState<number | null>(null);
   const [fontSize, setFontSize] = useState(14);
   const [uiMode, setUiMode] = useState<'completo' | 'blind'>('completo');
   const [encoding, setEncoding] = useState('utf8');
@@ -862,6 +866,41 @@ export function TerminalScreen({ route, navigation }: Props) {
     telnetRef.current?.connect();
   }, [connecting]);
 
+  const selectionMode = selectionAnchorId !== null && selectionTargetId !== null;
+  const selectionRange = useMemo(() => {
+    if (selectionAnchorId == null || selectionTargetId == null) return null;
+    const a = Math.min(selectionAnchorId, selectionTargetId);
+    const b = Math.max(selectionAnchorId, selectionTargetId);
+    return { from: a, to: b };
+  }, [selectionAnchorId, selectionTargetId]);
+
+  const handleLineLongPress = useCallback((id: number) => {
+    if (uiMode !== 'completo') return;
+    setSelectionAnchorId(id);
+    setSelectionTargetId(id);
+  }, [uiMode]);
+
+  const handleLineTap = useCallback((id: number) => {
+    setSelectionTargetId((prev) => (prev == null ? null : id));
+  }, []);
+
+  const cancelSelection = useCallback(() => {
+    setSelectionAnchorId(null);
+    setSelectionTargetId(null);
+  }, []);
+
+  const copySelectedAsText = useCallback(async () => {
+    if (!selectionRange) {
+      cancelSelection();
+      return;
+    }
+    const { from, to } = selectionRange;
+    const selected = lines.filter((l) => l.id >= from && l.id <= to);
+    const text = selected.map((l) => l.spans.map((s) => s.text).join('')).join('\n');
+    if (text) await Clipboard.setStringAsync(text);
+    cancelSelection();
+  }, [lines, selectionRange, cancelSelection]);
+
   useEffect(() => {
     if (connected && keepAwakeEnabled) {
       activateKeepAwakeAsync('mud-session');
@@ -1627,11 +1666,22 @@ export function TerminalScreen({ route, navigation }: Props) {
             ref={flatListRef}
             data={lines}
             keyExtractor={item => String(item.id)}
-            renderItem={({ item }) => (
-              <View style={styles.lineContainer} key={item.id}>
-                <AnsiText spans={item.spans} fontSize={fontSize} lineId={item.id} />
-              </View>
-            )}
+            renderItem={({ item }) => {
+              const isSelected =
+                selectionRange != null &&
+                item.id >= selectionRange.from &&
+                item.id <= selectionRange.to;
+              return (
+                <Pressable
+                  key={item.id}
+                  onLongPress={uiMode === 'completo' ? () => handleLineLongPress(item.id) : undefined}
+                  onPress={selectionMode ? () => handleLineTap(item.id) : undefined}
+                  style={[styles.lineContainer, isSelected && styles.lineSelected]}
+                >
+                  <AnsiText spans={item.spans} fontSize={fontSize} lineId={item.id} />
+                </Pressable>
+              );
+            }}
             scrollEnabled={uiMode === 'blind'}
             scrollEventThrottle={16}
             onScroll={handleFlatListScroll}
@@ -2441,6 +2491,19 @@ export function TerminalScreen({ route, navigation }: Props) {
         </View>
       )}
 
+      {selectionMode && uiMode === 'completo' && (
+        <View style={styles.selectionBar} pointerEvents="box-none">
+          <View style={styles.selectionBarInner}>
+            <TouchableOpacity onPress={copySelectedAsText} style={styles.selectionBtn}>
+              <Text style={styles.selectionBtnText}>Copiar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={cancelSelection} style={[styles.selectionBtn, styles.selectionBtnCancel]}>
+              <Text style={styles.selectionBtnText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
     </SafeAreaView>
   );
 }
@@ -2472,6 +2535,43 @@ const styles = StyleSheet.create({
   lineContainer: {
     paddingHorizontal: 4,
     paddingVertical: 2,
+  },
+  lineSelected: {
+    backgroundColor: 'rgba(85, 170, 221, 0.3)',
+  },
+  selectionBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    paddingTop: 8,
+  },
+  selectionBarInner: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(20, 20, 20, 0.95)',
+    borderRadius: 8,
+    padding: 6,
+    gap: 6,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  selectionBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: '#2a5a7a',
+    borderRadius: 6,
+  },
+  selectionBtnCancel: {
+    backgroundColor: '#5a2a2a',
+  },
+  selectionBtnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 13,
   },
   scrollToBottomButton: {
     position: 'absolute',

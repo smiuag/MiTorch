@@ -680,6 +680,9 @@ Sistema opcional (off por defecto) para capturar la actividad del terminal y exp
 ## Temas Pendientes
 
 - **Revisar botones de modo blind de consultar vida, energía...**
+- **Cargar scripts Lua**: explorar si compensa añadir runtime Lua para que el usuario escriba triggers/bots/contadores complejos. Opciones: `fengari` (Lua en JS, comparte JS thread), módulo Expo nativo con `LuaJ`/`lua-android` (más rápido y aislado, pero requiere diseñar bridge de APIs expuestas), o WebView con Lua-wasm (sandboxed pero overhead alto). Antes de decidir, valorar si un sistema de triggers JSON nativo cubre el 90% del caso de uso real.
+- **Modo paisaje en blind**: ahora mismo el blind mode (2 paneles que se alternan con switch button) está pensado para portrait. En landscape los paneles probablemente no se reparten bien. Idea: en landscape mostrar los 2 paneles a la vez (izquierda/derecha) y eliminar el switch button. Antes verificar qué hace exactamente al girar — puede que ya se vea aceptable.
+- **Seleccionar fragmento del log desde el terminal y compartir**: long-press en una línea activa modo selección, segundo long-press marca rango, barra flotante con "Compartir" que genera HTML del rango (reusa `logHtmlGenerator`) y abre `Sharing.shareAsync`. Coste ~3-4 h. Riesgo: chocar con gestos existentes en el terminal — revisar qué long-press hay registrados antes.
 
 ## Desarrollos por ahora no necesarios
 
