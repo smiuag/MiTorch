@@ -1,14 +1,14 @@
-# BlowTorch Terms of Service
+# TorchZhyla Terms of Service
 
 **Last Updated:** April 24, 2026
 
 ## 1. Acceptance of Terms
 
-By installing and using BlowTorch, you agree to these Terms of Service. If you do not agree, do not use the application.
+By installing and using TorchZhyla, you agree to these Terms of Service. If you do not agree, do not use the application.
 
 ## 2. Description of Service
 
-BlowTorch is a Telnet client application designed to connect to MUD (Multi-User Dungeon) servers and other Telnet-based services. The app provides:
+TorchZhyla is a Telnet client application designed to connect to MUD (Multi-User Dungeon) servers and other Telnet-based services. The app provides:
 - Terminal emulation
 - ANSI color support
 - Custom button macros
@@ -18,7 +18,7 @@ BlowTorch is a Telnet client application designed to connect to MUD (Multi-User 
 ## 3. User Responsibilities
 
 You agree to:
-- Use BlowTorch **only for lawful purposes**
+- Use TorchZhyla **only for lawful purposes**
 - Comply with each MUD server's terms and rules
 - Not use the app to access unauthorized systems
 - Not use the app for any illegal activity
@@ -34,7 +34,7 @@ You agree to:
 
 ## 5. No Warranty
 
-BlowTorch is provided **"AS IS"** without warranties of any kind:
+TorchZhyla is provided **"AS IS"** without warranties of any kind:
 - ❌ No guarantee of uptime or connectivity
 - ❌ No guarantee of error-free operation
 - ❌ No guarantee of data preservation
@@ -52,17 +52,17 @@ We are **not responsible** for:
 
 ## 7. Intellectual Property
 
-- BlowTorch code and design are owned by the developer
+- TorchZhyla code and design are owned by the developer
 - User-created button layouts and configurations are your own
-- You may not reverse-engineer, decompile, or distribute BlowTorch
+- You may not reverse-engineer, decompile, or distribute TorchZhyla
 
 ## 8. Termination
 
-We may discontinue BlowTorch at any time. Your right to use the app terminates if you violate these terms.
+We may discontinue TorchZhyla at any time. Your right to use the app terminates if you violate these terms.
 
 ## 9. Changes to Terms
 
-We may update these terms at any time. Continued use of BlowTorch constitutes acceptance of updated terms.
+We may update these terms at any time. Continued use of TorchZhyla constitutes acceptance of updated terms.
 
 ## 10. Contact
 
@@ -76,4 +76,4 @@ These terms are governed by applicable laws in your jurisdiction.
 
 ---
 
-**tl;dr: Use BlowTorch legally, follow each server's rules, we're not responsible for server issues.**
+**tl;dr: Use TorchZhyla legally, follow each server's rules, we're not responsible for server issues.**

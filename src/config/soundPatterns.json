@@ -1,5 +1,5 @@
 {
-  "description": "Sound patterns for BlowTorch - detects game events and maps to sounds",
+  "description": "Sound patterns for TorchZhyla - detects game events and maps to sounds",
   "version": "1.0",
   "patterns": [
     {

@@ -2,22 +2,33 @@ import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import * as Sentry from '@sentry/react-native';
+import { captureConsoleIntegration } from '@sentry/core';
 import { RootStackParamList } from './src/types';
 import { ServerListScreen } from './src/screens/ServerListScreen';
 import { TerminalScreen } from './src/screens/TerminalScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { SoundProvider } from './src/contexts/SoundContext';
 
+Sentry.init({
+  dsn: 'https://95bdcaa4f3edd2996d85375dd2f12807@o4511280046735360.ingest.de.sentry.io/4511280058597456',
+  enabled: !__DEV__,
+  tracesSampleRate: 0.0,
+  integrations: [
+    captureConsoleIntegration({ levels: ['warn', 'error'] }),
+  ],
+});
+
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-export default function App() {
+function App() {
   return (
     <SoundProvider>
       <NavigationContainer
         theme={DarkTheme}
         documentTitle={{
           enabled: false,
-          formatter: (options) => `BlowTorch - ${options?.title ?? ''}`,
+          formatter: (options) => `TorchZhyla - ${options?.title ?? ''}`,
         }}
       >
         <StatusBar hidden={true} />
@@ -59,3 +70,5 @@ export default function App() {
     </SoundProvider>
   );
 }
+
+export default Sentry.wrap(App);

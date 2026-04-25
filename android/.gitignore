@@ -1,0 +1,26 @@
+# OSX
+#
+.DS_Store
+
+# Android/IntelliJ
+#
+build/
+.idea
+.gradle
+local.properties
+*.iml
+*.hprof
+.cxx/
+
+# Bundle artifacts
+*.jsbundle
+
+# Sensitive files (signing keys and credentials)
+gradle.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+# Exception: standard Android debug keystore is harmless and needs to be in the
+# repo so debug builds work tras clone (es la clave pública estándar de Android)
+!app/debug.keystore

@@ -22,7 +22,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { startBackgroundConnection, stopBackgroundConnection } from '../services/foregroundService';
-import BlowTorchForeground, { addWalkStepListener, addWalkDoneListener } from '../../modules/blowtorch-foreground';
+import TorchZhylaForeground, { addWalkStepListener, addWalkDoneListener } from '../../modules/torchzhyla-foreground';
 import { detectNotification, fireNotification, stripAnsi } from '../services/notificationService';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -425,10 +425,8 @@ export function TerminalScreen({ route, navigation }: Props) {
       const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
       // Detect username prompt: "Introduce el nombre de tu personaje:"
       if (/introduce el nombre de tu personaje/i.test(withoutAnsi)) {
-        // [AUTO-LOGIN logs removed Detected username prompt, sending username...');
         autoLoginRef.current = 'waiting-for-password';
         const id = setTimeout(() => {
-          // [AUTO-LOGIN logs removed Sending username:', server.username);
           telnetRef.current?.send(server.username!);
           pendingTimeoutsRef.current.delete(id);
         }, 200);
@@ -441,10 +439,8 @@ export function TerminalScreen({ route, navigation }: Props) {
       const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
       // Detect password prompt: "Introduce la clave de tu ficha o de tu cuenta:"
       if (/introduce la clave de tu ficha o de tu cuenta/i.test(withoutAnsi)) {
-        // [AUTO-LOGIN logs removed Detected password prompt, sending password...');
         autoLoginRef.current = false; // Mark as completed before sending
         const id = setTimeout(() => {
-          // [AUTO-LOGIN logs removed Sending password');
           telnetRef.current?.send(server.password!);
           logService.markLoginComplete();
           pendingTimeoutsRef.current.delete(id);
@@ -478,9 +474,6 @@ export function TerminalScreen({ route, navigation }: Props) {
 
     // Detect sound FIRST (before any filtering) so it works in all modes
     const soundPath = detectSound(text);
-    if (soundPath) {
-      console.log(`[TerminalScreen] detectSound found: "${soundPath}" from text: "${text.substring(0, 50)}..."`);
-    }
 
     // Detect notification trigger (independent of sound and UI mode).
     // Skip when the app is in foreground — the user already sees the message.
@@ -496,10 +489,6 @@ export function TerminalScreen({ route, navigation }: Props) {
     let shouldAnnounce = false;
     let announcementText = '';
 
-    if (text.includes('bloqueo')) {
-      // [CHECK logs removed Procesando bloqueo: uiMode=${uiMode}`);
-    }
-
     // Process line with blind mode service to detect patterns and sounds (both modes use this)
     const result = blindModeService.processLine(text);
 
@@ -509,7 +498,6 @@ export function TerminalScreen({ route, navigation }: Props) {
       if (!result.shouldDisplay) {
         // Even if not displaying, still check if we should play sound
         if (soundPath && soundConfigService.shouldPlaySound(soundPath) && !silentModeEnabledRef.current) {
-          console.log(`[ProcessLine] ✓ Silent msg with sound: "${soundPath}"`);
           playSoundRef.current(soundPath);
         }
         return;
@@ -593,13 +581,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
 
     // Play sound if configured (independent of UI mode)
-    const shouldPlayConfig = soundConfigService.shouldPlaySound(soundPath);
-    const isSilent = silentModeEnabledRef.current;
-    if (soundPath) {
-      console.log(`[ProcessLine] soundPath="${soundPath}" hasPath=${!!soundPath} shouldPlay=${shouldPlayConfig} isSilent=${isSilent}`);
-    }
     if (soundPath && soundConfigService.shouldPlaySound(soundPath) && !silentModeEnabledRef.current) {
-      console.log(`[ProcessLine] ✓ Playing sound: "${soundPath}"`);
       playSoundRef.current(soundPath);
     }
 
@@ -690,12 +672,10 @@ export function TerminalScreen({ route, navigation }: Props) {
               if (intentionalLocateRef.current) {
                 if (clean.match(/\[.*\]\s*$/)) {
                   let roomName = clean.replace(/^[>\]]\s*/, '');
-                  // [LOCATE logs removed Buscando:', roomName);
                   const mapSvc = mapServiceRef.current;
                   if (mapSvc.isLoaded && roomName) {
                     const room = mapSvc.findRoom(roomName);
                     if (room) {
-                      // [LOCATE logs removed ✓ Encontrada:', room.n);
                       mapSvc.setCurrentRoom(room.id);
                       setCurrentRoom(room);
                       setLocateFeedback('success');
@@ -709,7 +689,6 @@ export function TerminalScreen({ route, navigation }: Props) {
                         );
                       }
                     } else {
-                      // [LOCATE logs removed ✗ No encontrada en mapa');
                       setLocateFeedback('failed');
                       setTimeout(() => setLocateFeedback(null), 2000);
 
@@ -759,7 +738,6 @@ export function TerminalScreen({ route, navigation }: Props) {
         }
       },
       onGMCP: (module: string, data: any) => {
-        // [GMCP logs removed ${module}:`, JSON.stringify(data, null, 2));
         if (module === 'Room.Actual') {
           // Don't auto-locate on Room.Actual. Only manual ojear (locate) can trigger localization.
           // Room.Actual is used to sync movement after successful locate via ojear.
@@ -921,7 +899,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   const stopWalk = useCallback(() => {
     if (walkActiveRef.current) {
-      BlowTorchForeground.cancelWalk().catch(() => {});
+      TorchZhylaForeground.cancelWalk().catch(() => {});
     }
     walkPathRef.current = [];
     walkStepRef.current = 0;
@@ -951,7 +929,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     walkStepRef.current = 0;
 
     const STEP_DELAY = 1100;
-    BlowTorchForeground.startWalk(walkPathRef.current, STEP_DELAY).catch(() => {
+    TorchZhylaForeground.startWalk(walkPathRef.current, STEP_DELAY).catch(() => {
       walkActiveRef.current = false;
       walkPathRef.current = [];
       walkStepRef.current = 0;

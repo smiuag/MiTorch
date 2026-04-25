@@ -56,21 +56,15 @@ export class SoundService {
 
   private async preloadSounds() {
     try {
-      console.log(`[SoundService] Preloading ${Object.keys(soundModules).length} sounds...`);
-      const t0 = Date.now();
       for (const [soundPath, module] of Object.entries(soundModules)) {
         try {
-          console.log(`[SoundService] Loading: ${soundPath}, module type: ${typeof module}`);
           const { sound } = await Audio.Sound.createAsync(module);
           this.soundCache.set(soundPath, sound);
-          console.log(`[SoundService] ✓ Loaded: ${soundPath}`);
         } catch (e) {
           console.warn(`[SoundService] ✗ Failed to preload ${soundPath}: ${e}`);
         }
       }
       this.soundsReady = true;
-      const elapsed = Date.now() - t0;
-      console.log(`[SoundService] Preload complete in ${elapsed}ms. Cache size: ${this.soundCache.size}`);
     } catch (e) {
       console.warn(`[SoundService] Error during preload: ${e}`);
     }
@@ -83,7 +77,6 @@ export class SoundService {
       try {
         const regex = new RegExp(pattern.regex, 'i');
         if (regex.test(cleanText)) {
-          console.log(`[SoundService] ✓ MATCH: pattern="${pattern.regex}" → sound="${pattern.sound}"`);
           return pattern.sound;
         }
       } catch (e) {
@@ -100,9 +93,6 @@ export class SoundService {
 
   async playSound(soundPath: string) {
     try {
-      console.log(`[SoundService.playSound] START: ${soundPath}`);
-      const t0 = Date.now();
-
       if (!soundPath) {
         return;
       }
@@ -112,7 +102,6 @@ export class SoundService {
         return;
       }
 
-      // Set audio mode before playing
       await Audio.setAudioModeAsync({
         playsInSilentModeIOS: true,
         staysActiveInBackground: false,
@@ -120,15 +109,10 @@ export class SoundService {
         interruptionModeAndroid: 1,
       });
 
-      // Create new instance and play (like blindModeService does)
       const module = soundModules[soundPath as keyof typeof soundModules];
       const { sound } = await Audio.Sound.createAsync(module);
       await sound.playAsync();
 
-      const elapsed = Date.now() - t0;
-      console.log(`[SoundService.playSound] END: ${soundPath} (${elapsed}ms)`);
-
-      // Unload after playback
       setTimeout(() => {
         sound.unloadAsync().catch(() => {});
       }, 5000);

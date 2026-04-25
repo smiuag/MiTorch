@@ -61,8 +61,6 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
       });
 
       const cache = new Map<string, Audio.Sound>();
-      console.log(`[SoundContext] Preloading ${Object.keys(soundModules).length} sounds...`);
-      const t0 = Date.now();
 
       for (const [soundPath, module] of Object.entries(soundModules)) {
         try {
@@ -75,10 +73,7 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
 
       setSoundCache(cache);
       soundCacheRef.current = cache;
-      const elapsed = Date.now() - t0;
-      console.log(`[SoundContext] Preload complete in ${elapsed}ms. Cache size: ${cache.size}`);
 
-      console.log(`[SoundContext] Warming up ${cache.size} sounds silently...`);
       for (const [soundPath, sound] of cache.entries()) {
         try {
           await sound.setVolumeAsync(0);
@@ -89,7 +84,6 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
           console.warn(`[SoundContext] Failed to warm up ${soundPath}: ${e}`);
         }
       }
-      console.log(`[SoundContext] Warmup complete`);
 
       isReadyRef.current = true;
       setIsReady(true);
@@ -108,8 +102,6 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
         const settings = await loadSettings();
         if (settings.soundsEnabled) {
           await prepareSounds();
-        } else {
-          console.log('[SoundContext] Sounds disabled in settings — skipping preload');
         }
       } catch (e) {
         console.warn(`[SoundContext] Failed to read settings on mount: ${e}`);
@@ -138,7 +130,6 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
       try {
         const regex = new RegExp(pattern.regex, 'i');
         if (regex.test(cleanText)) {
-          console.log(`[SoundService] ✓ MATCH: pattern="${pattern.regex}" → sound="${pattern.sound}"`);
           return pattern.sound;
         }
       } catch (e) {

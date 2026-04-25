@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import BlowTorchForeground from '../../modules/blowtorch-foreground';
+import TorchZhylaForeground from '../../modules/torchzhyla-foreground';
 import notificationPatternsData from '../config/notificationPatterns.json';
 import { AVAILABLE_NOTIFICATIONS } from '../storage/settingsStorage';
 
@@ -44,7 +44,7 @@ export function detectNotification(text: string): DetectedNotification | undefin
 export async function fireNotification(title: string, body: string): Promise<void> {
   if (Platform.OS !== 'android') return;
   try {
-    await BlowTorchForeground.notify(nextNotificationId++, title, body);
+    await TorchZhylaForeground.notify(nextNotificationId++, title, body);
   } catch (e) {
     console.warn('[notificationService] fire failed', e);
   }

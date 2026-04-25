@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**BlowTorch** is a React Native Telnet/MUD client application built with Expo. It's a terminal emulator for connecting to MUD (Multi-User Dungeon) and other Telnet-based services, with support for ANSI color codes, GMCP (Generic MUD Communication Protocol), customizable button grids, maps, and blind mode accessibility.
+**TorchZhyla** (paquete `com.smiaug.torchzhyla`, repo `smiuag/MiTorch`) is a React Native Telnet/MUD client application built with Expo. It's a terminal emulator for connecting to MUD (Multi-User Dungeon) and other Telnet-based services, with support for ANSI color codes, GMCP (Generic MUD Communication Protocol), customizable button grids, maps, and blind mode accessibility.
 
 ## Architecture
 
@@ -71,15 +71,39 @@ Uses React Native AsyncStorage for all user data:
 # Start development server (choose platform interactively)
 npm start
 
-# Run on Android device/emulator
+# Run on Android device/emulator (debug, with Metro)
 npm run android
 
-# Run on iOS device/simulator
-npm run ios
-
-# Run web version
-npm run web
+# Generate release AAB for Play Store (sin Metro, optimizado)
+cd android && ./gradlew.bat bundleRelease && cd ..
+# Output: android/app/build/outputs/bundle/release/app-release.aab
 ```
+
+iOS no es target del proyecto (no existe carpeta `ios/`). El target web se descartó (no hay `react-dom`/`react-native-web`).
+
+## ⚠️ Workflow nativo: bare, NO managed
+
+Este proyecto trabaja en **bare workflow**: la carpeta `android/` está **commiteada en git** y se edita a mano (permisos en `AndroidManifest.xml`, R8/ProGuard en `build.gradle`, signing config, módulo nativo `torchzhyla-foreground`, etc.).
+
+**NUNCA ejecutar:**
+- ❌ `npx expo prebuild` — regeneraría `android/` desde cero pisando todas las customizaciones manuales.
+- ❌ `npx expo eject` — deprecated y equivalente al anterior.
+
+**Sí está OK:**
+- ✅ `npm run android` (= `expo run:android`) — reutiliza `android/` existente, no regenera.
+- ✅ Editar archivos dentro de `android/` directamente con cualquier editor.
+- ✅ `cd android && ./gradlew.bat bundleRelease` — build directo, sin pasar por Expo CLI.
+
+**Qué se ignora dentro de `android/`** (ver `android/.gitignore`):
+- `build/`, `.gradle/`, `.idea/`, `local.properties` — outputs e IDE.
+- `gradle.properties` — contiene contraseñas del keystore en claro.
+- `*.jks`, `*.keystore`, `*.p12`, `*.pfx` — keystores reales (nuestro `my-release-key.jks` aquí).
+- **Excepción:** `app/debug.keystore` SÍ se commitea (es la clave pública estándar de Android, sin secreto, necesaria para que el debug build funcione tras un clone fresco).
+
+**Si alguien clona el repo en otra máquina y necesita poder hacer release builds:**
+1. Necesita `android/gradle.properties` aparte (con las credenciales reales del keystore).
+2. Necesita `android/app/my-release-key.jks` aparte.
+Ambos se distribuyen fuera del repo (gestor de contraseñas, USB encriptado, etc.).
 
 ## Build Guide
 
@@ -237,7 +261,7 @@ Write-Host "✅ Listo para compilar" -ForegroundColor Green
 
 #### Logcat en tiempo real
 ```powershell
-adb logcat | Select-String "BlowTorch|SOUND|BM|BLIND|Telnet"
+adb logcat | Select-String "TorchZhyla|SOUND|BM|BLIND|Telnet"
 
 # Ejemplos de logs esperados:
 # [SOUND] Intentando reproducir: "bloqueos/bloqueo-termina.wav"
@@ -311,23 +335,39 @@ APK / AAB
 ### 🔐 Firma de APK (Release)
 
 **Estado actual:**
-- ✅ Usando keystore de debug
-- ✅ Aceptado por Play Store
-- ⚠️ Cuando sea, usar keystore propio
+- ✅ Keystore propio: `android/app/my-release-key.jks`
+- ✅ Configurado en `android/gradle.properties` (vars `MYAPP_RELEASE_*`)
+- ✅ Aplicado en `android/app/build.gradle` → `signingConfigs.release`
+- ⚠️ `gradle.properties` contiene contraseñas en claro — está en `.gitignore`, NO commitear
 
-**Cambiar a keystore propio:**
-```bash
-# Generar keystore (una sola vez)
-keytool -genkey -v -keystore my-release-key.keystore \
-  -keyalg RSA -keysize 2048 -validity 10000 \
-  -alias my-key-alias
+**Recordatorios:**
+- Nunca regenerar el keystore: si cambia la firma, Play rechaza la actualización para los usuarios actuales.
+- Hacer backup del `.jks` y de las passwords fuera del repo (gestor de contraseñas).
 
-# Configurar en gradle.properties
-MYAPP_RELEASE_STORE_FILE=my-release-key.keystore
-MYAPP_RELEASE_STORE_PASSWORD=xxxxx
-MYAPP_RELEASE_KEY_ALIAS=my-key-alias
-MYAPP_RELEASE_KEY_PASSWORD=xxxxx
-```
+### 🔢 Versionado (estricto a partir de la 1.0.0)
+
+**Política decidida 2026-04-25:** se reseteó el versionado al subir por primera vez al Play Store. Versiones previas (`3.x.x`) eran informales y solo vivieron en GitHub releases / APKs enviadas a testers.
+
+**Estado de partida:**
+- `versionCode = 1`
+- `versionName = "1.0.0"`
+- Sincronizado en `android/app/build.gradle` y `app.json`.
+
+**Reglas:**
+- **Semver estricto** en `versionName`: `MAJOR.MINOR.PATCH`.
+  - PATCH (`1.0.X`): bugfix sin cambios de API ni features visibles.
+  - MINOR (`1.X.0`): nueva feature compatible hacia atrás.
+  - MAJOR (`X.0.0`): breaking change visible para el usuario o cambio grande de UX.
+- **`versionCode`**: simplemente `+1` en cada release publicada en Play. No se intenta codificar el semver dentro (la convención antigua `M*10000+m*100+p` queda descartada).
+- **Sincronizar siempre los dos archivos**: `android/app/build.gradle` (`versionCode` + `versionName`) y `app.json` (`expo.version` = `versionName`). Si están desincronizados manda `build.gradle` (el build de Gradle no lee `app.json`).
+- **`versionCode` solo sube, NUNCA baja**. Una vez publicado en Play un `versionCode`, ese número está quemado.
+
+**Cuándo bumpear (regla para Claude):**
+- NO bumpear automáticamente al hacer cambios. Los commits van sin tocar la versión.
+- Bumpear SOLO cuando el usuario diga explícitamente "vamos a publicar" / "subir a Play" / "release".
+- **Si hay duda de si un cambio es PATCH/MINOR/MAJOR, PREGUNTAR al usuario.** Mejor preguntar que decidir mal — un MAJOR mal puesto es ruido para el usuario, un PATCH mal puesto oculta una feature.
+
+**Última publicada en Play:** _(ninguna todavía — la 1.0.0 será la primera)_
 
 ### ✨ Conclusiones
 
@@ -350,7 +390,7 @@ MYAPP_RELEASE_KEY_PASSWORD=xxxxx
 
 ## Testing on Physical Device (Android with USB Cable)
 
-When testing changes on a physical Android device connected via USB cable, follow the standard dev workflow documented in `DEV_WORKFLOW.md`:
+When testing changes on a physical Android device connected via USB cable:
 
 1. **Reset the environment** (Terminal 1, PowerShell):
    ```powershell
@@ -370,7 +410,7 @@ When testing changes on a physical Android device connected via USB cable, follo
    ```
    This compiles, installs the APK, opens the app, and Metro picks up the connection automatically.
 
-**Important**: Always use port 8081. If 8081 appears to be in use, run `reset-dev.ps1` first — do not switch to 8082/8083. See `DEV_WORKFLOW.md` for the full rationale and troubleshooting.
+**Important**: Always use port 8081. If 8081 appears to be in use, run `reset-dev.ps1` first — do not switch to 8082/8083.
 
 ## Important Implementation Notes
 
@@ -424,7 +464,7 @@ Blind mode (`uiMode === 'blind'`) provides a voice-only interface for screen rea
 
 **Solution:** Use `accessibilityActions` (already implemented in `ButtonGrid.tsx`).
 
-**How it works in BlowTorch:**
+**How it works in TorchZhyla:**
 - Each button in blind mode checks if it has a `secondaryCommand` (e.g., VID button: primary="consultar vida", secondary="consultar energia")
 - If it does, `accessibilityActions` array is populated with two actions: `activate` and `secondary`
 - TalkBack displays these in a context menu (user swipes up/down to select)
@@ -455,114 +495,6 @@ Blind mode (`uiMode === 'blind'`) provides a voice-only interface for screen rea
 - `src/config/blindModeFilters.json`: Filter rules for capturing and silencing data
 - `src/services/blindModeService.ts`: Filter processing, state capture, audio playback
 - `src/storage/layoutStorage.ts`: `createBlindModeLayout()` defines blind-mode button grid
-
-## Refactor Status - Unified UI (refactor/unified-ui branch)
-
-### Estado del Refactor
-
-**Rama actual:** `refactor/unified-ui`  
-**Estado:** Testing pendiente
-
-### Componentes Nuevos Creados
-
-#### 1. Tipos Extendidos (`src/types/index.ts`)
-- `OrientationLayout`: Layout para una orientación
-- `FloatingButton`: Botón flotante
-- `UnifiedLayoutConfig`: Configuración para ambas orientaciones
-
-#### 2. Storage (`src/storage/orientationLayoutStorage.ts`)
-- `loadOrientationLayout()`: Carga layout por orientación
-- `saveOrientationLayout()`: Guarda layout por orientación
-- Persistencia en AsyncStorage
-
-#### 3. Componentes Principales
-
-**UnifiedTerminalLayout.tsx**
-- **Props**: Recibe todo lo necesario (lines, channels, messages, etc.)
-- **Responsabilidades**:
-  - Orquesta los layouts vertical y horizontal (60/40 split)
-  - Maneja el teclado nativo con Animated.View
-  - Carga botones flotantes por orientación
-  - Ref a TerminalSection para auto-scroll terminal
-
-**TerminalSection.tsx (forwardRef)**
-- **Props**: lines, fontSize, map, height
-- **Responsabilidades**:
-  - Renderiza FlatList con líneas del MUD
-  - Auto-scroll cuando new lines llegan
-  - Botón "Volver al final"
-  - Renderiza MiniMap si está visible
-- **Handle**: `scrollToBottom()` para auto-scroll desde chat
-
-**ChatSection.tsx**
-- **Props**: channels, messages, aliases, input, altura
-- **Responsabilidades**:
-  - ChannelTabs (con canal "Todos")
-  - Mensajes filtered por canal
-  - VitalBars integradas
-  - Input con auto-prefijo de alias
-  - Scroll independiente
-
-**FloatingButtonsOverlay.tsx**
-- **Props**: buttons[], orientation, onSendCommand
-- **Responsabilidades**:
-  - Grid de botones (diferente por orientación)
-  - Se superpone sobre TerminalSection
-  - Sin afectar scroll/interacción del terminal
-
-### Cambios en Componentes Existentes
-
-**VitalBars.tsx**
-- Nuevo prop: `orientation?: 'horizontal' | 'vertical'`
-- (Preparado para vertical, pero todavía renderiza horizontal)
-
-### Commits Realizados
-1. FASE 1-2: Tipos, storage, split screen básico
-2. FASE 4: Terminal con auto-scroll
-3. FASE 5: Botones flotantes por orientación
-
-### Lo que Falta
-
-#### Testing (FASE 6-8)
-1. Build de la app
-2. Probar en emulador Android
-3. Verificar:
-   - Split 60/40 en ambas orientaciones
-   - Scroll independiente terminal/chat
-   - Auto-scroll terminal
-   - Teclado desplaza interfaz
-   - Botones flotantes funcionan
-   - Canal "Todos" muestra todos los mensajes
-
-#### Integración Final
-1. Reemplazar render de TerminalScreen para usar UnifiedTerminalLayout
-2. Eliminar código antiguo (FloatingLayout, FKeyBar, etc.) cuando esté listo
-3. Merge a main cuando esté 100% funcional
-
-### Cómo Testear
-
-#### Setup
-```bash
-npm start -- --port 8081
-npm run android  # En otra terminal
-```
-
-#### Puntos de Prueba
-- [ ] Vertical: Terminal 60% arriba, Chat 40% abajo
-- [ ] Horizontal: Terminal 60% izquierda, Chat 40% derecha
-- [ ] Chat tabs incluye "Todos" como primera pestaña
-- [ ] Escribir en input prefija con alias de canal
-- [ ] Teclado nativo aparece/desaparece
-- [ ] Terminal scrolleable independiente
-- [ ] Chat scrolleable independiente
-- [ ] Botones flotantes aparecen sobre terminal
-- [ ] Botones tienen diferente config por orientación (cuando se configure)
-
-### Notas Técnicas
-- UnifiedTerminalLayout NO toca TelnetService, mapService, etc.
-- Todos los handlers (onSendCommand, onSelectChannel, etc.) son pasados desde arriba
-- El componente es totalmente controlado desde arriba (controlled component)
-- Listo para integrarse en TerminalScreen.tsx cuando se confirme funcionamiento
 
 ## Key Files to Know
 
@@ -650,7 +582,7 @@ Sistema opcional (off por defecto) para capturar la actividad del terminal y exp
 **Export:**
 - Botón "Exportar log" en Settings (solo visible si toggle ON y hay archivo de log).
 - Modal al pulsar: "¿Qué rango quieres exportar? [Últimas 24h] [Últimos 7 días] [Todo]".
-- Genera HTML en `${Paths.cache}/blowtorch-log-export.html` (cache, porque es desechable una vez compartido).
+- Genera HTML en `${Paths.cache}/torchzhyla-log-export.html` (cache, porque es desechable una vez compartido).
 - Abre el HTML en el navegador via `Linking.openURL(contentUri)` donde `contentUri = await getContentUriAsync(fileUri)` de `expo-file-system/legacy`.
 - Si `Linking.openURL` falla (algunos dispositivos no resuelven content:// a text/html), fallback: añadir `expo-sharing` en el futuro.
 
@@ -680,9 +612,28 @@ Sistema opcional (off por defecto) para capturar la actividad del terminal y exp
 ## Temas Pendientes
 
 - **Revisar botones de modo blind de consultar vida, energía...**
-- **Cargar scripts Lua**: explorar si compensa añadir runtime Lua para que el usuario escriba triggers/bots/contadores complejos. Opciones: `fengari` (Lua en JS, comparte JS thread), módulo Expo nativo con `LuaJ`/`lua-android` (más rápido y aislado, pero requiere diseñar bridge de APIs expuestas), o WebView con Lua-wasm (sandboxed pero overhead alto). Antes de decidir, valorar si un sistema de triggers JSON nativo cubre el 90% del caso de uso real.
-- **Modo paisaje en blind**: ahora mismo el blind mode (2 paneles que se alternan con switch button) está pensado para portrait. En landscape los paneles probablemente no se reparten bien. Idea: en landscape mostrar los 2 paneles a la vez (izquierda/derecha) y eliminar el switch button. Antes verificar qué hace exactamente al girar — puede que ya se vea aceptable.
-- **Seleccionar fragmento del log desde el terminal y compartir**: long-press en una línea activa modo selección, segundo long-press marca rango, barra flotante con "Compartir" que genera HTML del rango (reusa `logHtmlGenerator`) y abre `Sharing.shareAsync`. Coste ~3-4 h. Riesgo: chocar con gestos existentes en el terminal — revisar qué long-press hay registrados antes.
+- **Modal "Crear/editar servidor" en horizontal sin scroll**: en orientación apaisada, el formulario no se puede desplazar y los campos de abajo quedan ocultos por el teclado o fuera de la pantalla. Probablemente falta envolverlo en `ScrollView` con `keyboardShouldPersistTaps`. Archivo a tocar: el modal en `src/screens/ServerListScreen.tsx` (o componente relacionado).
+- **Sistema de triggers / scripting (capa entre el stream del MUD y el render)**
+
+  Capa que intercepta cada línea entrante y permite filtrarla (gag), sustituirla (replace), capturar grupos en variables, disparar sonidos, mandar comandos, lanzar notificaciones. También aliases sobre el input del usuario. Patrón estándar de MUSHclient/Mudlet/CMUD.
+
+  **Opción A — Sistema declarativo JSON (preferido empezar por aquí)**
+  - El usuario edita un JSON con reglas: `{ match: regex, action: "gag" | "replace" | "play_sound" | "send" | "set_var", ... }`.
+  - Trivial de implementar (~horas), sin dependencias nuevas, sin rebuild.
+  - Cubre ~80% del uso real (filtros, sonidos por keyword, alias simples, transformaciones con sustitución de capturas).
+  - Limitación: no hay lógica condicional compleja ni máquinas de estado. Para "si vida < 30% y hay enemigo, beber poción" empieza a quedarse corto.
+  - UI: lista editable en Settings con botones "Añadir regla", "Probar contra esta línea", export/import JSON.
+
+  **Opción B — Lua scripting (paso siguiente si JSON queda corto)**
+  - Runtime Lua dentro de la app + API de triggers (`trigger`, `alias`, `send`, `gag`, `replace_line`, `play_sound`, `set/get`, `notify`, `print_colored`).
+  - El usuario carga `.lua` desde el móvil (DocumentPicker) o lo edita inline.
+  - **Runtimes posibles:**
+    - **`fengari`** (Lua puro en JS): recomendado. Sin código nativo, sin rebuild, ~250 KB al bundle. Comparte JS thread; para velocidades de MUD (~100 líneas/s) sobra. Mitigar bucles infinitos con timeout por callback (200 ms).
+    - **Módulo Expo nativo con LuaJ/lua-android**: aislado del JS thread, mejor performance, pero coste alto (escribir todo el bridge). Solo vale la pena si los triggers necesitan trabajo pesado (parsear logs grandes, generar mapas dinámicos).
+    - **WebView con Lua-wasm**: descartado — la latencia de mensajería con el JS principal lo hace inviable para procesar cada línea.
+  - Carga: `Paths.document/scripts/`, ejecutar al conectar, toggle por servidor, botón "Recargar".
+
+  **Recomendación de orden**: implementar A primero (JSON declarativo). Observar qué reglas piden los usuarios que no se pueden expresar. Si aparecen patrones recurrentes que requieren lógica (contadores, máquinas de estado, condicionales encadenados), entonces añadir B con `fengari` reusando el mismo motor de matching de A.
 
 ## Desarrollos por ahora no necesarios
 
@@ -692,7 +643,7 @@ Tareas analizadas y descartadas conscientemente: hay diseño hecho, pero no se i
 
 **Problema que resolvería:** cuando Android destruye la `Activity` por presión de memoria o Doze agresivo (Xiaomi/Huawei sobre todo) aunque el proceso siga vivo, React remonta `TerminalScreen` desde cero y todos los `useState` arrancan vacíos. Resultado visible para el usuario: vuelve del bloqueo y "se ha perdido todo" (líneas, vitals, sala actual…), aunque el socket TCP siga activo en otro hilo.
 
-**Por qué no se hace ahora:** bloquear el móvil de forma normal solo pausa la `Activity`, no la destruye. Con el `PARTIAL_WAKE_LOCK` + foreground service nativo (módulo `modules/blowtorch-foreground/`) que mantiene el proceso vivo y la CPU despierta, el caso normal está cubierto sin necesidad de tocar el estado: el componente sigue montado, los `useState` intactos. El refactor solo aporta valor en escenarios extremos (móviles con poca RAM, bloqueos muy largos en fabricantes agresivos).
+**Por qué no se hace ahora:** bloquear el móvil de forma normal solo pausa la `Activity`, no la destruye. Con el `PARTIAL_WAKE_LOCK` + foreground service nativo (módulo `modules/torchzhyla-foreground/`) que mantiene el proceso vivo y la CPU despierta, el caso normal está cubierto sin necesidad de tocar el estado: el componente sigue montado, los `useState` intactos. El refactor solo aporta valor en escenarios extremos (móviles con poca RAM, bloqueos muy largos en fabricantes agresivos).
 
 **Síntoma para retomar:** el usuario reporta que al volver del bloqueo el terminal está en blanco, los vitals a 0, el mapa sin sala actual… aunque la conexión sigue marcada como activa.
 

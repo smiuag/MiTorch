@@ -10,7 +10,7 @@ const INTENT_FLAG_ACTIVITY_NEW_TASK = 268435456;
 
 const LOG_DIR_NAME = 'logs';
 const LOG_FILE_NAME = 'log.txt';
-const EXPORT_FILE_NAME = 'blowtorch-log-export.html';
+const EXPORT_FILE_NAME = 'torchzhyla-log-export.html';
 const FLUSH_INTERVAL_MS = 5000;
 const FLUSH_BUFFER_THRESHOLD = 100;
 

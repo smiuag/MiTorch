@@ -1,5 +1,4 @@
 import TcpSocket from 'react-native-tcp-socket';
-import { Platform } from 'react-native';
 import { ServerProfile } from '../types';
 
 // Telnet command bytes
@@ -34,11 +33,9 @@ export type TelnetEventHandler = {
 
 export class TelnetService {
   private socket: ReturnType<typeof TcpSocket.createConnection> | null = null;
-  private webSocket: WebSocket | null = null;
   private handler: TelnetEventHandler;
   private server: ServerProfile;
   private encoding: string;
-  private proxyUrl: string = 'wss://mitorch.onrender.com';
   private keepAliveTimer: ReturnType<typeof setInterval> | null = null;
   private bufferedLine: string | null = null;
   private bufferTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -49,97 +46,34 @@ export class TelnetService {
     this.encoding = encoding;
   }
 
-  setProxyUrl(url: string): void {
-    this.proxyUrl = url;
-  }
-
   connect(): void {
     try {
-      const isWeb = typeof window !== 'undefined' && !Platform.OS || Platform.OS === 'web';
-      console.log('[TelnetService] Is Web:', isWeb, 'Platform.OS:', Platform.OS);
-      if (isWeb) {
-        console.log('[TelnetService] Connecting via WebSocket to:', this.proxyUrl);
-        this.connectViaWebSocket();
-      } else {
-        console.log('[TelnetService] Connecting via TCP to:', this.server.host, this.server.port);
-        this.connectViaTCP();
-      }
+      this.socket = TcpSocket.createConnection(
+        { host: this.server.host, port: this.server.port },
+        () => {
+          this.startKeepAlive();
+          this.handler.onConnect();
+        }
+      );
+
+      this.socket.on('data', (data: Buffer | string) => {
+        const bytes = typeof data === 'string'
+          ? Array.from(data).map(c => c.charCodeAt(0))
+          : Array.from(data);
+        this.processBytes(bytes);
+      });
+
+      this.socket.on('close', () => {
+        this.stopKeepAlive();
+        this.handler.onClose();
+      });
+
+      this.socket.on('error', (error: Error) => {
+        this.stopKeepAlive();
+        this.handler.onError(error.message);
+      });
     } catch (e: any) {
       this.handler.onError(e.message ?? 'Connection failed');
-    }
-  }
-
-  private connectViaTCP(): void {
-    this.socket = TcpSocket.createConnection(
-      { host: this.server.host, port: this.server.port },
-      () => {
-        this.startKeepAlive();
-        this.handler.onConnect();
-      }
-    );
-
-    this.socket.on('data', (data: Buffer | string) => {
-      const bytes = typeof data === 'string'
-        ? Array.from(data).map(c => c.charCodeAt(0))
-        : Array.from(data);
-      this.processBytes(bytes);
-    });
-
-    this.socket.on('close', () => {
-      this.stopKeepAlive();
-      this.handler.onClose();
-    });
-
-    this.socket.on('error', (error: Error) => {
-      this.stopKeepAlive();
-      this.handler.onError(error.message);
-    });
-  }
-
-  private connectViaWebSocket(): void {
-    try {
-      this.webSocket = new WebSocket(this.proxyUrl);
-      this.webSocket.binaryType = 'arraybuffer';
-
-      this.webSocket.onopen = () => {
-        // Enviar comando de conexión al proxy
-        this.webSocket!.send(JSON.stringify({
-          type: 'connect',
-          host: this.server.host,
-          port: this.server.port
-        }));
-      };
-
-      this.webSocket.onmessage = (event) => {
-        if (typeof event.data === 'string') {
-          try {
-            const msg = JSON.parse(event.data);
-            if (msg.type === 'connected') {
-              this.handler.onConnect();
-            } else if (msg.type === 'closed') {
-              this.handler.onClose();
-            } else if (msg.type === 'error') {
-              this.handler.onError(msg.message);
-            }
-          } catch {
-            // No es JSON, ignorar
-          }
-        } else if (event.data instanceof ArrayBuffer) {
-          // Datos binarios del MUD
-          const bytes = Array.from(new Uint8Array(event.data));
-          this.processBytes(bytes);
-        }
-      };
-
-      this.webSocket.onclose = () => {
-        this.handler.onClose();
-      };
-
-      this.webSocket.onerror = (error) => {
-        this.handler.onError('WebSocket error: ' + error);
-      };
-    } catch (e: any) {
-      this.handler.onError(e.message ?? 'WebSocket connection failed');
     }
   }
 
@@ -212,10 +146,6 @@ export class TelnetService {
     }
 
     if (text) {
-      if (text.length > 100 || text.includes('bando') || text.includes('Imágenes') || text.includes('imagen')) {
-        // telnetService logs removed ⚠️ ENCODING:', this.encoding, '| bytes:', bytes.length, '| text length:', text.length);
-        // telnetService logs removed First 100 chars:', JSON.stringify(text.slice(0, 100)));
-      }
       const lines = text.split('\n');
       for (const line of lines) {
         this.processLine(line.trim());
@@ -268,7 +198,6 @@ export class TelnetService {
       } else {
         module = text.slice(0, spaceIdx);
         const jsonStr = text.slice(spaceIdx + 1);
-        // GMCP RAW logs removed ${module}: ${jsonStr}`);
         try {
           payload = JSON.parse(jsonStr);
         } catch {
@@ -308,11 +237,6 @@ export class TelnetService {
   private writeToSocket(buffer: Buffer): void {
     if (this.socket) {
       this.socket.write(buffer);
-    } else if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
-      this.webSocket.send(JSON.stringify({
-        type: 'data',
-        payload: buffer.toString('base64')
-      }));
     }
   }
 
@@ -326,12 +250,6 @@ export class TelnetService {
         this.socket.destroy();
       } catch {}
       this.socket = null;
-    }
-    if (this.webSocket) {
-      try {
-        this.webSocket.close();
-      } catch {}
-      this.webSocket = null;
     }
   }
 
@@ -403,6 +321,6 @@ export class TelnetService {
   }
 
   get isConnected(): boolean {
-    return this.socket !== null || (this.webSocket !== null && this.webSocket.readyState === WebSocket.OPEN);
+    return this.socket !== null;
   }
 }

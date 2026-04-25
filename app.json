@@ -2,7 +2,7 @@
   "expo": {
     "name": "TorchZhyla",
     "slug": "torch-zhyla",
-    "version": "3.0.0",
+    "version": "1.0.0",
     "orientation": "sensor",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -28,11 +28,20 @@
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_DATA_SYNC",
         "POST_NOTIFICATIONS",
-        "WAKE_LOCK"
+        "WAKE_LOCK",
+        "VIBRATE",
+        "MODIFY_AUDIO_SETTINGS"
       ]
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    }
+    "plugins": [
+      [
+        "@sentry/react-native/expo",
+        {
+          "url": "https://de.sentry.io/",
+          "organization": "smiaug",
+          "project": "torchzhyla"
+        }
+      ]
+    ]
   }
 }

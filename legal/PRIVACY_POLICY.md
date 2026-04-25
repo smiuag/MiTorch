@@ -1,10 +1,10 @@
-# BlowTorch Privacy Policy
+# TorchZhyla Privacy Policy
 
 **Last Updated:** April 24, 2026
 
 ## Overview
 
-BlowTorch is a Telnet/MUD client application. This Privacy Policy explains how we handle your information.
+TorchZhyla is a Telnet/MUD client application. This Privacy Policy explains how we handle your information.
 
 ## Information We Collect
 
@@ -29,15 +29,17 @@ All user information is stored **locally on your device only**:
 
 ## Permissions We Request
 
-BlowTorch requests the following Android permissions:
+TorchZhyla requests the following Android permissions:
 
 | Permission | Purpose |
 |-----------|---------|
 | `INTERNET` | Required to connect to Telnet/MUD servers |
 | `FOREGROUND_SERVICE` | Required to keep the connection alive when app is in background |
 | `FOREGROUND_SERVICE_DATA_SYNC` | Required for maintaining data sync while in background |
-| `POST_NOTIFICATIONS` | To notify you of connection status changes |
+| `POST_NOTIFICATIONS` | To notify you of connection status and configurable in-game alerts |
 | `WAKE_LOCK` | To prevent device from sleeping while connected to a server |
+| `VIBRATE` | For optional notification vibration on configurable in-game alerts |
+| `MODIFY_AUDIO_SETTINGS` | To play in-game alert sounds with appropriate audio mode |
 
 ## Data Storage
 
@@ -56,7 +58,7 @@ When you connect to a Telnet server:
 
 ## Changes to This Policy
 
-We may update this policy. Changes take effect immediately upon posting. Your continued use of BlowTorch constitutes acceptance of the updated policy.
+We may update this policy. Changes take effect immediately upon posting. Your continued use of TorchZhyla constitutes acceptance of the updated policy.
 
 ## Contact
 

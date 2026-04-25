@@ -1,6 +1,6 @@
 # Google Play Store Setup Guide
 
-This document explains how to prepare BlowTorch for publication on Google Play Store.
+This document explains how to prepare TorchZhyla for publication on Google Play Store.
 
 ## ✅ What's Already Done
 
@@ -8,7 +8,7 @@ The following has been prepared for you:
 
 - [x] **Privacy Policy** (`legal/PRIVACY_POLICY.md`)
 - [x] **Terms of Service** (`legal/TERMS_OF_SERVICE.md`)
-- [x] **versionCode Updated** (v3.0.0 → versionCode 30000)
+- [x] **versionCode Updated** (versionName 1.0.0 → versionCode 1)
 - [x] **Build Configuration** Ready for release signing key
 - [x] **Security** gradle.properties added to .gitignore
 
@@ -69,7 +69,9 @@ Your app needs public URLs for privacy policy and terms of service.
    ```
 4. Convert `.md` to `.html` (use a markdown converter or GitHub's built-in rendering)
 5. Enable GitHub Pages in repo settings
-6. Use URLs like: `https://yourusername.github.io/blowtorch/privacy-policy.html`
+6. Use these URLs:
+   - Privacy Policy: `https://smiuag.github.io/MiTorch/privacy-policy.html`
+   - Terms of Service: `https://smiuag.github.io/MiTorch/terms-of-service.html`
 
 ### Option 2: Your Own Website
 
@@ -83,7 +85,7 @@ Once you create your Google Play Developer account ($25):
 1. Go to [Google Play Console](https://play.google.com/apps/publish)
 2. Create new app
 3. Fill in app details:
-   - **Title:** BlowTorch
+   - **Title:** TorchZhyla
    - **Description:** Telnet/MUD client for Android
    - **Privacy Policy URL:** (from your hosted documents)
    - **Permissions:** INTERNET, FOREGROUND_SERVICE, etc. (auto-populated)
@@ -103,17 +105,12 @@ Once you create your Google Play Developer account ($25):
 
 ## 📊 Version Management
 
-When releasing future versions:
+Política completa documentada en `CLAUDE.md` § "🔢 Versionado". Resumen:
 
-| Version | versionCode |
-|---------|-------------|
-| 3.0.0 | 30000 |
-| 3.0.1 | 30001 |
-| 3.1.0 | 31000 |
-| 3.2.0 | 32000 |
-| 4.0.0 | 40000 |
-
-Update `versionCode` in `android/app/build.gradle` before each release.
+- **`versionName`**: semver estricto (`MAJOR.MINOR.PATCH`).
+- **`versionCode`**: simplemente `+1` por cada release publicada en Play.
+- Sincronizar `android/app/build.gradle` y `app.json` (mismo `versionName`).
+- Política: nunca bumpear sin que el usuario lo pida explícitamente.
 
 ## 🚨 Troubleshooting
 

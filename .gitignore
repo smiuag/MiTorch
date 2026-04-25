@@ -3,6 +3,10 @@
 # dependencies
 node_modules/
 
+# Claude Code local settings (per-machine permission grants and config)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
 # Expo
 .expo/
 dist/
@@ -20,6 +24,11 @@ expo-env.d.ts
 
 # Metro
 .metro-health-check*
+metro.log
+
+# Stray release artifacts en root (deben vivir en android/app/build/outputs/)
+/app-release.apk
+/app-release.aab
 
 # debug
 npm-debug.*
@@ -33,9 +42,18 @@ yarn-error.*
 # local env files
 .env*.local
 
+# Sentry CLI config — contiene auth token (secreto)
+sentry.properties
+**/sentry.properties
+
 # typescript
 *.tsbuildinfo
 
-# generated native folders
+# Native folders
+# We work in "bare workflow": android/ IS committed to git.
+# NEVER run `expo prebuild` or `expo eject` — would overwrite manual customizations
+# (permisos, R8/ProGuard, signing config, módulo nativo torchzhyla-foreground).
+# What stays ignored *inside* android/ is handled by android/.gitignore
+# (build outputs, secrets in gradle.properties, *.jks keystores).
+# /ios stays ignored because we don't target iOS.
 /ios
-/android

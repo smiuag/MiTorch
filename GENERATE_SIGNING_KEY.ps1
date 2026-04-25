@@ -3,7 +3,7 @@
 
 Write-Host "
 ========================================
-BlowTorch Release Signing Key Generator
+TorchZhyla Release Signing Key Generator
 ========================================
 
 IMPORTANT:

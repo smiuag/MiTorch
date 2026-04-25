@@ -1,5 +1,5 @@
 import { Linking, PermissionsAndroid, Platform } from 'react-native';
-import BlowTorchForeground from '../../modules/blowtorch-foreground';
+import TorchZhylaForeground from '../../modules/torchzhyla-foreground';
 
 const APP_PACKAGE = 'com.smiaug.torchzhyla';
 
@@ -51,7 +51,7 @@ export async function startBackgroundConnection(serverName: string): Promise<voi
     return;
   }
   try {
-    await BlowTorchForeground.start('BlowTorch conectado', `Manteniendo conexión con ${serverName}`);
+    await TorchZhylaForeground.start('TorchZhyla conectado', `Manteniendo conexión con ${serverName}`);
   } catch (e) {
     console.warn('[foregroundService] start failed', e);
   }
@@ -60,7 +60,7 @@ export async function startBackgroundConnection(serverName: string): Promise<voi
 export async function stopBackgroundConnection(): Promise<void> {
   if (Platform.OS !== 'android') return;
   try {
-    await BlowTorchForeground.stop();
+    await TorchZhylaForeground.stop();
   } catch (e) {
     console.warn('[foregroundService] stop failed', e);
   }

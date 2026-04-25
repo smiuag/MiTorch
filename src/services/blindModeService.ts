@@ -200,22 +200,6 @@ class BlindModeService {
       .replace(/[ñÑn?]/g, 'n'); // ñ, Ñ, n, or corrupted → n
 
     const isPrompt = this.promptFilterRegexes.some(regex => regex.test(cleanText));
-
-    // Log PL: and Jgd: lines for debugging
-    if (originalText.includes('PL:') || originalText.includes('Jgd:')) {
-      // [PROMPT_DEBUG logs removed Original: "${originalText}"`);
-      // [PROMPT_DEBUG logs removed Normalized: "${cleanText}"`);
-      // [PROMPT_DEBUG logs removed IsPrompt: ${isPrompt}`);
-      if (!isPrompt) {
-        // [PROMPT_DEBUG logs removed ⚠️ NOT FILTERED - checking regexes...`);
-        this.promptFilterRegexes.forEach((regex, idx) => {
-          if (regex.test(cleanText)) {
-            // [PROMPT_DEBUG logs removed ✓ Matched regex #${idx}: ${regex}`);
-          }
-        });
-      }
-    }
-
     return isPrompt;
   }
 
@@ -257,7 +241,6 @@ class BlindModeService {
       }
 
       playerStatsService.updatePlayerVariables({ hpHistory: updatedHistory });
-      // [HP_HISTORY logs removed ${label}`);
     }
 
     const newPercent = maxHP > 0 ? (newHP / maxHP) * 100 : 0;
@@ -346,13 +329,8 @@ class BlindModeService {
     // Strip ANSI codes for pattern matching
     const cleanText = this.stripAnsiCodes(text);
 
-    if (cleanText.includes('bloqueo')) {
-      // [BM logs removed BLOQUEO DETECTADO: "${cleanText}"`);
-    }
-
     // First: Check if this is a prompt line (suppress prompt output from terminal)
     if (this.isPromptLine(cleanText)) {
-      // [BM logs removed ✓ PROMPT suppressed: "${cleanText}"`);
       return {
         shouldDisplay: false,
         modifiedText: text,
@@ -370,7 +348,6 @@ class BlindModeService {
           const regex = new RegExp(pattern.regex, 'i');
           const match = regex.exec(cleanText);
           if (match) {
-            // [BM logs removed ✓ MATCH en ${groupName}: patrón="${pattern.regex}" silence=${pattern.silence}`);
             return this.executeFilterAction(pattern, cleanText, groupName, match);
           }
         } catch (e) {
@@ -417,7 +394,6 @@ class BlindModeService {
 
         // Update unified PlayerVariables service
         (updates as any)[varName] = parsedValue;
-        // [CAPTURE logs removed ${varName} = ${JSON.stringify(parsedValue)}`);
       }
 
       if (Object.keys(updates).length > 0) {
@@ -496,19 +472,13 @@ class BlindModeService {
    */
   async playSound(soundPath: string) {
     try {
-      // [SOUND logs removed Intentando reproducir: "${soundPath}"`);
-
       if (!soundPath) {
-        // [SOUND logs removed ✗ soundPath está vacío`);
         return;
       }
 
       if (!(soundPath in soundModules)) {
-        // [SOUND logs removed ✗ soundPath="${soundPath}" NO existe en soundModules`);
         return;
       }
-
-      // [SOUND logs removed ✓ soundPath encontrado en soundModules`);
 
       // Set audio mode for playback - compatible with both iOS and Android
       await Audio.setAudioModeAsync({
@@ -518,14 +488,10 @@ class BlindModeService {
         interruptionModeAndroid: 1, // INTERRUPTION_MODE_DO_NOT_MIX - don't mix with other audio
       });
 
-      // Get the module directly from require
       const module = soundModules[soundPath as keyof typeof soundModules];
 
-      // Play sound directly from module
-      // [SOUND logs removed Reproduciendo: "${soundPath}"`);
       const { sound } = await Audio.Sound.createAsync(module);
       await sound.playAsync();
-      // [SOUND logs removed ✓ Sonido reproduciendo: "${soundPath}"`);
 
       // Unload after playback completes
       setTimeout(() => {

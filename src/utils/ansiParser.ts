@@ -113,11 +113,6 @@ const ESC_RE = /\x1b\[([0-9;]*)m/g;
 const ESC_OTHER = /\x1b\[[^a-zA-Z]*[a-ln-zA-Z]|\x1b[^[\x1b]/g;
 
 export function parseAnsi(text: string): AnsiSpan[] {
-  if (text.includes('bando') || text.length > 150) {
-    // parseAnsi logs removed Input text (first 100 chars):', JSON.stringify(text.slice(0, 100)));
-    // parseAnsi logs removed Has ANSI codes:', /\x1b\[/.test(text));
-  }
-
   // Strip non-color escape sequences
   text = text.replace(ESC_OTHER, '');
 
@@ -148,10 +143,6 @@ export function parseAnsi(text: string): AnsiSpan[] {
     if (chunk) {
       spans.push({ text: chunk, ...state });
     }
-  }
-
-  if (text.includes('bando') || text.length > 150) {
-    // parseAnsi logs removed Output spans count:', spans.length);
   }
 
   return spans;

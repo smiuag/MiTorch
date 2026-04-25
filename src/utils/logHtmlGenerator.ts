@@ -83,7 +83,7 @@ export function generateLogHtml(
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>BlowTorch Log</title>
+<title>TorchZhyla Log</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   * { box-sizing: border-box; }
@@ -130,7 +130,7 @@ export function generateLogHtml(
 </head>
 <body>
 <header>
-  <h1>BlowTorch — Log exportado</h1>
+  <h1>TorchZhyla — Log exportado</h1>
   <div class="meta">Generado: ${escapeHtml(generatedAtIso)} · ${totalLines} líneas · <a href="${defaultDeathlogs}" target="_blank" id="deathlogs-link">Subir a deathlogs.com ↗</a></div>
 
   <div class="row">

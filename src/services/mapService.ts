@@ -71,7 +71,6 @@ export class MapService {
 
     // Find candidates by short name
     const candidates = this.nameIndexLower.get(shortLower) ?? [];
-    console.log('[MAP] Búsqueda "' + shortLower + '": ' + candidates.length + ' coincidencias');
 
     if (candidates.length === 0) {
       return null;
@@ -105,17 +104,9 @@ export class MapService {
         }
       }
 
-      // 0 or 2+ exits matches: ambiguous
-      if (exitsMatches.length === 0) {
-        console.log('[MAP] Ambigua: sin salidas coincidentes de ' + candidates.length + ' candidatas');
-      } else {
-        console.log('[MAP] Ambigua: ' + exitsMatches.length + ' candidatas coinciden por salidas');
-      }
       return null;
     }
 
-    // Multiple candidates but no exit info to disambiguate
-    console.log('[MAP] Ambigua: ' + candidates.length + ' coincidencias, sin info de salidas');
     return null;
   }
 

@@ -1,9 +1,9 @@
 # Google Play Store Metadata
 
 ## App Title
-**BlowTorch** (Max: 50 characters)
+**TorchZhyla** (Max: 50 characters)
 
-Current: `BlowTorch` ✅ (10 characters)
+Current: `TorchZhyla` ✅ (10 characters)
 
 ---
 
@@ -22,7 +22,7 @@ Telnet/MUD client with ANSI colors, maps, buttons & blind mode support
 **Max: 4000 characters** (full app description on Play Store)
 
 ```
-BlowTorch is a feature-rich Telnet/MUD client for Android, designed for both sighted and blind users.
+TorchZhyla is a feature-rich Telnet/MUD client for Android, designed for both sighted and blind users.
 
 FEATURES:
 • Terminal emulation with ANSI color support
@@ -52,26 +52,29 @@ REQUIREMENTS:
 
 PERMISSIONS:
 • Internet: Required for Telnet connections
-• Notifications: For connection and game alerts
+• Notifications: For connection status and configurable in-game alerts
 • Wake Lock: To maintain connection while device sleeps
+• Foreground Service: To keep the connection alive in background
+• Vibrate: For optional notification vibration on alerts
+• Modify Audio Settings: To play in-game alert sounds
 
 NOTE:
 This is a Telnet client for MUD (Multi-User Dungeon) games and text-based services. Each MUD server operates independently with its own rules, content, and terms of service. Please review the specific server's terms before connecting.
 
-BlowTorch is open source and constantly improving. Feedback and suggestions are welcome.
+TorchZhyla is open source and constantly improving. Feedback and suggestions are welcome.
 ```
 
 **Character count:** 1,347/4,000 ✅
 
 ---
 
-## Release Notes (v3.0.0)
+## Release Notes (v1.0.0)
 **For initial release on Play Store**
 
 ```
-BlowTorch v3.0.0 - Initial Release
+TorchZhyla v1.0.0 - Initial Release
 
-This is the first official release of BlowTorch on Google Play Store.
+This is the first official release of TorchZhyla on Google Play Store.
 
 INITIAL FEATURES:
 ✓ Full Telnet protocol support with ANSI color rendering
@@ -106,9 +109,9 @@ For more information and support, visit the project repository.
 
 ## What's New / Update Notes (For Future Versions)
 
-**Format for v3.1.0+:**
+**Format for v1.1.0+:**
 ```
-BlowTorch v3.X.X
+TorchZhyla v1.X.X
 
 ✓ Feature added
 ✓ Feature added
@@ -224,7 +227,7 @@ https://github.com/smiuag/MiTorch
 
 **Title:**
 ```
-BlowTorch
+TorchZhyla
 ```
 
 **Short Description:**

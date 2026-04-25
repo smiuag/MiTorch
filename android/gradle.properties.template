@@ -1,0 +1,14 @@
+# Gradle Configuration Properties
+# Copy this file to gradle.properties and fill in your values
+
+# Release Signing Key Configuration
+# Generate with: .\GENERATE_SIGNING_KEY.ps1
+MYAPP_RELEASE_STORE_FILE=app/my-release-key.jks
+MYAPP_RELEASE_STORE_PASSWORD=run$live23!!
+MYAPP_RELEASE_KEY_ALIAS=my-key-alias
+MYAPP_RELEASE_KEY_PASSWORD=run$live23!!
+
+# Other Gradle properties
+org.gradle.jvmargs=-Xmx2048m -XX:MaxPermSize=512m
+android.useAndroidX=true
+android.enableJetifier=true
