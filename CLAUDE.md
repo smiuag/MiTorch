@@ -609,30 +609,154 @@ Sistema opcional (off por defecto) para capturar la actividad del terminal y exp
 - `src/storage/settingsStorage.ts`: persistencia de `logsEnabled` y `maxLogLines`.
 - `src/types/index.ts`: extensión de `AppSettings`.
 
+## Sistema de Triggers (plan aprobado 2026-04-27)
+
+Sistema declarativo de reglas que interceptan líneas entrantes del MUD y permiten silenciarlas (gag), modificarlas (replace, color), o disparar efectos (sonido, comando, notificación). Los triggers se organizan en **plantillas** (grupos) que se asignan a uno o varios servidores y se reutilizan entre ellos.
+
+Se descartó explícitamente Lua / scripting dinámico para v1. La motivación: cubrir el ~90% de los casos reales (filtros, alarmas, recoloreo, sonidos por keyword) sin meter un runtime de scripting con sus dolores de bucles infinitos, sandbox, y errores de usuario. Si en uso real aparecen patrones que requieran lógica condicional compleja o máquinas de estado, se evaluará entonces añadir `fengari` reusando el motor de matching declarativo.
+
+### Decisiones de diseño aprobadas
+
+- **Plantillas como grupos de triggers**: una plantilla contiene N triggers y se asigna entera a 1 o varios servidores. Para variaciones por servidor: duplicar la plantilla, modificar, asignar a otros. NO se asignan triggers individuales a servidores.
+- **Primera regla gana** (no cascada): los triggers se evalúan en orden y la primera que matchea ejecuta TODAS sus acciones y para. Si quieres color + sonido + notify para el mismo evento, los pones como tres acciones del mismo trigger. Razón: predecibilidad, sobre todo cuando un server tiene varias plantillas asignadas que pueden solapar.
+- **Tipos como UX, no constraints**: cuando el usuario crea un trigger elige un "tipo" (gag / color / sonido / notify / comando / replace / combo) que prefilla campos por defecto, pero después puede añadirle cualquier acción. El tipo es solo metadata para el wizard y el icono de la lista.
+- **Variables curadas, no user-defined**: el sistema mantiene una lista cerrada de variables (vida, energía, etc.) que se actualizan automáticamente parseando el prompt del MUD. El usuario NO puede crear variables ni modificarlas; solo definir triggers que reaccionan cuando cambian. La lista exacta y el formato de prompt se cierran al empezar Fase 3.
+
+### Modelo de datos
+
+```typescript
+type TriggerType = 'gag' | 'color' | 'sound' | 'notify' | 'command' | 'replace' | 'combo' | 'variable';
+
+interface Trigger {
+  id: string;
+  name: string;
+  type: TriggerType;             // solo UX; el motor mira `actions[]` y `source`
+  enabled: boolean;
+  source: TriggerSource;         // qué dispara la evaluación
+  actions: TriggerAction[];      // qué hace cuando dispara
+}
+
+type TriggerSource =
+  | { kind: 'regex'; pattern: string; flags?: string }
+  | { kind: 'variable'; name: string; condition: VariableCondition };  // Fase 3
+
+type TriggerAction =
+  | { type: 'gag' }
+  | { type: 'replace'; with: string }                            // soporta $1, $2, $old, $new
+  | { type: 'color'; fg?: string; bg?: string; bold?: boolean }
+  | { type: 'play_sound'; file: string }                         // 'builtin:x.wav' | 'custom:{uuid}.wav'
+  | { type: 'send'; command: string }
+  | { type: 'notify'; message: string };
+
+type VariableCondition =
+  | { event: 'appears' }
+  | { event: 'changes' }
+  | { event: 'equals'; value: number | string }
+  | { event: 'crosses_below'; value: number }                    // edge-triggered
+  | { event: 'crosses_above'; value: number };                   // edge-triggered
+
+interface TriggerPack {
+  id: string;
+  name: string;
+  triggers: Trigger[];
+  assignedServerIds: string[];
+}
+```
+
+### Pipeline
+
+```
+Telnet → ansiParser → AnsiSpan[] → [TriggerEngine.process()] → MudLine → render
+                                          ↓
+                              gag → descartar línea (stop)
+                              replace → mutar texto (stop)
+                              color → mutar spans (stop)
+                              play_sound / send / notify → side-effects (stop)
+```
+
+`triggerEngine.process(text, spans)` evalúa los triggers cargados (concatenados de todas las plantillas asignadas al server activo). Primera regex que matchea ejecuta sus acciones y devuelve. Si la acción incluye `gag`, devuelve `null` y la línea se descarta. Si no, devuelve la línea posiblemente mutada + lista de side-effects que el llamante (`TerminalScreen`) ejecuta.
+
+### Plan por fases
+
+#### Fase 1 — Motor base + plantillas globales (MVP)
+
+**Entregable:** triggers con regex y las 6 acciones básicas, organizados en plantillas asignables a servidores, configurables desde Settings.
+
+**Archivos nuevos:**
+- `src/services/triggerEngine.ts` — singleton con `setActiveTriggers(triggers)` y `process(text, spans): ProcessResult`.
+- `src/storage/triggerStorage.ts` — CRUD de `TriggerPack[]` en AsyncStorage.
+- `src/screens/TriggersScreen.tsx` — lista de plantillas, accesible desde Settings. CRUD + duplicar + asignar servers.
+- `src/screens/TriggerEditorScreen.tsx` (o modal) — edición del contenido de una plantilla: lista de triggers internos.
+- `src/components/TriggerEditModal.tsx` — formulario de un trigger: nombre, regex con compilación en vivo, lista de acciones, "probar contra esta línea".
+- `src/types/index.ts` — añadir tipos de arriba.
+
+**Archivos tocados:**
+- `src/screens/TerminalScreen.tsx` — al conectar, cargar triggers de plantillas asignadas y llamar `triggerEngine.setActiveTriggers`. En el handler de líneas entrantes, invocar `triggerEngine.process()` antes de meter la `MudLine` al buffer.
+- `src/screens/SettingsScreen.tsx` — botón "Triggers" que navega a `TriggersScreen`.
+- `App.tsx` — registrar las nuevas rutas.
+
+**Acciones soportadas:** `gag`, `replace`, `color`, `play_sound` (solo built-in), `send`, `notify`.
+
+**Fuera de fase 1:** variables, sonidos personalizados, drag-reorder.
+
+**Coste:** 2-3 días.
+
+#### Fase 2 — Sonidos personalizados
+
+**Entregable:** el usuario sube `.wav`/`.mp3` desde el móvil y los usa en `play_sound`.
+
+- `expo-document-picker` para seleccionar archivo.
+- Copia a `${Paths.document}/sounds/{uuid}.{ext}`.
+- En `play_sound`, `file` admite `builtin:nombre.wav` y `custom:{uuid}.wav`.
+- Selector en `TriggerEditModal` con pestañas Built-in / Personalizados.
+- Pantalla "Mis sonidos" en Settings: lista, preview, borrar (avisa si está en uso).
+
+**Coste:** medio día.
+
+#### Fase 3 — Variables del sistema
+
+**Entregable:** triggers que reaccionan a cambios en estado del juego (vida, energía, espejos, etc.).
+
+- Lista cerrada de variables, definida al empezar la fase (PENDIENTE — ver "Decisiones pendientes" abajo).
+- Formato concreto del prompt del MUD que parseamos para poblarlas (también pendiente).
+- Servicio `src/services/variableTracker.ts` (o integrado en `triggerEngine`) con regexes para extraer valores de cada línea entrante.
+- Sin acción `set_var`. El usuario NO modifica variables.
+- Sin counters de usuario.
+- Tipo de trigger `variable` con `source: { kind: 'variable', name, condition }` y las condiciones `appears`, `changes`, `equals`, `crosses_below`, `crosses_above` (edge-triggered).
+- En las acciones, soporte para `$old` y `$new` (valor anterior y actual de la variable).
+- Si una variable cambia varias veces en una sola línea: evaluar el trigger una sola vez con el valor final.
+- UI: nuevo tipo en el wizard "Alarma de variable" con dropdown de variable + condición + acciones.
+- Documentación en Settings: el formato de prompt requerido + botón "Copiar comando" que copia al portapapeles el comando para configurar el prompt en el MUD.
+
+**Coste:** 1-2 días.
+
+#### Fase 4 — Polish (opcional)
+
+**Export / import de plantillas.** Dos modalidades:
+
+- **Compartir una plantilla concreta** (botón en cada plantilla): JSON al portapapeles con cabecera `{ "format": "torchzhyla-trigger-pack", "version": 1, ... }`. NO incluye `id` ni `assignedServerIds` (en el import se generan ids nuevos y las asignaciones quedan vacías para que el usuario las haga).
+- **Backup de todas mis plantillas** (botón en Settings): JSON con cabecera `{ "format": "torchzhyla-trigger-backup", "version": 1, ... }` y array de plantillas. Para cambio de móvil o backup personal.
+- **Botón único "Importar JSON"** que detecta el `format` por la cabecera y aplica una u otra ruta. En colisión de nombre con una plantilla existente, preguntar: sustituir / duplicar con sufijo / saltar.
+
+**Sonidos personalizados en imports/exports.** El JSON solo lleva la referencia (`custom:{uuid}.wav`), no el archivo. Si al importar el sonido no existe en el destino, marcar como "missing" y avisar al usuario en un resumen al final del import. El trigger sigue existiendo pero la acción `play_sound` correspondiente queda desactivada hasta que el usuario reasigne. NO empaquetamos sonidos en base64 ni en zip en v1 — si surge demanda real, se evalúa después.
+
+**Otros pulidos:**
+- Pack pre-hecho "Reinos de Leyenda básico" bundleado en `src/assets/triggerPacks/`.
+- Drag-to-reorder en la lista de triggers (cambia orden de evaluación; importante para "primera regla gana").
+- Drag-to-reorder de plantillas asignadas a un server (cuando hay varias) si surge la necesidad. Por defecto: orden alfabético por nombre de plantilla.
+
+**Coste:** medio día (export/import) + medio día (resto) = ~1 día.
+
+### Decisiones pendientes
+
+- **Lista exacta de variables** a trackear (Fase 3). Candidatos discutidos: `vida`, `vida_max`, `vida_pct`, `energia`, `energia_max`, `energia_pct`, `xp`, `oro`, `nivel`, `espejos`, `pieles`, `sala_nombre`, `sala_id`, `enemigos`. El usuario lo cerrará al llegar a Fase 3.
+- **Formato concreto del prompt** del MUD para parsear las variables. A definir junto con la lista anterior.
+- **Orden entre plantillas** cuando un server tiene varias asignadas. Default propuesto: alfabético por nombre de plantilla. Drag-reorder se difiere a Fase 4 si hace falta.
+
 ## Temas Pendientes
 
 - **Revisar botones de modo blind de consultar vida, energía...**
-- **Sistema de triggers / scripting (capa entre el stream del MUD y el render)**
-
-  Capa que intercepta cada línea entrante y permite filtrarla (gag), sustituirla (replace), capturar grupos en variables, disparar sonidos, mandar comandos, lanzar notificaciones. También aliases sobre el input del usuario. Patrón estándar de MUSHclient/Mudlet/CMUD.
-
-  **Opción A — Sistema declarativo JSON (preferido empezar por aquí)**
-  - El usuario edita un JSON con reglas: `{ match: regex, action: "gag" | "replace" | "play_sound" | "send" | "set_var", ... }`.
-  - Trivial de implementar (~horas), sin dependencias nuevas, sin rebuild.
-  - Cubre ~80% del uso real (filtros, sonidos por keyword, alias simples, transformaciones con sustitución de capturas).
-  - Limitación: no hay lógica condicional compleja ni máquinas de estado. Para "si vida < 30% y hay enemigo, beber poción" empieza a quedarse corto.
-  - UI: lista editable en Settings con botones "Añadir regla", "Probar contra esta línea", export/import JSON.
-
-  **Opción B — Lua scripting (paso siguiente si JSON queda corto)**
-  - Runtime Lua dentro de la app + API de triggers (`trigger`, `alias`, `send`, `gag`, `replace_line`, `play_sound`, `set/get`, `notify`, `print_colored`).
-  - El usuario carga `.lua` desde el móvil (DocumentPicker) o lo edita inline.
-  - **Runtimes posibles:**
-    - **`fengari`** (Lua puro en JS): recomendado. Sin código nativo, sin rebuild, ~250 KB al bundle. Comparte JS thread; para velocidades de MUD (~100 líneas/s) sobra. Mitigar bucles infinitos con timeout por callback (200 ms).
-    - **Módulo Expo nativo con LuaJ/lua-android**: aislado del JS thread, mejor performance, pero coste alto (escribir todo el bridge). Solo vale la pena si los triggers necesitan trabajo pesado (parsear logs grandes, generar mapas dinámicos).
-    - **WebView con Lua-wasm**: descartado — la latencia de mensajería con el JS principal lo hace inviable para procesar cada línea.
-  - Carga: `Paths.document/scripts/`, ejecutar al conectar, toggle por servidor, botón "Recargar".
-
-  **Recomendación de orden**: implementar A primero (JSON declarativo). Observar qué reglas piden los usuarios que no se pueden expresar. Si aparecen patrones recurrentes que requieren lógica (contadores, máquinas de estado, condicionales encadenados), entonces añadir B con `fengari` reusando el mismo motor de matching de A.
+- **Backup completo de la app** — exportar/importar TODA la configuración del usuario (servers, layouts de botones, plantillas de triggers, settings, sonidos personalizados) en un único archivo, para cambio de móvil o backup defensivo. Es un feature distinto del export/import de triggers (Fase 4 del sistema de triggers, que es solo para plantillas). Requiere decidir formato (zip con manifest JSON + carpetas de assets, probablemente), versionado del schema, política de merge vs reemplazo en el import, y qué pasa con archivos custom (sonidos) si el zip los trae.
 
 ## Desarrollos por ahora no necesarios
 
