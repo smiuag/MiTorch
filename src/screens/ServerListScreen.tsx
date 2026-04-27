@@ -9,7 +9,7 @@ import {
   Modal,
   ScrollView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, ServerProfile } from '../types';
@@ -39,6 +39,14 @@ export function ServerListScreen({ navigation }: Props) {
   const nameInputRef = useRef<TextInput>(null);
   const usernameInputRef = useRef<TextInput>(null);
   const passwordInputRef = useRef<TextInput>(null);
+
+  const insets = useSafeAreaInsets();
+  const overlayInsetStyle = {
+    paddingTop: 20 + insets.top,
+    paddingBottom: 20 + insets.bottom,
+    paddingLeft: 20 + insets.left,
+    paddingRight: 20 + insets.right,
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -251,7 +259,7 @@ export function ServerListScreen({ navigation }: Props) {
         animationType="fade"
         onRequestClose={() => {}}
       >
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, overlayInsetStyle]}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>¡Bienvenido a TorchZhyla!</Text>
             <Text style={[styles.label, { marginBottom: 20, lineHeight: 20 }]}>
@@ -291,8 +299,12 @@ export function ServerListScreen({ navigation }: Props) {
         animationType="fade"
         onRequestClose={() => setModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, overlayInsetStyle]}>
           <View style={styles.modalContent}>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
             <Text style={styles.modalTitle}>
               {editingServer ? 'Editar personaje' : 'Añadir personaje'}
             </Text>
@@ -396,6 +408,7 @@ export function ServerListScreen({ navigation }: Props) {
                 <Text style={styles.saveText}>Guardar</Text>
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -406,7 +419,7 @@ export function ServerListScreen({ navigation }: Props) {
         animationType="fade"
         onRequestClose={() => setHelpModalVisible(false)}
       >
-        <View style={styles.helpModalOverlay}>
+        <View style={[styles.helpModalOverlay, overlayInsetStyle]}>
           <TouchableOpacity
             style={styles.helpModalBackdrop}
             onPress={() => setHelpModalVisible(false)}
@@ -633,7 +646,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center',
-    padding: 20,
   },
   modalContent: {
     backgroundColor: '#1a1a1a',
@@ -641,6 +653,7 @@ const styles = StyleSheet.create({
     padding: 24,
     borderWidth: 1,
     borderColor: '#333',
+    maxHeight: '90%',
   },
   modalTitle: {
     color: '#ffffff',
@@ -729,7 +742,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
   },
   helpModalBackdrop: {
     position: 'absolute',

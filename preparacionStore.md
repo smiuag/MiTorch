@@ -38,7 +38,7 @@ Checklist de tareas pendientes antes de publicar una nueva versión en Google Pl
 
 ## Cumplimiento Play (legal / privacy)
 
-- [ ] **Privacy Policy URL** activa y accesible. Verificar que el enlace en Play Console responde 200.
+- [x] **Privacy Policy URL** activa y accesible. Verificado 200 OK en https://smiuag.github.io/MiTorch/privacy-policy.html (también index y terms-of-service).
 - [ ] **Data Safety form** del Play Console actualizado: declarar qué datos recoges. En TorchZhyla, parece que no se recoge nada fuera del dispositivo (no analítica, no telemetría, los logs son locales — Sentry recoge stack traces de crashes sin PII). Declarar lo de Sentry y marcar el resto como "no data collected".
 - [ ] **Account deletion flow**: si Play lo exige (depende de si la app gestiona cuentas). Las cuentas son del MUD, no de la app, así que probablemente no aplica. Revisar el form del Play Console por si pregunta.
 - [ ] **Categoría y etiquetas** del Play Console correctas (Tools / Communication / Games — Role Playing son candidatas razonables).

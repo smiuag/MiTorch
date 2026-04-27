@@ -612,7 +612,20 @@ Sistema opcional (off por defecto) para capturar la actividad del terminal y exp
 ## Temas Pendientes
 
 - **Revisar botones de modo blind de consultar vida, energía...**
-- **Modal "Crear/editar servidor" en horizontal sin scroll**: en orientación apaisada, el formulario no se puede desplazar y los campos de abajo quedan ocultos por el teclado o fuera de la pantalla. Probablemente falta envolverlo en `ScrollView` con `keyboardShouldPersistTaps`. Archivo a tocar: el modal en `src/screens/ServerListScreen.tsx` (o componente relacionado).
+- **`Error: Socket is closed` al enviar comando tras desconexión silenciosa**
+
+  Sentry está reportando crashes con stack `TelnetService#writeToSocket → TelnetService#send → addWalkStepListener` (`src/services/telnetService.ts:239`, `src/screens/TerminalScreen.tsx:193`). Pasa cuando el socket se cerró por la red pero el `walk` nativo sigue disparando ticks, o el usuario pulsa un botón antes de que se detecte la caída.
+
+  **Fix mínimo (no crash):** envolver `socket.write()` en try/catch dentro de `writeToSocket()` y de `startKeepAlive()` — ahora mismo el `if (this.socket)` no protege contra que el socket esté en estado CLOSED pero aún no nulled. Sin esto, cualquier `send` post-desconexión crashea.
+
+  **Fix completo (auto-reconnect transparente):** si al hacer `send` el socket no está conectado, intentar reconectar con el último `host:port` guardado y reenviar el comando. **No reenviar user/password** — solo restablecer el TCP. Lo que se haya perdido durante el corte no se recupera. Idea de implementación:
+    - `TelnetService` guarda el último `{host, port}` en `connect()`.
+    - Nuevo flag `reconnecting` para evitar reentradas.
+    - `send()` detecta socket caído → llama `reconnect()` (no `connect()` con credenciales) → on success reenvía el comando.
+    - Backoff sencillo (1 reintento, no spam) y notificar al usuario si falla con un toast/línea en el terminal.
+
+  Archivos a tocar: `src/services/telnetService.ts` (writeToSocket, send, nuevo reconnect), posiblemente `src/screens/TerminalScreen.tsx` (manejo del estado de reconexión visible).
+
 - **Sistema de triggers / scripting (capa entre el stream del MUD y el render)**
 
   Capa que intercepta cada línea entrante y permite filtrarla (gag), sustituirla (replace), capturar grupos en variables, disparar sonidos, mandar comandos, lanzar notificaciones. También aliases sobre el input del usuario. Patrón estándar de MUSHclient/Mudlet/CMUD.

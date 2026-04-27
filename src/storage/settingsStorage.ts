@@ -25,6 +25,7 @@ export interface AppSettings {
 export const AVAILABLE_NOTIFICATIONS = {
   bonk: 'BONK',
   private_msg: 'Mensaje privado',
+  bloqueo: 'Bloqueo terminado',
 } as const;
 
 export const AVAILABLE_SOUNDS = {

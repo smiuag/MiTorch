@@ -15,6 +15,12 @@
         "(\\S+) te pregunta:",
         "(\\S+) te dice:"
       ]
+    },
+    {
+      "id": "bloqueo",
+      "regexes": [
+        "\\[?El bloqueo '([^']+)' termina\\]?"
+      ]
     }
   ]
 }
