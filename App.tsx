@@ -8,7 +8,10 @@ import { RootStackParamList } from './src/types';
 import { ServerListScreen } from './src/screens/ServerListScreen';
 import { TerminalScreen } from './src/screens/TerminalScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { TriggersScreen } from './src/screens/TriggersScreen';
+import { TriggerEditorScreen } from './src/screens/TriggerEditorScreen';
 import { SoundProvider } from './src/contexts/SoundContext';
+import { FloatingMessagesProvider } from './src/contexts/FloatingMessagesContext';
 
 Sentry.init({
   dsn: 'https://95bdcaa4f3edd2996d85375dd2f12807@o4511280046735360.ingest.de.sentry.io/4511280058597456',
@@ -24,6 +27,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 function App() {
   return (
     <SoundProvider>
+      <FloatingMessagesProvider>
       <NavigationContainer
         theme={DarkTheme}
         documentTitle={{
@@ -65,8 +69,19 @@ function App() {
               title: 'Settings',
             }}
           />
+          <Stack.Screen
+            name="Triggers"
+            component={TriggersScreen}
+            options={{ headerShown: false, title: 'Triggers' }}
+          />
+          <Stack.Screen
+            name="TriggerEditor"
+            component={TriggerEditorScreen}
+            options={{ headerShown: false, title: 'Trigger Editor' }}
+          />
         </Stack.Navigator>
       </NavigationContainer>
+      </FloatingMessagesProvider>
     </SoundProvider>
   );
 }

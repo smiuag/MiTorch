@@ -23,7 +23,7 @@ import { StatusBar } from 'expo-status-bar';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { startBackgroundConnection, stopBackgroundConnection } from '../services/foregroundService';
 import TorchZhylaForeground, { addWalkStepListener, addWalkDoneListener } from '../../modules/torchzhyla-foreground';
-import { detectNotification, fireNotification, stripAnsi } from '../services/notificationService';
+import { fireNotification, stripAnsi } from '../services/notificationService';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, MudLine, GestureConfig, GestureType } from '../types';
@@ -40,11 +40,15 @@ import { loadSettings } from '../storage/settingsStorage';
 import { MapService, MapRoom } from '../services/mapService';
 import { ButtonLayout, createDefaultLayout, createBlindModeLayout, loadLayout, saveLayout, loadServerLayout, saveServerLayout } from '../storage/layoutStorage';
 import { loadServers, saveServers } from '../storage/serverStorage';
+import { getTriggersForServer } from '../storage/triggerStorage';
+import { triggerEngine } from '../services/triggerEngine';
 import { blindModeService } from '../services/blindModeService';
 import { logService } from '../services/logService';
 import { playerStatsService } from '../services/playerStatsService';
 import { soundConfigService } from '../services/soundConfigService';
 import { useSounds } from '../contexts/SoundContext';
+import { useFloatingMessages } from '../contexts/FloatingMessagesContext';
+import { FloatingMessages } from '../components/FloatingMessages';
 import { NORMAL_MODE, BLIND_MODE } from '../config/gridConfig';
 import { BlindChannelModal, ChannelMessage, nextMsgId } from '../components/BlindChannelModal';
 import { loadChannelAliases, saveChannelAliases, loadChannelOrder, saveChannelOrder } from '../storage/channelStorage';
@@ -60,6 +64,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { playSound, detectSound } = useSounds();
+  const { push: pushFloating } = useFloatingMessages();
   const { server: initialServer } = route.params;
 
   const [server, setServer] = useState(initialServer);
@@ -95,8 +100,6 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(-1);
-  const [locateFeedback, setLocateFeedback] = useState<'success' | 'failed' | null>(null);
-  const [statFeedback, setStatFeedback] = useState<{ type: string; message: string } | null>(null);
   const [silentModeEnabled, setSilentModeEnabled] = useState(false);
   const [loginFailed, setLoginFailed] = useState(false);
   const [channels, setChannels] = useState<string[]>([]);
@@ -141,7 +144,6 @@ export function TerminalScreen({ route, navigation }: Props) {
   const gesturesEnabledRef = useRef(false);
   const gesturesRef = useRef<GestureConfig[]>([]);
   const notificationsEnabledRef = useRef(false);
-  const enabledNotificationsRef = useRef<Record<string, boolean>>({});
   const appStateRef = useRef(AppState.currentState);
   const exitPendingRef = useRef(false);
   const exitToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -259,9 +261,6 @@ export function TerminalScreen({ route, navigation }: Props) {
         }
         if (settings.notificationsEnabled !== undefined) {
           notificationsEnabledRef.current = settings.notificationsEnabled;
-        }
-        if (settings.enabledNotifications) {
-          enabledNotificationsRef.current = settings.enabledNotifications;
         }
         logService.configure(
           settings.logsEnabled ?? false,
@@ -472,15 +471,6 @@ export function TerminalScreen({ route, navigation }: Props) {
     // Detect sound FIRST (before any filtering) so it works in all modes
     const soundPath = detectSound(text);
 
-    // Detect notification trigger (independent of sound and UI mode).
-    // Skip when the app is in foreground — the user already sees the message.
-    if (notificationsEnabledRef.current && appStateRef.current !== 'active') {
-      const notif = detectNotification(text);
-      if (notif && enabledNotificationsRef.current[notif.id]) {
-        fireNotification(notif.label, stripAnsi(text).trim());
-      }
-    }
-
     // Blind mode: Process with filters
     let displayText = text;
     let shouldAnnounce = false;
@@ -557,13 +547,37 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
 
     const spans = parseAnsi(displayText);
-    const newLine: MudLine = { id: lineIdCounter++, spans };
+
+    // User-defined triggers: gag the line, mutate spans, or queue side effects.
+    const plainTextForTriggers = stripAnsi(displayText);
+    const triggerResult = triggerEngine.process(plainTextForTriggers, spans);
+    if (triggerResult.gagged) {
+      return;
+    }
+    const finalSpans = triggerResult.spans;
+
+    const newLine: MudLine = { id: lineIdCounter++, spans: finalSpans };
     linesRef.current.push(newLine);
     if (linesRef.current.length > MAX_LINES) {
       linesRef.current = linesRef.current.slice(-MAX_LINES);
     }
     if (!deferSetState) {
       setLines([...linesRef.current]);
+    }
+
+    for (const fx of triggerResult.sideEffects) {
+      if (fx.type === 'play_sound') {
+        if (fx.file) playSoundRef.current(fx.file);
+      } else if (fx.type === 'send') {
+        if (fx.command) telnetRef.current?.send(fx.command);
+      } else if (fx.type === 'notify') {
+        // Only fire when notifications are globally enabled AND the app is not in foreground.
+        if (notificationsEnabledRef.current && appStateRef.current !== 'active') {
+          fireNotification(fx.title || 'TorchZhyla', fx.message);
+        }
+      } else if (fx.type === 'floating') {
+        pushFloating(fx.message, fx.level);
+      }
     }
 
     // Channel messages: always write to terminal, NEVER announce (even if silent mode is off).
@@ -627,6 +641,19 @@ export function TerminalScreen({ route, navigation }: Props) {
     playSoundRef.current = playSound;
   }, [playSound]);
 
+  // Load triggers for the active server. Reloads when the server changes or
+  // when the settings modal closes (user may have edited triggers from there).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const triggers = await getTriggersForServer(server.id);
+      if (!cancelled) triggerEngine.setActiveTriggers(triggers);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [server.id, settingsModalVisible]);
+
   useEffect(() => {
     const handler: TelnetEventHandler = {
       onData: (text: string) => {
@@ -675,8 +702,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                     if (room) {
                       mapSvc.setCurrentRoom(room.id);
                       setCurrentRoom(room);
-                      setLocateFeedback('success');
-                      setTimeout(() => setLocateFeedback(null), 2000);
+                      pushFloating('✓ Localizado', 'success', 2000);
 
                       // Blind mode: announce location
                       if (uiMode === 'blind') {
@@ -686,8 +712,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                         );
                       }
                     } else {
-                      setLocateFeedback('failed');
-                      setTimeout(() => setLocateFeedback(null), 2000);
+                      pushFloating('✗ No localizado', 'error', 2000);
 
                       // Blind mode: announce failure
                       if (uiMode === 'blind') {
@@ -1048,25 +1073,13 @@ export function TerminalScreen({ route, navigation }: Props) {
     const cmdLower = command.toLowerCase();
 
     if (cmdLower === 'consultar vida') {
-      const message = `Vida: ${hp}/${hpMax}`;
-      if (uiMode === 'blind') {
-        AccessibilityInfo.announceForAccessibility(message);
-      } else {
-        setStatFeedback({ type: 'vida', message });
-        setTimeout(() => setStatFeedback(null), 2000);
-      }
+      pushFloating(`Vida: ${hp}/${hpMax}`, 'info', 2000);
       if (!skipHistory) setCommandHistory([command, ...commandHistory]);
       return;
     }
 
     if (cmdLower === 'consultar energia') {
-      const message = `Energía: ${energy}/${energyMax}`;
-      if (uiMode === 'blind') {
-        AccessibilityInfo.announceForAccessibility(message);
-      } else {
-        setStatFeedback({ type: 'energia', message });
-        setTimeout(() => setStatFeedback(null), 2000);
-      }
+      pushFloating(`Energía: ${energy}/${energyMax}`, 'info', 2000);
       if (!skipHistory) setCommandHistory([command, ...commandHistory]);
       return;
     }
@@ -1074,41 +1087,24 @@ export function TerminalScreen({ route, navigation }: Props) {
     if (cmdLower === 'consultar salidas') {
       const playerVars = blindModeService.getPlayerVariables();
       const exits = playerVars.roomExits || 'ninguna';
-      if (uiMode === 'blind') {
-        AccessibilityInfo.announceForAccessibility(exits);
-      } else {
-        setStatFeedback({ type: 'salidas', message: `Salidas: ${exits}` });
-        setTimeout(() => setStatFeedback(null), 2000);
-      }
+      pushFloating(`Salidas: ${exits}`, 'info', 2000);
       if (!skipHistory) setCommandHistory([command, ...commandHistory]);
       return;
     }
 
     if (cmdLower === 'xp') {
       const playerVars = blindModeService.getPlayerVariables();
-      const xpMessage = `XP: ${playerVars.playerXP}`;
-      if (uiMode === 'blind') {
-        AccessibilityInfo.announceForAccessibility(String(playerVars.playerXP));
-      } else {
-        setStatFeedback({ type: 'xp', message: xpMessage });
-        setTimeout(() => setStatFeedback(null), 2000);
-      }
+      pushFloating(`XP: ${playerVars.playerXP}`, 'info', 2000);
       if (!skipHistory) setCommandHistory([command, ...commandHistory]);
       return;
     }
 
     if (cmdLower === 'ultimo daño') {
       const playerVars = blindModeService.getPlayerVariables();
-      const damageMessage = playerVars.hpHistory.length > 0 ? playerVars.hpHistory[playerVars.hpHistory.length - 1].label : 'Sin registro';
-      if (uiMode === 'blind') {
-        if (playerVars.hpHistory.length > 0) {
-          const last = playerVars.hpHistory[playerVars.hpHistory.length - 1];
-          AccessibilityInfo.announceForAccessibility(last.label);
-        }
-      } else {
-        setStatFeedback({ type: 'daño', message: damageMessage });
-        setTimeout(() => setStatFeedback(null), 2000);
-      }
+      const damageMessage = playerVars.hpHistory.length > 0
+        ? playerVars.hpHistory[playerVars.hpHistory.length - 1].label
+        : 'Sin registro';
+      pushFloating(damageMessage, 'info', 2000);
       if (!skipHistory) setCommandHistory([command, ...commandHistory]);
       return;
     }
@@ -1116,12 +1112,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     if (cmdLower === 'enemigos') {
       const playerVars = blindModeService.getPlayerVariables();
       const enemiesMessage = playerVars.roomEnemies || 'ninguno';
-      if (uiMode === 'blind') {
-        AccessibilityInfo.announceForAccessibility(enemiesMessage);
-      } else {
-        setStatFeedback({ type: 'enemigos', message: `Enemigos: ${enemiesMessage}` });
-        setTimeout(() => setStatFeedback(null), 2000);
-      }
+      pushFloating(`Enemigos: ${enemiesMessage}`, 'info', 2000);
       if (!skipHistory) setCommandHistory([command, ...commandHistory]);
       return;
     }
@@ -1655,42 +1646,6 @@ export function TerminalScreen({ route, navigation }: Props) {
             >
               <Text style={styles.scrollToBottomText}>↓</Text>
             </TouchableOpacity>
-          )}
-
-          {/* Locate Feedback - Show in minimalist mode */}
-          {locateFeedback && (
-            <View
-              style={[
-                styles.locateFeedback,
-                locateFeedback === 'success' ? styles.locateFeedbackSuccess : styles.locateFeedbackFailed,
-              ]}
-              accessible={true}
-              accessibilityLabel={locateFeedback === 'success' ? 'Localizado' : 'No localizado'}
-              accessibilityRole="alert"
-            >
-              <Text
-                style={[
-                  styles.locateFeedbackText,
-                  locateFeedback === 'success' ? styles.locateFeedbackTextSuccess : styles.locateFeedbackTextFailed,
-                ]}
-              >
-                {locateFeedback === 'success' ? '✓ Localizado' : '✗ No localizado'}
-              </Text>
-            </View>
-          )}
-
-          {/* Stat Feedback - Show stat information */}
-          {statFeedback && (
-            <View
-              style={[styles.locateFeedback, styles.statFeedback]}
-              accessible={true}
-              accessibilityLabel={statFeedback.message}
-              accessibilityRole="alert"
-            >
-              <Text style={[styles.locateFeedbackText, styles.statFeedbackText]}>
-                {statFeedback.message}
-              </Text>
-            </View>
           )}
 
           {/* Auto-login Failed Feedback */}
@@ -2453,6 +2408,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         </View>
       )}
 
+      <FloatingMessages />
     </SafeAreaView>
   );
 }

@@ -37,7 +37,70 @@ export type RootStackParamList = {
   ServerList: undefined;
   Terminal: { server: ServerProfile };
   Settings: undefined;
+  Triggers: undefined;
+  TriggerEditor: { packId: string };
 };
+
+export type TriggerType =
+  | 'gag'
+  | 'color'
+  | 'sound'
+  | 'notify'
+  | 'command'
+  | 'replace'
+  | 'combo';
+
+export type FloatingMessageLevel = 'info' | 'success' | 'error';
+
+// Action text fields support both compiled string (engine reads this)
+// and optional blocks[] (editor reads this in cajas mode).
+export type TriggerAction =
+  | { type: 'gag' }
+  | { type: 'replace'; with: string; withBlocks?: ActionTextBlock[] }
+  | { type: 'color'; fg?: string; bg?: string; bold?: boolean }
+  | { type: 'play_sound'; file: string }
+  | { type: 'send'; command: string; commandBlocks?: ActionTextBlock[] }
+  | { type: 'notify'; title?: string; titleBlocks?: ActionTextBlock[]; message: string; messageBlocks?: ActionTextBlock[] }
+  | { type: 'floating'; message: string; messageBlocks?: ActionTextBlock[]; level?: FloatingMessageLevel };
+
+export type CaptureType = 'word' | 'phrase' | 'number';
+
+export type PatternBlock =
+  | { kind: 'text'; text: string }
+  | { kind: 'capture'; captureType: CaptureType; id: string };
+
+export type AnchorMode = 'open' | 'anchored';
+
+export type ActionTextBlock =
+  | { kind: 'text'; text: string }
+  | { kind: 'capture_ref'; captureId: string };
+
+export type TriggerSource = {
+  kind: 'regex';
+  pattern: string;                  // compiled regex (read by engine)
+  flags?: string;
+  // Visual editor state — present when not in expert mode:
+  blocks?: PatternBlock[];
+  anchorStart?: AnchorMode;         // default 'open'
+  anchorEnd?: AnchorMode;           // default 'open'
+  expertMode?: boolean;             // true => editor shows raw regex, blocks ignored
+};
+
+export interface Trigger {
+  id: string;
+  name: string;
+  type: TriggerType;
+  enabled: boolean;
+  source: TriggerSource;
+  actions: TriggerAction[];
+}
+
+export interface TriggerPack {
+  id: string;
+  name: string;
+  triggers: Trigger[];
+  assignedServerIds: string[];
+}
 
 export type FloatingOrientation = 'portrait' | 'landscape';
 

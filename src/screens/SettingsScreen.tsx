@@ -4,7 +4,7 @@ import { requestNotificationPermission, openNotificationSettings } from '../serv
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, GestureConfig } from '../types';
-import { loadSettings, saveSettings, AppSettings, rebuildGestures, AVAILABLE_SOUNDS, AVAILABLE_NOTIFICATIONS, rebuildSounds } from '../storage/settingsStorage';
+import { loadSettings, saveSettings, AppSettings, rebuildGestures, AVAILABLE_SOUNDS, rebuildSounds } from '../storage/settingsStorage';
 import { DEFAULT_SETTINGS } from '../storage/settingsStorage';
 import { blindModeService } from '../services/blindModeService';
 import { logService, ExportRange, slugifyServerName } from '../services/logService';
@@ -27,7 +27,6 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
   const [encodingModalVisible, setEncodingModalVisible] = useState(false);
   const [gestureModalVisible, setGestureModalVisible] = useState(false);
   const [soundModalVisible, setSoundModalVisible] = useState(false);
-  const [notificationModalVisible, setNotificationModalVisible] = useState(false);
   const [exportRangeModalVisible, setExportRangeModalVisible] = useState(false);
 
   useEffect(() => {
@@ -357,17 +356,9 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Usar notificaciones</Text>
             <Text style={styles.rowDesc}>
-              Avisos del sistema para eventos del juego (ej. BONK). Funcionan también con la pantalla bloqueada si tienes activa la conexión en segundo plano.
+              Permite que los triggers disparen notificaciones del sistema. Solo se muestran cuando la app no está en primer plano. Configura las notificaciones concretas en Triggers.
             </Text>
           </View>
-          {settings.notificationsEnabled && (
-            <TouchableOpacity
-              style={styles.configIconBtn}
-              onPress={() => setNotificationModalVisible(true)}
-            >
-              <Text style={styles.configIcon}>✏️</Text>
-            </TouchableOpacity>
-          )}
           <Switch
             value={settings.notificationsEnabled}
             onValueChange={async (value) => {
@@ -394,12 +385,25 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
                 : { ...settings, notificationsEnabled: false };
               setSettings(updated);
               saveSettings(updated);
-              if (value) {
-                setNotificationModalVisible(true);
-              }
             }}
             trackColor={{ false: '#333', true: '#0c0' }}
             thumbColor={settings.notificationsEnabled ? '#000' : '#666'}
+          />
+        </View>
+
+        {/* Background connection */}
+        <View style={styles.row}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Conexión en segundo plano</Text>
+            <Text style={styles.rowDesc}>
+              Mantiene el MUD conectado aunque la pantalla se bloquee o la app pase a segundo plano. Necesario para que los triggers sigan procesando líneas y para que las notificaciones lleguen.
+            </Text>
+          </View>
+          <Switch
+            value={settings.backgroundConnectionEnabled}
+            onValueChange={(value) => updateSetting('backgroundConnectionEnabled', value)}
+            trackColor={{ false: '#333', true: '#0c0' }}
+            thumbColor={settings.backgroundConnectionEnabled ? '#000' : '#666'}
           />
         </View>
 
@@ -506,6 +510,29 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             </View>
           </>
         )}
+
+        {/* Triggers Section */}
+        <View style={[styles.sectionHeader, styles.marginTop]}>
+          <Text style={styles.sectionTitle}>Triggers</Text>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Plantillas de triggers</Text>
+            <Text style={styles.rowDesc}>
+              Configura reglas que reaccionan a líneas del MUD: silenciar, recolorear, sonidos, comandos o notificaciones. Las plantillas se asignan a uno o varios servidores.
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.encodingBtn}
+            onPress={() => navigation.navigate('Triggers')}
+            accessible={true}
+            accessibilityLabel="Abrir plantillas de triggers"
+            accessibilityRole="button"
+          >
+            <Text style={styles.encodingBtnText}>Abrir</Text>
+          </TouchableOpacity>
+        </View>
 
       </ScrollView>
 
@@ -762,74 +789,6 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
-
-      {/* Notifications Configuration Modal */}
-      <Modal
-        visible={notificationModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setNotificationModalVisible(false)}
-      >
-        <SafeAreaView style={styles.container}>
-          <View style={styles.header}>
-            <TouchableOpacity
-              onPress={() => setNotificationModalVisible(false)}
-              style={styles.backBtn}
-            >
-              <Text style={styles.backText}>{'< Volver'}</Text>
-            </TouchableOpacity>
-            <Text style={styles.title}>Configurar Notificaciones</Text>
-          </View>
-
-          <FlatList
-            data={Object.entries(AVAILABLE_NOTIFICATIONS)}
-            ListHeaderComponent={(
-              <View style={styles.soundRow}>
-                <View style={styles.soundRowInfo}>
-                  <Text style={styles.rowTitle}>Conexión en segundo plano</Text>
-                  <Text style={styles.rowDesc}>
-                    Mantiene el MUD conectado aunque el teléfono esté bloqueado o la app en segundo plano. Necesario para escuchar mensajes sin tener la app abierta.
-                  </Text>
-                </View>
-                <Switch
-                  value={settings.backgroundConnectionEnabled}
-                  onValueChange={(value) => {
-                    updateSetting('backgroundConnectionEnabled', value);
-                  }}
-                  trackColor={{ false: '#333', true: '#0c0' }}
-                  thumbColor={settings.backgroundConnectionEnabled ? '#000' : '#666'}
-                />
-              </View>
-            )}
-            renderItem={({ item: [notifId, notifLabel] }) => (
-              <View style={styles.soundRow}>
-                <View style={styles.soundRowInfo}>
-                  <Text style={styles.rowTitle}>{notifLabel}</Text>
-                </View>
-                <Switch
-                  value={settings.enabledNotifications[notifId] ?? false}
-                  onValueChange={(value) => {
-                    const updated = {
-                      ...settings,
-                      enabledNotifications: {
-                        ...settings.enabledNotifications,
-                        [notifId]: value,
-                      },
-                    };
-                    setSettings(updated);
-                    saveSettings(updated);
-                  }}
-                  trackColor={{ false: '#333', true: '#0c0' }}
-                  thumbColor={settings.enabledNotifications[notifId] ? '#000' : '#666'}
-                />
-              </View>
-            )}
-            keyExtractor={([notifId]) => notifId}
-            scrollEnabled={true}
-            contentContainerStyle={styles.sectionContent}
-          />
-        </SafeAreaView>
       </Modal>
 
       {/* Sounds Configuration Modal */}
