@@ -33,6 +33,7 @@ export type TelnetEventHandler = {
 
 export class TelnetService {
   private socket: ReturnType<typeof TcpSocket.createConnection> | null = null;
+  private connected: boolean = false;
   private handler: TelnetEventHandler;
   private server: ServerProfile;
   private encoding: string;
@@ -51,6 +52,7 @@ export class TelnetService {
       this.socket = TcpSocket.createConnection(
         { host: this.server.host, port: this.server.port },
         () => {
+          this.connected = true;
           this.startKeepAlive();
           this.handler.onConnect();
         }
@@ -64,15 +66,18 @@ export class TelnetService {
       });
 
       this.socket.on('close', () => {
+        this.connected = false;
         this.stopKeepAlive();
         this.handler.onClose();
       });
 
       this.socket.on('error', (error: Error) => {
+        this.connected = false;
         this.stopKeepAlive();
         this.handler.onError(error.message);
       });
     } catch (e: any) {
+      this.connected = false;
       this.handler.onError(e.message ?? 'Connection failed');
     }
   }
@@ -171,7 +176,7 @@ export class TelnetService {
         this.sendCommand(WILL, opt);
       } else if (opt === OPT_NAWS) {
         this.sendCommand(WILL, opt);
-        this.socket.write(Buffer.from([IAC, SB, OPT_NAWS, 0, 80, 0, 24, IAC, SE]));
+        this.writeToSocket(Buffer.from([IAC, SB, OPT_NAWS, 0, 80, 0, 24, IAC, SE]));
       } else if (opt === OPT_GMCP) {
         this.sendCommand(WILL, opt);
       } else {
@@ -210,17 +215,15 @@ export class TelnetService {
   }
 
   sendGMCP(module: string, data: any): void {
-    if (!this.socket) return;
     const jsonStr = typeof data === 'string' ? data : JSON.stringify(data);
     const message = `${module} ${jsonStr}`;
     this.sendGMCPRaw(message);
   }
 
   sendGMCPRaw(message: string): void {
-    if (!this.socket) return;
     const msgBytes = Array.from(Buffer.from(message, 'utf8'));
     const packet = [IAC, SB, OPT_GMCP, ...msgBytes, IAC, SE];
-    this.socket.write(Buffer.from(packet));
+    this.writeToSocket(Buffer.from(packet));
   }
 
   private sendCommand(cmd: number, opt: number): void {
@@ -235,8 +238,12 @@ export class TelnetService {
   }
 
   private writeToSocket(buffer: Buffer): void {
-    if (this.socket) {
+    if (!this.connected || !this.socket) return;
+    try {
       this.socket.write(buffer);
+    } catch (e: any) {
+      console.warn('[TelnetService] write failed:', e?.message);
+      this.connected = false;
     }
   }
 
@@ -244,6 +251,7 @@ export class TelnetService {
     this.flushBuffer();
     this.cancelBufferTimeout();
     this.stopKeepAlive();
+    this.connected = false;
     if (this.socket) {
       try {
         this.socket.removeAllListeners();
@@ -256,12 +264,7 @@ export class TelnetService {
   private startKeepAlive(): void {
     this.stopKeepAlive();
     this.keepAliveTimer = setInterval(() => {
-      if (!this.socket) return;
-      try {
-        this.socket.write(Buffer.from([IAC, NOP]));
-      } catch (e) {
-        console.warn('[TelnetService] keep-alive write failed', e);
-      }
+      this.writeToSocket(Buffer.from([IAC, NOP]));
     }, KEEPALIVE_INTERVAL_MS);
   }
 
@@ -321,6 +324,6 @@ export class TelnetService {
   }
 
   get isConnected(): boolean {
-    return this.socket !== null;
+    return this.connected;
   }
 }
