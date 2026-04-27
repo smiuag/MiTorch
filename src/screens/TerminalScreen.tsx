@@ -129,7 +129,6 @@ export function TerminalScreen({ route, navigation }: Props) {
   const walkStepRef = useRef(0);
   const walkActiveRef = useRef(false);
   const pendingStealthSearchRef = useRef(false);
-  const isAtBottomRef = useRef(true);
   const flatListRef = useRef<FlatList<MudLine>>(null);
   const lastLineBlankRef = useRef(false);
   const recentLinesRef = useRef<string[]>([]);
@@ -160,8 +159,6 @@ export function TerminalScreen({ route, navigation }: Props) {
   const scrollVelocityRef = useRef(0);
   const scrollMomentumRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const currentScrollOffsetRef = useRef(0);
-  const isProgrammaticScrollRef = useRef(false);
-  const programmaticScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const isMountedRef = useRef(true);
   const inWhoBlockRef = useRef(false);
@@ -1305,56 +1302,30 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
   };
 
+  // FlatList is rendered with `inverted` and the data reversed: newest line at
+  // index 0, oldest at the end. The `scaleY(-1)` that `inverted` applies then
+  // places newest at the visual bottom. Offset 0 = newest visible; offset grows
+  // as the user scrolls up to see older history. New lines prepend to data[0]
+  // automatically, so when the user is at offset 0 they stay pinned to the
+  // latest message — no programmatic scroll needed.
+  const reversedLines = useMemo(() => [...lines].reverse(), [lines]);
+
   const handleFlatListScroll = (event: any) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const { contentOffset } = event.nativeEvent;
     currentScrollOffsetRef.current = contentOffset.y;
-    // Ignore at-bottom recomputation while a programmatic scroll is in flight;
-    // intermediate animation frames would otherwise flip isAtBottomRef to false.
-    if (isProgrammaticScrollRef.current) return;
-    const isAtEnd = contentOffset.y >= contentSize.height - layoutMeasurement.height - 50;
-    isAtBottomRef.current = isAtEnd;
+    const isAtEnd = contentOffset.y <= 50;
     setIsAtBottom(isAtEnd);
     setShowScrollToBottom(!isAtEnd && lines.length > 0);
   };
 
-  const runProgrammaticScroll = (animated: boolean) => {
-    if (!flatListRef.current) return;
-    isProgrammaticScrollRef.current = true;
-    flatListRef.current.scrollToEnd({ animated });
-    if (programmaticScrollTimeoutRef.current) {
-      clearTimeout(programmaticScrollTimeoutRef.current);
-      pendingTimeoutsRef.current.delete(programmaticScrollTimeoutRef.current);
-    }
-    const id = setTimeout(() => {
-      isProgrammaticScrollRef.current = false;
-      programmaticScrollTimeoutRef.current = null;
-      pendingTimeoutsRef.current.delete(id);
-    }, animated ? 400 : 50);
-    programmaticScrollTimeoutRef.current = id;
-    pendingTimeoutsRef.current.add(id);
-  };
-
-  // Fired by FlatList when the measured content size changes (new lines rendered,
-  // font reflows, etc.). Scroll to end only if the user hasn't scrolled up.
-  const handleTerminalContentSizeChange = useCallback(() => {
-    if (isAtBottomRef.current) runProgrammaticScroll(false);
-  }, []);
-
-  // Fired when the FlatList viewport itself changes size (orientation flip,
-  // keyboard show/hide, split-pane resize). Same policy: re-pin to bottom.
-  const handleTerminalLayout = useCallback(() => {
-    if (isAtBottomRef.current) runProgrammaticScroll(false);
-  }, []);
-
   const handleScrollToBottom = () => {
-    isAtBottomRef.current = true;
     setIsAtBottom(true);
     setShowScrollToBottom(false);
-    runProgrammaticScroll(true);
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
   };
 
   const handleScrollToTop = () => {
-    flatListRef.current?.scrollToIndex({ index: 0, animated: true });
+    flatListRef.current?.scrollToEnd({ animated: true });
   };
 
   // Word under cursor for the nick autocomplete.
@@ -1500,11 +1471,13 @@ export function TerminalScreen({ route, navigation }: Props) {
       if (uiMode !== 'completo') return;
       const isSlowVertical = Math.abs(gs.dy) > Math.abs(gs.dx) && Math.abs(gs.dy) > 10;
       if (isSlowVertical && Math.abs(gs.vy) < 0.5) {
+        // FlatList is inverted: dragging finger down (gs.dy > 0) reveals older
+        // content, which in inverted coords means INCREASING the offset.
         flatListRef.current?.scrollToOffset({
-          offset: scrollStartRef.current.offset - gs.dy,
+          offset: scrollStartRef.current.offset + gs.dy,
           animated: false,
         });
-        scrollVelocityRef.current = -gs.vy * 50;
+        scrollVelocityRef.current = gs.vy * 50;
       }
     },
     onPanResponderRelease: (evt, gs) => {
@@ -1642,7 +1615,8 @@ export function TerminalScreen({ route, navigation }: Props) {
         >
           <FlatList
             ref={flatListRef}
-            data={lines}
+            data={reversedLines}
+            inverted
             keyExtractor={item => String(item.id)}
             renderItem={({ item }) => {
               const isSelected =
@@ -1664,8 +1638,6 @@ export function TerminalScreen({ route, navigation }: Props) {
             scrollEventThrottle={16}
             onScroll={handleFlatListScroll}
             onScrollEndDrag={handleFlatListScroll}
-            onContentSizeChange={handleTerminalContentSizeChange}
-            onLayout={handleTerminalLayout}
             style={styles.flatList}
             accessible={true}
             accessibilityLabel={`Terminal con ${lines.length} líneas`}
@@ -2038,7 +2010,8 @@ export function TerminalScreen({ route, navigation }: Props) {
           >
             <FlatList
               ref={flatListRef}
-              data={lines}
+              data={reversedLines}
+              inverted
               keyExtractor={item => String(item.id)}
               renderItem={({ item }) => (
                 <View style={styles.lineContainer} key={item.id}>
@@ -2049,8 +2022,6 @@ export function TerminalScreen({ route, navigation }: Props) {
               scrollEventThrottle={16}
               onScroll={handleFlatListScroll}
               onScrollEndDrag={handleFlatListScroll}
-              onContentSizeChange={handleTerminalContentSizeChange}
-              onLayout={handleTerminalLayout}
               style={styles.flatList}
               accessible={true}
               accessibilityLabel={`Terminal con ${lines.length} líneas`}
