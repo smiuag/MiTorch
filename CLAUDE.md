@@ -613,6 +613,36 @@ Sistema opcional (off por defecto) para capturar la actividad del terminal y exp
 
 Sistema declarativo de reglas que interceptan líneas entrantes del MUD y permiten silenciarlas (gag), modificarlas (replace, color), o disparar efectos (sonido, comando, notificación). Los triggers se organizan en **plantillas** (grupos) que se asignan a uno o varios servidores y se reutilizan entre ellos.
 
+### Estado actual
+
+HECHO: motor (`src/services/triggerEngine.ts`) + storage de plantillas globales (`src/storage/triggerStorage.ts`) con seed de plantilla por defecto "Avisos básicos" + integración en pipeline de líneas (`TerminalScreen.processingAndAddLine`).
+
+HECHO: 7 acciones disponibles — `gag`, `color`, `replace`, `play_sound` (built-in), `send`, `notify`, `floating`. La acción `floating` se añadió como nuevo tipo durante la implementación; no estaba en el plan original de Fase 1.
+
+HECHO: editor visual de patrones en cajas (`TriggerPatternBuilder`) con anclas tap-toggle al inicio/fin, picker de tipo en `+`, edición inline de cajas de texto, auto-color y auto-label de capturas. Además modo experto regex como escape hatch (toggle en el header del editor).
+
+HECHO: editor visual de campos de texto de acciones (`TriggerActionTextBuilder`) con chips de captura reusables, mismos colores que en el patrón.
+
+HECHO: pantallas `TriggersScreen` (lista de plantillas) y `TriggerEditorScreen` (contenido de una plantilla + asignación a servers). Entrada desde Settings → "Triggers" → "Abrir".
+
+HECHO: sistema de mensajes flotantes (`FloatingMessagesContext` + `FloatingMessages` overlay en TerminalScreen). Los mensajes se anuncian SIEMPRE vía `AccessibilityInfo.announceForAccessibility` para usuarios de TalkBack. Los antiguos `locateFeedback` y `statFeedback` (overlay individual de "Localizado", "Vida: X/Y", etc.) se migraron a este sistema.
+
+HECHO: refactor de notificaciones — eliminado el sistema hardcoded (BONK, mensaje privado, bloqueo terminado en `notificationPatterns.json`) en favor de triggers configurables. Ahora `fireNotification` solo dispara si el toggle global "Usar notificaciones" está ON Y la app no está en primer plano.
+
+DESCARTADO: sistema previo de "modos de coincidencia" (contiene texto / empieza por / termina con / línea exacta / regex avanzada) — fue una iteración intermedia entre regex pura y cajas. Reemplazado por las cajas porque el usuario lo encontró más intuitivo.
+
+DESCARTADO: notificaciones hardcoded del sistema viejo. Razón: redundante con los triggers user-defined.
+
+PENDIENTE (Fase 2): subir sonidos custom desde el móvil para usar en `play_sound`. Self-contained, ~medio día.
+
+PENDIENTE (Fase 3): variables del sistema. Bloqueada por dos decisiones que dependen del usuario — lista exacta de variables a trackear y formato del prompt del MUD a parsear (ver "Decisiones pendientes" más abajo).
+
+PENDIENTE (Fase 4): export/import de plantillas, drag-reorder, packs predefinidos.
+
+PENDIENTE (mejoras de accesibilidad): defaultear a modo experto cuando `uiMode === 'blind'` (las cajas son inherentemente visuales y mucho menos navegables con TalkBack que un campo de regex de texto plano), y añadir un resumen narrado del patrón debajo del editor. ~1 hora, alto impacto para invidentes.
+
+PENDIENTE: más triggers de prueba en la plantilla por defecto. El usuario los irá pidiendo conforme vea cosas que quiera silenciar/avisar en el MUD.
+
 Se descartó explícitamente Lua / scripting dinámico para v1. La motivación: cubrir el ~90% de los casos reales (filtros, alarmas, recoloreo, sonidos por keyword) sin meter un runtime de scripting con sus dolores de bucles infinitos, sandbox, y errores de usuario. Si en uso real aparecen patrones que requieran lógica condicional compleja o máquinas de estado, se evaluará entonces añadir `fengari` reusando el motor de matching declarativo.
 
 ### Decisiones de diseño aprobadas
