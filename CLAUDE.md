@@ -612,20 +612,6 @@ Sistema opcional (off por defecto) para capturar la actividad del terminal y exp
 ## Temas Pendientes
 
 - **Revisar botones de modo blind de consultar vida, energía...**
-- **`Error: Socket is closed` al enviar comando tras desconexión silenciosa**
-
-  Sentry está reportando crashes con stack `TelnetService#writeToSocket → TelnetService#send → addWalkStepListener` (`src/services/telnetService.ts:239`, `src/screens/TerminalScreen.tsx:193`). Pasa cuando el socket se cerró por la red pero el `walk` nativo sigue disparando ticks, o el usuario pulsa un botón antes de que se detecte la caída.
-
-  **Fix mínimo (no crash):** envolver `socket.write()` en try/catch dentro de `writeToSocket()` y de `startKeepAlive()` — ahora mismo el `if (this.socket)` no protege contra que el socket esté en estado CLOSED pero aún no nulled. Sin esto, cualquier `send` post-desconexión crashea.
-
-  **Fix completo (auto-reconnect transparente):** si al hacer `send` el socket no está conectado, intentar reconectar con el último `host:port` guardado y reenviar el comando. **No reenviar user/password** — solo restablecer el TCP. Lo que se haya perdido durante el corte no se recupera. Idea de implementación:
-    - `TelnetService` guarda el último `{host, port}` en `connect()`.
-    - Nuevo flag `reconnecting` para evitar reentradas.
-    - `send()` detecta socket caído → llama `reconnect()` (no `connect()` con credenciales) → on success reenvía el comando.
-    - Backoff sencillo (1 reintento, no spam) y notificar al usuario si falla con un toast/línea en el terminal.
-
-  Archivos a tocar: `src/services/telnetService.ts` (writeToSocket, send, nuevo reconnect), posiblemente `src/screens/TerminalScreen.tsx` (manejo del estado de reconexión visible).
-
 - **Sistema de triggers / scripting (capa entre el stream del MUD y el render)**
 
   Capa que intercepta cada línea entrante y permite filtrarla (gag), sustituirla (replace), capturar grupos en variables, disparar sonidos, mandar comandos, lanzar notificaciones. También aliases sobre el input del usuario. Patrón estándar de MUSHclient/Mudlet/CMUD.
@@ -667,3 +653,13 @@ Tareas analizadas y descartadas conscientemente: hay diseño hecho, pero no se i
 - Cuidado con el rerender: un único contexto re-renderiza todos los consumidores en cada cambio. Con líneas llegando constantemente del MUD esto puede tirar performance — habría que partir en varios contextos (lines / vitals / map) o usar selectors (p. ej. `use-context-selector`).
 
 **Coste estimado:** alto. `TerminalScreen.tsx` es el archivo más grande del proyecto y mucho de su estado se cruza entre handlers de gestos, blind mode y triggers de sonido/notificación.
+
+### Auto-reconnect transparente del telnet
+
+**Problema que resolvería:** cuando el socket TCP muere (avión, cambio WiFi→4G, sleep largo) los comandos enviados después se pierden silenciosamente y el usuario tiene que pulsar Conectar manualmente para volver al MUD.
+
+**Por qué no se hace ahora:** se discutió y se decidió no implementarlo (2026-04-27). El crash que reportaba Sentry (`Error: Socket is closed`) ya está cubierto por el commit `dcc2f03` con try/catch en `writeToSocket` + flag `connected`. Lo que queda fuera de la app son los comandos perdidos durante el corte y la reconexión, que requieren interacción del usuario.
+
+**Por qué descartamos los planes A/B/C que se propusieron:** todos requerían reenviar credenciales automáticamente al reconectar (no hay forma de decirle al MUD "soy yo" sin login porque Telnet/MUD no tiene sesiones server-side persistentes), y eso contradecía el requerimiento original de "no relanzar user/pass". El comportamiento de "se reconecta sin login y sigues jugando" que se ve en otros clientes es en realidad o (a) TCP que sobrevivió al corte sin que la app se enterara — esto YA funciona con el código actual — o (b) auto-login invisible que pasa en <500ms.
+
+**Síntoma para retomar:** quejas de usuarios sobre tener que pulsar Conectar tras cortes breves, o métricas de Sentry/uso que muestren muchas reconexiones manuales. En ese caso, retomar la opción "Fase 2 con reconexión manual" descrita en el chat del 2026-04-27: banner persistente "Conexión perdida. Tap para reconectar", cola de comandos cap=20 que drena tras login confirmado, sin reintentos automáticos en background.
