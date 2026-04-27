@@ -39,6 +39,7 @@ export type RootStackParamList = {
   Settings: undefined;
   Triggers: undefined;
   TriggerEditor: { packId: string };
+  MySounds: undefined;
 };
 
 export type TriggerType =

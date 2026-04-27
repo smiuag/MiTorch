@@ -13,7 +13,6 @@ export interface AppSettings {
   gesturesEnabled: boolean;
   gestures: GestureConfig[];
   soundsEnabled: boolean;
-  enabledSounds: Record<string, boolean>;
   keepAwakeEnabled: boolean;
   backgroundConnectionEnabled: boolean;
   notificationsEnabled: boolean;
@@ -52,10 +51,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   soundsEnabled: false,
   keepAwakeEnabled: true,
   backgroundConnectionEnabled: true,
-  enabledSounds: Object.keys(AVAILABLE_SOUNDS).reduce((acc, sound) => ({
-    ...acc,
-    [sound]: false,
-  }), {}),
   notificationsEnabled: false,
   logsEnabled: false,
   logsMaxLines: 20000,
@@ -84,14 +79,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 export async function loadSettings(): Promise<AppSettings> {
   const json = await AsyncStorage.getItem(SETTINGS_KEY);
-  let settings: AppSettings;
-  if (!json) {
-    settings = { ...DEFAULT_SETTINGS };
-  } else {
-    settings = { ...DEFAULT_SETTINGS, ...JSON.parse(json) };
-  }
-  // Rebuild sounds to merge in any new defaults
-  return rebuildSounds(settings);
+  if (!json) return { ...DEFAULT_SETTINGS };
+  // Strip the obsolete enabledSounds field (replaced by per-trigger.enabled in
+  // the seeded "Sonidos del MUD" pack) so it doesn't linger in saved state.
+  const parsed = JSON.parse(json) as Partial<AppSettings> & { enabledSounds?: unknown };
+  delete parsed.enabledSounds;
+  return { ...DEFAULT_SETTINGS, ...parsed };
 }
 
 export function rebuildGestures(settings: AppSettings): AppSettings {
@@ -106,11 +99,6 @@ export function rebuildGestures(settings: AppSettings): AppSettings {
   });
 
   return { ...settings, gestures: rebuilt };
-}
-
-export function rebuildSounds(settings: AppSettings): AppSettings {
-  const merged = { ...DEFAULT_SETTINGS.enabledSounds, ...settings.enabledSounds };
-  return { ...settings, enabledSounds: merged };
 }
 
 export async function saveSettings(settings: AppSettings): Promise<void> {

@@ -10,6 +10,7 @@ import { TerminalScreen } from './src/screens/TerminalScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { TriggersScreen } from './src/screens/TriggersScreen';
 import { TriggerEditorScreen } from './src/screens/TriggerEditorScreen';
+import { MySoundsScreen } from './src/screens/MySoundsScreen';
 import { SoundProvider } from './src/contexts/SoundContext';
 import { FloatingMessagesProvider } from './src/contexts/FloatingMessagesContext';
 
@@ -78,6 +79,11 @@ function App() {
             name="TriggerEditor"
             component={TriggerEditorScreen}
             options={{ headerShown: false, title: 'Trigger Editor' }}
+          />
+          <Stack.Screen
+            name="MySounds"
+            component={MySoundsScreen}
+            options={{ headerShown: false, title: 'Mis sonidos' }}
           />
         </Stack.Navigator>
       </NavigationContainer>

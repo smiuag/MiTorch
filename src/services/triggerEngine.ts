@@ -1,4 +1,4 @@
-import { AnsiSpan, FloatingMessageLevel, Trigger, TriggerAction } from '../types';
+import { AnsiSpan, FloatingMessageLevel, PatternBlock, Trigger, TriggerAction } from '../types';
 
 export type TriggerSideEffect =
   | { type: 'play_sound'; file: string }
@@ -15,6 +15,27 @@ export interface ProcessResult {
 interface CompiledTrigger {
   trigger: Trigger;
   re: RegExp | null;
+  // Literal substring that MUST appear in the line for this trigger's regex
+  // to possibly match. Pre-computed to fast-discard triggers via indexOf
+  // before the more expensive regex.exec(). Already lowercased when
+  // caseInsensitive=true so we don't lowercase the needle on the hot path.
+  // null = no discriminator available (expert-mode regex, all-capture pattern,
+  // or only sub-2-char literals) — falls through to regex.exec().
+  discriminator: string | null;
+  caseInsensitive: boolean;
+}
+
+const MIN_DISCRIMINATOR_LEN = 2;
+
+export function extractDiscriminator(blocks: PatternBlock[] | undefined): string | null {
+  if (!blocks || blocks.length === 0) return null;
+  let best: string | null = null;
+  for (const b of blocks) {
+    if (b.kind !== 'text') continue;
+    if (b.text.length < MIN_DISCRIMINATOR_LEN) continue;
+    if (best === null || b.text.length > best.length) best = b.text;
+  }
+  return best;
 }
 
 class TriggerEngine {
@@ -28,7 +49,12 @@ class TriggerEngine {
       } catch (e) {
         console.warn(`[triggerEngine] invalid regex in trigger "${t.name}": ${t.source.pattern}`);
       }
-      return { trigger: t, re };
+      const caseInsensitive = (t.source.flags || '').includes('i');
+      const rawDiscriminator = extractDiscriminator(t.source.blocks);
+      const discriminator = rawDiscriminator
+        ? (caseInsensitive ? rawDiscriminator.toLowerCase() : rawDiscriminator)
+        : null;
+      return { trigger: t, re, discriminator, caseInsensitive };
     });
   }
 
@@ -41,8 +67,18 @@ class TriggerEngine {
       return { gagged: false, spans, sideEffects: [] };
     }
 
+    // Lazy-computed lowercase haystack — only created if at least one
+    // case-insensitive trigger with a discriminator needs it.
+    let lowerText: string | null = null;
+
     for (const c of this.compiled) {
       if (!c.re) continue;
+      if (c.discriminator) {
+        const haystack = c.caseInsensitive
+          ? (lowerText ??= plainText.toLowerCase())
+          : plainText;
+        if (haystack.indexOf(c.discriminator) < 0) continue;
+      }
       c.re.lastIndex = 0;
       const match = c.re.exec(plainText);
       if (!match) continue;

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   Modal,
   View,
@@ -12,11 +12,28 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as DocumentPicker from 'expo-document-picker';
 import { ActionTextBlock, AnchorMode, PatternBlock, Trigger, TriggerAction, TriggerType } from '../types';
 import { AVAILABLE_SOUNDS } from '../storage/settingsStorage';
+import { CustomSound, addCustomSound, loadCustomSounds } from '../storage/customSoundsStorage';
 import { TriggerPatternBuilder } from './TriggerPatternBuilder';
 import { TriggerActionTextBuilder } from './TriggerActionTextBuilder';
 import { captureColors, captureLabels, compileActionText, compilePattern } from '../utils/triggerCompiler';
+import { useSounds } from '../contexts/SoundContext';
+
+const BUILTIN_PREFIX = 'builtin:';
+const CUSTOM_PREFIX = 'custom:';
+
+export function getSoundLabel(soundKey: string, customSounds: CustomSound[]): string {
+  if (!soundKey) return '';
+  if (soundKey.startsWith(CUSTOM_PREFIX)) {
+    const filename = soundKey.slice(CUSTOM_PREFIX.length);
+    const cs = customSounds.find((s) => s.filename === filename);
+    return cs ? cs.name : `(falta) ${filename}`;
+  }
+  const path = soundKey.startsWith(BUILTIN_PREFIX) ? soundKey.slice(BUILTIN_PREFIX.length) : soundKey;
+  return (AVAILABLE_SOUNDS as Record<string, string>)[path] || path;
+}
 
 const ACTION_TYPES: Array<{ key: TriggerAction['type']; label: string }> = [
   { key: 'gag', label: 'Silenciar línea (gag)' },
@@ -62,6 +79,18 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
   const [testInput, setTestInput] = useState('');
   const [actionPickerVisible, setActionPickerVisible] = useState(false);
   const [soundPickerIndex, setSoundPickerIndex] = useState<number | null>(null);
+  const [soundPickerTab, setSoundPickerTab] = useState<'builtin' | 'custom'>('builtin');
+  const [customSounds, setCustomSounds] = useState<CustomSound[]>([]);
+  const { playSound } = useSounds();
+
+  const refreshCustomSounds = useCallback(async () => {
+    try {
+      const list = await loadCustomSounds();
+      setCustomSounds(list);
+    } catch (e) {
+      console.warn('[TriggerEditModal] loadCustomSounds error:', e);
+    }
+  }, []);
 
   React.useEffect(() => {
     if (visible) {
@@ -75,8 +104,34 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
       setCaseInsensitive((initialTrigger.source.flags || '').includes('i'));
       setActions(initialTrigger.actions);
       setTestInput('');
+      refreshCustomSounds();
     }
-  }, [visible, initialTrigger]);
+  }, [visible, initialTrigger, refreshCustomSounds]);
+
+  const handleUploadCustomSound = useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'audio/*',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      const filename = asset.name || `sonido-${Date.now()}.mp3`;
+      await addCustomSound(asset.uri, filename);
+      await refreshCustomSounds();
+    } catch (e: any) {
+      Alert.alert('No se pudo añadir el sonido', e?.message ?? String(e));
+    }
+  }, [refreshCustomSounds]);
+
+  const handlePickSoundForAction = (idx: number, soundKey: string) => {
+    const a = actions[idx];
+    if (a.type === 'play_sound') {
+      handleUpdateAction(idx, { ...a, file: soundKey });
+    }
+    setSoundPickerIndex(null);
+  };
 
   const compiled = useMemo(() => {
     const flags = caseInsensitive ? 'i' : '';
@@ -340,9 +395,13 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
               action={action}
               expertMode={expertMode}
               patternBlocks={blocks}
+              customSounds={customSounds}
               onChange={(a) => handleUpdateAction(idx, a)}
               onRemove={() => handleRemoveAction(idx)}
-              onPickSound={() => setSoundPickerIndex(idx)}
+              onPickSound={() => {
+                setSoundPickerTab(action.type === 'play_sound' && action.file?.startsWith(CUSTOM_PREFIX) ? 'custom' : 'builtin');
+                setSoundPickerIndex(idx);
+              }}
             />
           ))}
 
@@ -433,30 +492,119 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
             activeOpacity={1}
             onPress={() => setSoundPickerIndex(null)}
           >
-            <View style={[styles.pickerBox, { maxHeight: '80%' }]}>
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={() => {}}
+              style={[styles.pickerBox, { maxHeight: '85%' }]}
+            >
               <Text style={styles.pickerTitle}>Elegir sonido</Text>
-              <FlatList
-                data={Object.entries(AVAILABLE_SOUNDS)}
-                keyExtractor={([path]) => path}
-                renderItem={({ item: [path, label] }) => (
+              <View style={styles.tabRow}>
+                <TouchableOpacity
+                  style={[styles.tabBtn, soundPickerTab === 'builtin' && styles.tabBtnActive]}
+                  onPress={() => setSoundPickerTab('builtin')}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: soundPickerTab === 'builtin' }}
+                >
+                  <Text style={[styles.tabBtnText, soundPickerTab === 'builtin' && styles.tabBtnTextActive]}>
+                    Built-in
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.tabBtn, soundPickerTab === 'custom' && styles.tabBtnActive]}
+                  onPress={() => setSoundPickerTab('custom')}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: soundPickerTab === 'custom' }}
+                >
+                  <Text style={[styles.tabBtnText, soundPickerTab === 'custom' && styles.tabBtnTextActive]}>
+                    Mis sonidos ({customSounds.length})
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {soundPickerTab === 'builtin' ? (
+                <FlatList
+                  data={Object.entries(AVAILABLE_SOUNDS)}
+                  keyExtractor={([path]) => path}
+                  renderItem={({ item: [path, label] }) => {
+                    const key = `${BUILTIN_PREFIX}${path}`;
+                    return (
+                      <View style={styles.soundPickerRow}>
+                        <TouchableOpacity
+                          style={styles.previewBtn}
+                          onPress={() => playSound(key)}
+                          accessibilityLabel={`Probar ${label}`}
+                          accessibilityRole="button"
+                        >
+                          <Text style={styles.previewBtnText}>▶</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.soundPickerItem}
+                          onPress={() => {
+                            if (soundPickerIndex !== null) {
+                              handlePickSoundForAction(soundPickerIndex, key);
+                            }
+                          }}
+                          accessibilityLabel={`Usar ${label}`}
+                          accessibilityRole="button"
+                        >
+                          <Text style={styles.pickerItemText}>{label}</Text>
+                          <Text style={styles.pickerItemSubtext}>{path}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  }}
+                />
+              ) : (
+                <>
                   <TouchableOpacity
-                    style={styles.pickerItem}
-                    onPress={() => {
-                      if (soundPickerIndex !== null) {
-                        const a = actions[soundPickerIndex];
-                        if (a.type === 'play_sound') {
-                          handleUpdateAction(soundPickerIndex, { ...a, file: path });
-                        }
-                      }
-                      setSoundPickerIndex(null);
-                    }}
+                    style={styles.uploadBtn}
+                    onPress={handleUploadCustomSound}
+                    accessibilityRole="button"
+                    accessibilityLabel="Subir sonido desde el móvil"
                   >
-                    <Text style={styles.pickerItemText}>{label}</Text>
-                    <Text style={styles.pickerItemSubtext}>{path}</Text>
+                    <Text style={styles.uploadBtnText}>+ Subir sonido del móvil</Text>
                   </TouchableOpacity>
-                )}
-              />
-            </View>
+                  {customSounds.length === 0 ? (
+                    <Text style={styles.emptyText}>
+                      Aún no has subido sonidos. Pulsa "+ Subir sonido del móvil" para añadir uno (wav, mp3, ogg, m4a, aac o flac).
+                    </Text>
+                  ) : (
+                    <FlatList
+                      data={customSounds}
+                      keyExtractor={(s) => s.uuid}
+                      renderItem={({ item }) => {
+                        const key = `${CUSTOM_PREFIX}${item.filename}`;
+                        return (
+                          <View style={styles.soundPickerRow}>
+                            <TouchableOpacity
+                              style={styles.previewBtn}
+                              onPress={() => playSound(key)}
+                              accessibilityLabel={`Probar ${item.name}`}
+                              accessibilityRole="button"
+                            >
+                              <Text style={styles.previewBtnText}>▶</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.soundPickerItem}
+                              onPress={() => {
+                                if (soundPickerIndex !== null) {
+                                  handlePickSoundForAction(soundPickerIndex, key);
+                                }
+                              }}
+                              accessibilityLabel={`Usar ${item.name}`}
+                              accessibilityRole="button"
+                            >
+                              <Text style={styles.pickerItemText}>{item.name}</Text>
+                              <Text style={styles.pickerItemSubtext}>.{item.ext}</Text>
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      }}
+                    />
+                  )}
+                </>
+              )}
+            </TouchableOpacity>
           </TouchableOpacity>
         </Modal>
       </SafeAreaView>
@@ -468,12 +616,13 @@ interface ActionEditorProps {
   action: TriggerAction;
   expertMode: boolean;
   patternBlocks: PatternBlock[];
+  customSounds: CustomSound[];
   onChange: (a: TriggerAction) => void;
   onRemove: () => void;
   onPickSound: () => void;
 }
 
-function ActionEditor({ action, expertMode, patternBlocks, onChange, onRemove, onPickSound }: ActionEditorProps) {
+function ActionEditor({ action, expertMode, patternBlocks, customSounds, onChange, onRemove, onPickSound }: ActionEditorProps) {
   const typeLabel = ACTION_TYPES.find((t) => t.key === action.type)?.label || action.type;
   return (
     <View style={styles.actionBox}>
@@ -552,9 +701,7 @@ function ActionEditor({ action, expertMode, patternBlocks, onChange, onRemove, o
           <Text style={styles.smallLabel}>Sonido</Text>
           <TouchableOpacity style={styles.soundBtn} onPress={onPickSound}>
             <Text style={styles.soundBtnText}>
-              {action.file
-                ? (AVAILABLE_SOUNDS as Record<string, string>)[action.file] || action.file
-                : 'Elegir sonido…'}
+              {action.file ? getSoundLabel(action.file, customSounds) : 'Elegir sonido…'}
             </Text>
           </TouchableOpacity>
         </>
@@ -913,6 +1060,51 @@ const styles = StyleSheet.create({
   pickerItemSelected: { backgroundColor: '#0a3a0a' },
   pickerItemText: { color: '#fff', fontSize: 14, fontFamily: 'monospace' },
   pickerItemSubtext: { color: '#666', fontSize: 11, fontFamily: 'monospace', marginTop: 2 },
+  tabRow: {
+    flexDirection: 'row',
+    marginBottom: 10,
+    borderRadius: 6,
+    backgroundColor: '#0d0d0d',
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    overflow: 'hidden',
+  },
+  tabBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  tabBtnActive: { backgroundColor: '#0a3a0a' },
+  tabBtnText: { color: '#888', fontSize: 12, fontFamily: 'monospace', fontWeight: 'bold' },
+  tabBtnTextActive: { color: '#0c0' },
+  soundPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a2a2a',
+  },
+  previewBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRightWidth: 1,
+    borderRightColor: '#2a2a2a',
+  },
+  previewBtnText: { color: '#0c0', fontSize: 16, fontFamily: 'monospace' },
+  soundPickerItem: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+  },
+  uploadBtn: {
+    backgroundColor: '#0a3a0a',
+    borderWidth: 1,
+    borderColor: '#0c0',
+    borderRadius: 6,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  uploadBtnText: { color: '#0c0', fontSize: 13, fontFamily: 'monospace', fontWeight: 'bold' },
   expertToggle: {
     paddingHorizontal: 10,
     paddingVertical: 6,

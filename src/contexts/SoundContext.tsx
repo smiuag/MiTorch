@@ -1,12 +1,10 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { Audio } from 'expo-av';
-import soundPatternsData from '../config/soundPatterns.json';
 import { loadSettings } from '../storage/settingsStorage';
+import { getCustomSoundUri } from '../storage/customSoundsStorage';
 
-interface SoundPattern {
-  regex: string;
-  sound: string;
-}
+const CUSTOM_PREFIX = 'custom:';
+const BUILTIN_PREFIX = 'builtin:';
 
 const soundModules = {
   'bloqueos/bloqueo-termina.wav': require('../../assets/sounds/bloqueos/bloqueo-termina.wav'),
@@ -32,10 +30,8 @@ const soundModules = {
 
 interface SoundContextType {
   soundCache: Map<string, Audio.Sound>;
-  patterns: SoundPattern[];
   isReady: boolean;
-  playSound: (soundPath: string) => Promise<void>;
-  detectSound: (text: string) => string | undefined;
+  playSound: (soundKey: string) => Promise<void>;
   prepareSounds: () => Promise<void>;
 }
 
@@ -43,7 +39,6 @@ const SoundContext = createContext<SoundContextType | undefined>(undefined);
 
 export function SoundProvider({ children }: { children: React.ReactNode }) {
   const [soundCache, setSoundCache] = useState<Map<string, Audio.Sound>>(new Map());
-  const [patterns, setPatterns] = useState<SoundPattern[]>([]);
   const [isReady, setIsReady] = useState(false);
   const soundCacheRef = useRef<Map<string, Audio.Sound>>(new Map());
   const isReadyRef = useRef(false);
@@ -95,8 +90,6 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    setPatterns((soundPatternsData as any).patterns || []);
-
     (async () => {
       try {
         const settings = await loadSettings();
@@ -109,13 +102,32 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
     })();
   }, [prepareSounds]);
 
-  const playSound = useCallback(async (soundPath: string) => {
+  const playSound = useCallback(async (soundKey: string) => {
     try {
-      if (!soundPath || !soundCacheRef.current.has(soundPath)) {
+      if (!soundKey) return;
+
+      if (soundKey.startsWith(CUSTOM_PREFIX)) {
+        const filename = soundKey.slice(CUSTOM_PREFIX.length);
+        const uri = getCustomSoundUri(filename);
+        if (!uri) {
+          console.warn(`[SoundContext.playSound] Custom sound not found: ${filename}`);
+          return;
+        }
+        const { sound } = await Audio.Sound.createAsync({ uri });
+        await sound.playAsync();
+        setTimeout(() => sound.unloadAsync().catch(() => {}), 8000);
         return;
       }
 
-      const sound = soundCacheRef.current.get(soundPath)!;
+      const path = soundKey.startsWith(BUILTIN_PREFIX)
+        ? soundKey.slice(BUILTIN_PREFIX.length)
+        : soundKey;
+
+      if (!soundCacheRef.current.has(path)) {
+        return;
+      }
+
+      const sound = soundCacheRef.current.get(path)!;
       await sound.setPositionAsync(0);
       await sound.playAsync();
     } catch (e) {
@@ -123,25 +135,8 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const detectSound = (text: string): string | undefined => {
-    const cleanText = text.replace(/\x1b\[[0-9;]*m/g, '');
-
-    for (const pattern of patterns) {
-      try {
-        const regex = new RegExp(pattern.regex, 'i');
-        if (regex.test(cleanText)) {
-          return pattern.sound;
-        }
-      } catch (e) {
-        console.warn(`[SoundContext] Invalid regex: ${pattern.regex}`);
-      }
-    }
-
-    return undefined;
-  };
-
   return (
-    <SoundContext.Provider value={{ soundCache, patterns, isReady, playSound, detectSound, prepareSounds }}>
+    <SoundContext.Provider value={{ soundCache, isReady, playSound, prepareSounds }}>
       {children}
     </SoundContext.Provider>
   );

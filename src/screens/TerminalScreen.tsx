@@ -45,7 +45,6 @@ import { triggerEngine } from '../services/triggerEngine';
 import { blindModeService } from '../services/blindModeService';
 import { logService } from '../services/logService';
 import { playerStatsService } from '../services/playerStatsService';
-import { soundConfigService } from '../services/soundConfigService';
 import { useSounds } from '../contexts/SoundContext';
 import { useFloatingMessages } from '../contexts/FloatingMessagesContext';
 import { FloatingMessages } from '../components/FloatingMessages';
@@ -63,7 +62,7 @@ let lineIdCounter = 0;
 export function TerminalScreen({ route, navigation }: Props) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const { playSound, detectSound } = useSounds();
+  const { playSound } = useSounds();
   const { push: pushFloating } = useFloatingMessages();
   const { server: initialServer } = route.params;
 
@@ -236,7 +235,6 @@ export function TerminalScreen({ route, navigation }: Props) {
     useCallback(() => {
       (async () => {
         const settings = await loadSettings();
-        soundConfigService.setSettings(settings);
         if (settings.fontSize) {
           setFontSize(settings.fontSize);
           fontSizeRef.current = settings.fontSize;
@@ -468,8 +466,33 @@ export function TerminalScreen({ route, navigation }: Props) {
     if (/^\s*<[A-Z_]+>\s*$/.test(text)) return;
 
 
-    // Detect sound FIRST (before any filtering) so it works in all modes
-    const soundPath = detectSound(text);
+    // User-defined triggers run FIRST, on the raw line, so blind-filtered or
+    // blind-modified lines still fire sounds/notifications/commands. Captures
+    // and side effects are computed against the unmodified text the MUD sent.
+    const rawSpans = parseAnsi(text);
+    const triggerResult = triggerEngine.process(stripAnsi(text), rawSpans);
+    if (triggerResult.gagged) {
+      // Total suppression — drop side effects too. A user who wants the side
+      // effect AND the gag should split into two triggers.
+      return;
+    }
+
+    // Fire side effects unconditionally (works even when blind mode silences
+    // the line). Sound side effects respect the global silentMode toggle,
+    // which is mirrored from settings.soundsEnabled.
+    for (const fx of triggerResult.sideEffects) {
+      if (fx.type === 'play_sound') {
+        if (fx.file && !silentModeEnabledRef.current) playSoundRef.current(fx.file);
+      } else if (fx.type === 'send') {
+        if (fx.command) telnetRef.current?.send(fx.command);
+      } else if (fx.type === 'notify') {
+        if (notificationsEnabledRef.current && appStateRef.current !== 'active') {
+          fireNotification(fx.title || 'TorchZhyla', fx.message);
+        }
+      } else if (fx.type === 'floating') {
+        pushFloating(fx.message, fx.level);
+      }
+    }
 
     // Blind mode: Process with filters
     let displayText = text;
@@ -481,12 +504,8 @@ export function TerminalScreen({ route, navigation }: Props) {
 
     if (uiMode === 'blind') {
 
-      // Skip line if filter says to silence it
+      // Skip line if filter says to silence it (side effects already fired above)
       if (!result.shouldDisplay) {
-        // Even if not displaying, still check if we should play sound
-        if (soundPath && soundConfigService.shouldPlaySound(soundPath) && !silentModeEnabledRef.current) {
-          playSoundRef.current(soundPath);
-        }
         return;
       }
 
@@ -546,15 +565,11 @@ export function TerminalScreen({ route, navigation }: Props) {
       }
     }
 
-    const spans = parseAnsi(displayText);
-
-    // User-defined triggers: gag the line, mutate spans, or queue side effects.
-    const plainTextForTriggers = stripAnsi(displayText);
-    const triggerResult = triggerEngine.process(plainTextForTriggers, spans);
-    if (triggerResult.gagged) {
-      return;
-    }
-    const finalSpans = triggerResult.spans;
+    // Spans for display: prefer trigger-mutated spans (color action) when blind
+    // didn't modify the text. If blind rewrote the line, re-parse from the
+    // modified text (color mutations are dropped — acceptable since blind users
+    // don't read the screen).
+    const finalSpans = displayText === text ? triggerResult.spans : parseAnsi(displayText);
 
     const newLine: MudLine = { id: lineIdCounter++, spans: finalSpans };
     linesRef.current.push(newLine);
@@ -563,21 +578,6 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
     if (!deferSetState) {
       setLines([...linesRef.current]);
-    }
-
-    for (const fx of triggerResult.sideEffects) {
-      if (fx.type === 'play_sound') {
-        if (fx.file) playSoundRef.current(fx.file);
-      } else if (fx.type === 'send') {
-        if (fx.command) telnetRef.current?.send(fx.command);
-      } else if (fx.type === 'notify') {
-        // Only fire when notifications are globally enabled AND the app is not in foreground.
-        if (notificationsEnabledRef.current && appStateRef.current !== 'active') {
-          fireNotification(fx.title || 'TorchZhyla', fx.message);
-        }
-      } else if (fx.type === 'floating') {
-        pushFloating(fx.message, fx.level);
-      }
     }
 
     // Channel messages: always write to terminal, NEVER announce (even if silent mode is off).
@@ -589,11 +589,6 @@ export function TerminalScreen({ route, navigation }: Props) {
     // Non-channel messages: Announce filtered content in blind mode (only if silent mode is disabled)
     if (shouldAnnounce && uiMode === 'blind' && !silentModeEnabledRef.current) {
       blindModeService.announceMessage(announcementText, 'normal');
-    }
-
-    // Play sound if configured (independent of UI mode)
-    if (soundPath && soundConfigService.shouldPlaySound(soundPath) && !silentModeEnabledRef.current) {
-      playSoundRef.current(soundPath);
     }
 
     // Read all messages when silent mode is disabled (if not already announced by filters and not a channel)

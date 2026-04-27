@@ -4,7 +4,8 @@ import { requestNotificationPermission, openNotificationSettings } from '../serv
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, GestureConfig } from '../types';
-import { loadSettings, saveSettings, AppSettings, rebuildGestures, AVAILABLE_SOUNDS, rebuildSounds } from '../storage/settingsStorage';
+import { loadSettings, saveSettings, AppSettings, rebuildGestures } from '../storage/settingsStorage';
+import { enableSoundsPackForBlindMode } from '../storage/triggerStorage';
 import { DEFAULT_SETTINGS } from '../storage/settingsStorage';
 import { blindModeService } from '../services/blindModeService';
 import { logService, ExportRange, slugifyServerName } from '../services/logService';
@@ -22,11 +23,10 @@ type Props = {
 };
 
 export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFontSizeChange, onSoundToggle, onGesturesEnabledChange }: Props) {
-  const { playSound, prepareSounds } = useSounds();
+  const { prepareSounds } = useSounds();
   const [settings, setSettings] = useState<AppSettings>(() => ({ ...DEFAULT_SETTINGS }));
   const [encodingModalVisible, setEncodingModalVisible] = useState(false);
   const [gestureModalVisible, setGestureModalVisible] = useState(false);
-  const [soundModalVisible, setSoundModalVisible] = useState(false);
   const [exportRangeModalVisible, setExportRangeModalVisible] = useState(false);
 
   useEffect(() => {
@@ -40,7 +40,13 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
     // Rebuild gestures when switching modes
     if (key === 'uiMode') {
       updated = rebuildGestures(updated);
-      updated = rebuildSounds(updated);
+      // When switching to blind mode, auto-enable the seeded MUD sounds pack
+      // and assign it to every saved server (replicates legacy behavior).
+      if (value === 'blind') {
+        enableSoundsPackForBlindMode().catch((e) =>
+          console.warn('[Settings] enableSoundsPackForBlindMode failed:', e),
+        );
+      }
     }
 
     setSettings(updated);
@@ -299,33 +305,16 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Usar sonidos</Text>
             <Text style={styles.rowDesc}>
-              {settings.uiMode === 'blind'
-                ? 'Sonidos activados por defecto en modo blind'
-                : 'Activa sonidos para eventos del juego'}
+              Kill-switch global. Configura qué sonidos suenan en Triggers → "Sonidos del MUD".
             </Text>
           </View>
-          {settings.soundsEnabled && (
-            <TouchableOpacity
-              style={styles.configIconBtn}
-              onPress={() => setSoundModalVisible(true)}
-            >
-              <Text style={styles.configIcon}>✏️</Text>
-            </TouchableOpacity>
-          )}
           <Switch
             value={settings.soundsEnabled}
             onValueChange={(value) => {
-              const enabledSounds = Object.keys(settings.enabledSounds).reduce((acc, sound) => ({
-                ...acc,
-                [sound]: settings.uiMode === 'blind' ? value : false,
-              }), {});
-              const updated = { ...settings, soundsEnabled: value, enabledSounds };
+              const updated = { ...settings, soundsEnabled: value };
               setSettings(updated);
               saveSettings(updated);
-              if (value) {
-                prepareSounds();
-                setSoundModalVisible(true);
-              }
+              if (value) prepareSounds();
               if (sourceLocation === 'terminal' && onSoundToggle) {
                 onSoundToggle(value);
               }
@@ -528,6 +517,24 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             onPress={() => navigation.navigate('Triggers')}
             accessible={true}
             accessibilityLabel="Abrir plantillas de triggers"
+            accessibilityRole="button"
+          >
+            <Text style={styles.encodingBtnText}>Abrir</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Mis sonidos</Text>
+            <Text style={styles.rowDesc}>
+              Sube archivos de audio del móvil (wav, mp3, ogg, m4a, aac, flac) para usarlos en triggers de tipo "Reproducir sonido".
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.encodingBtn}
+            onPress={() => navigation.navigate('MySounds')}
+            accessible={true}
+            accessibilityLabel="Abrir mis sonidos personalizados"
             accessibilityRole="button"
           >
             <Text style={styles.encodingBtnText}>Abrir</Text>
@@ -789,67 +796,6 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
-
-      {/* Sounds Configuration Modal */}
-      <Modal
-        visible={soundModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setSoundModalVisible(false)}
-      >
-        <SafeAreaView style={styles.container}>
-          <View style={styles.header}>
-            <TouchableOpacity
-              onPress={() => setSoundModalVisible(false)}
-              style={styles.backBtn}
-            >
-              <Text style={styles.backText}>{'< Volver'}</Text>
-            </TouchableOpacity>
-            <Text style={styles.title}>Configurar Sonidos</Text>
-          </View>
-
-          <FlatList
-            data={Object.entries(AVAILABLE_SOUNDS)}
-            renderItem={({ item: [soundPath, soundLabel] }) => (
-              <View style={styles.soundRow}>
-                <View style={styles.soundRowInfo}>
-                  <Text style={styles.rowTitle}>{soundLabel}</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.soundPreviewBtn}
-                  onPress={() => {
-                    playSound(soundPath);
-                  }}
-                  accessible={true}
-                  accessibilityLabel={`Preescuchar ${soundLabel}`}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.soundPreviewBtnText}>🔊</Text>
-                </TouchableOpacity>
-                <Switch
-                  value={settings.enabledSounds[soundPath] ?? false}
-                  onValueChange={(value) => {
-                    const updated = {
-                      ...settings,
-                      enabledSounds: {
-                        ...settings.enabledSounds,
-                        [soundPath]: value,
-                      },
-                    };
-                    setSettings(updated);
-                    saveSettings(updated);
-                  }}
-                  trackColor={{ false: '#333', true: '#0c0' }}
-                  thumbColor={settings.enabledSounds[soundPath] ? '#000' : '#666'}
-                />
-              </View>
-            )}
-            keyExtractor={([soundPath]) => soundPath}
-            scrollEnabled={true}
-            contentContainerStyle={styles.sectionContent}
-          />
-        </SafeAreaView>
       </Modal>
 
     </Container>
@@ -1308,29 +1254,6 @@ const styles = StyleSheet.create({
   },
   gestureKeyboardButtonTextActive: {
     color: '#0c0',
-  },
-  soundRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1a1a1a',
-    gap: 12,
-  },
-  soundRowInfo: {
-    flex: 1,
-  },
-  soundPreviewBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#1a1a2a',
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#333',
-  },
-  soundPreviewBtnText: {
-    fontSize: 18,
   },
   logSizeBtn: {
     paddingVertical: 8,
