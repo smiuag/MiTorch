@@ -63,8 +63,21 @@ interface Props {
   onCancel: () => void;
 }
 
+/**
+ * Decides which mode to open the editor in.
+ * - Respects an explicit `expertMode` flag if set (post-cajas-system saves).
+ * - Legacy triggers (raw pattern with no blocks) stay in expert mode so the
+ *   user can still see/edit their regex.
+ * - Everything else (new triggers, post-migration triggers) defaults to cajas.
+ */
+function computeInitialExpertMode(trigger: Trigger): boolean {
+  if (trigger.source.expertMode !== undefined) return trigger.source.expertMode;
+  if (trigger.source.pattern && !trigger.source.blocks) return true;
+  return false;
+}
+
 export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: Props) {
-  const initialExpert = initialTrigger.source.expertMode ?? !initialTrigger.source.blocks;
+  const initialExpert = computeInitialExpertMode(initialTrigger);
 
   const [name, setName] = useState(initialTrigger.name);
   const [expertMode, setExpertMode] = useState<boolean>(initialExpert);
@@ -94,7 +107,7 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
 
   React.useEffect(() => {
     if (visible) {
-      const exp = initialTrigger.source.expertMode ?? !initialTrigger.source.blocks;
+      const exp = computeInitialExpertMode(initialTrigger);
       setName(initialTrigger.name);
       setExpertMode(exp);
       setBlocks(initialTrigger.source.blocks ?? []);
@@ -160,7 +173,7 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
     } else {
       // expert → cajas: confirm reset
       Alert.alert(
-        'Volver a cajas',
+        'Cambiar a modo cajas',
         'El patrón actual se reiniciará a cajas vacías y los textos de las acciones se conservarán como texto literal sin capturas. ¿Continuar?',
         [
           { text: 'Cancelar', style: 'cancel' },
@@ -373,7 +386,7 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
             <Text style={styles.label}>Cuándo se activa</Text>
             <TouchableOpacity style={styles.expertToggle} onPress={handleToggleExpert}>
               <Text style={styles.expertToggleText}>
-                {expertMode ? '◀ Volver a cajas' : 'Modo experto ▶'}
+                {expertMode ? '◀ Modo cajas' : 'Modo experto ▶'}
               </Text>
             </TouchableOpacity>
           </View>
