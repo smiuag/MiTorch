@@ -481,7 +481,12 @@ export function TerminalScreen({ route, navigation }: Props) {
       } else if (fx.type === 'send') {
         if (fx.command) telnetRef.current?.send(fx.command);
       } else if (fx.type === 'notify') {
-        if (notificationsEnabledRef.current && appStateRef.current !== 'active') {
+        // Fire when the user wouldn't see the line otherwise: app in
+        // background (terminal not visible) OR the trigger gagged the line
+        // (silenced even though the app is foreground). For un-gagged
+        // foreground lines the terminal output already serves as the alert.
+        const lineHidden = appStateRef.current !== 'active' || triggerResult.gagged;
+        if (notificationsEnabledRef.current && lineHidden) {
           fireNotification(fx.title || 'TorchZhyla', fx.message);
         }
       } else if (fx.type === 'floating') {
