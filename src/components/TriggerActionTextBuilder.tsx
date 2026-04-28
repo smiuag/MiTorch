@@ -111,7 +111,13 @@ export function TriggerActionTextBuilder({ blocks, patternBlocks, placeholder, o
         })}
       </ScrollView>
 
-      <View style={styles.toolbar}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator
+        keyboardShouldPersistTaps="handled"
+        style={styles.toolbarOuter}
+        contentContainerStyle={styles.toolbar}
+      >
         <TouchableOpacity
           style={styles.addBtn}
           onPress={() => insertBlock({ kind: 'text', text: '' })}
@@ -130,7 +136,7 @@ export function TriggerActionTextBuilder({ blocks, patternBlocks, placeholder, o
             <Text style={styles.addCaptureBtnText}>+ {labels.get(id)}</Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -190,14 +196,17 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
   deleteXText: { color: '#fff', fontSize: 12, lineHeight: 14, fontWeight: 'bold' },
-  toolbar: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
+  toolbarOuter: {
     marginTop: 10,
-    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#222',
+  },
+  toolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingTop: 8,
+    paddingRight: 8,
   },
   addBtn: {
     paddingHorizontal: 10,

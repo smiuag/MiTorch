@@ -148,37 +148,53 @@ export function TriggerEditorScreen({ route, navigation }: Props) {
           </View>
         }
         renderItem={({ item }) => (
-          <View style={styles.triggerItem}>
-            <View style={styles.triggerHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.triggerName}>{item.name || '(sin nombre)'}</Text>
-                <Text style={styles.triggerMeta}>
-                  {labelForType(item.type)} · {item.actions.length} acción
-                  {item.actions.length === 1 ? '' : 'es'}
-                </Text>
-              </View>
+          <TouchableOpacity
+            style={styles.triggerCard}
+            onPress={() => handleEditTrigger(item)}
+            onLongPress={() => handleEditTrigger(item)}
+            accessible={true}
+            accessibilityLabel={`Trigger ${item.name || 'sin nombre'}`}
+            accessibilityHint="Tap para editar"
+          >
+            <View style={styles.triggerInfo}>
+              <Text style={styles.triggerName}>{item.name || '(sin nombre)'}</Text>
+              <Text style={styles.triggerMeta}>
+                {labelForType(item.type)} · {item.actions.length} acción
+                {item.actions.length === 1 ? '' : 'es'}
+              </Text>
+              <Text style={styles.triggerRegex} numberOfLines={2}>
+                /{item.source.pattern}/{item.source.flags || ''}
+              </Text>
+            </View>
+            <View style={styles.triggerActions}>
               <Switch
                 value={item.enabled}
                 onValueChange={(v) => handleToggleEnabled(item, v)}
                 trackColor={{ false: '#333', true: '#0c0' }}
                 thumbColor={item.enabled ? '#000' : '#666'}
               />
-            </View>
-            <Text style={styles.triggerRegex} numberOfLines={2}>
-              /{item.source.pattern}/{item.source.flags || ''}
-            </Text>
-            <View style={styles.triggerActions}>
-              <TouchableOpacity style={styles.iconBtn} onPress={() => handleEditTrigger(item)}>
-                <Text style={styles.iconBtnText}>Editar</Text>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.editBtn]}
+                onPress={() => handleEditTrigger(item)}
+                accessible={true}
+                accessibilityLabel="Editar"
+                accessibilityRole="button"
+                accessibilityHint={`Editar trigger ${item.name || 'sin nombre'}`}
+              >
+                <Text style={[styles.actionBtnText, styles.editBtnText]}>✎</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.iconBtn, styles.iconBtnDanger]}
+                style={[styles.actionBtn, styles.deleteBtn]}
                 onPress={() => handleDeleteTrigger(item)}
+                accessible={true}
+                accessibilityLabel="Borrar"
+                accessibilityRole="button"
+                accessibilityHint={`Borrar trigger ${item.name || 'sin nombre'}`}
               >
-                <Text style={[styles.iconBtnText, styles.iconBtnTextDanger]}>Borrar</Text>
+                <Text style={[styles.actionBtnText, styles.deleteBtnText]}>✕</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </TouchableOpacity>
         )}
       />
       </View>
@@ -321,39 +337,33 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
   },
-  triggerItem: {
+  triggerCard: {
     backgroundColor: '#1a1a1a',
     borderWidth: 1,
     borderColor: '#2a2a2a',
     borderRadius: 8,
-    marginBottom: 10,
-    overflow: 'hidden',
-  },
-  triggerHeader: {
+    padding: 14,
+    marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
   },
-  triggerName: { color: '#fff', fontSize: 14, fontWeight: 'bold', fontFamily: 'monospace' },
-  triggerMeta: { color: '#888', fontSize: 11, fontFamily: 'monospace', marginTop: 2 },
-  triggerRegex: {
-    color: '#88aaff',
-    fontSize: 11,
-    fontFamily: 'monospace',
-    paddingHorizontal: 12,
-    paddingBottom: 8,
-  },
-  triggerActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#2a2a2a' },
-  iconBtn: {
-    flex: 1,
-    paddingVertical: 10,
+  triggerInfo: { flex: 1, marginRight: 8 },
+  triggerName: { color: '#ffffff', fontSize: 16, fontWeight: 'bold', fontFamily: 'monospace' },
+  triggerMeta: { color: '#888', fontSize: 12, fontFamily: 'monospace', marginTop: 2 },
+  triggerRegex: { color: '#88aaff', fontSize: 11, fontFamily: 'monospace', marginTop: 4 },
+  triggerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  actionBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    justifyContent: 'center',
     alignItems: 'center',
-    borderRightWidth: 1,
-    borderRightColor: '#2a2a2a',
   },
-  iconBtnDanger: { borderRightWidth: 0 },
-  iconBtnText: { color: '#0c0', fontSize: 12, fontFamily: 'monospace', fontWeight: 'bold' },
-  iconBtnTextDanger: { color: '#dd5555' },
+  editBtn: { backgroundColor: '#0a3a0a' },
+  deleteBtn: { backgroundColor: '#3a0a0a' },
+  actionBtnText: { fontSize: 20, fontWeight: 'bold' },
+  editBtnText: { color: '#0c0' },
+  deleteBtnText: { color: '#cc3333' },
   addButtonContainer: {
     alignItems: 'center',
     paddingVertical: 20,

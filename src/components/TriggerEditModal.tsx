@@ -241,6 +241,34 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
     setActions(actions.map((a, i) => (i === index ? updated : a)));
   };
 
+  const isDirty = (): boolean => {
+    const initialExpertMode = initialTrigger.source.expertMode ?? !initialTrigger.source.blocks;
+    if (name !== initialTrigger.name) return true;
+    if (expertMode !== initialExpertMode) return true;
+    if (rawPattern !== (initialTrigger.source.pattern || '')) return true;
+    if (caseInsensitive !== (initialTrigger.source.flags || '').includes('i')) return true;
+    if (JSON.stringify(blocks) !== JSON.stringify(initialTrigger.source.blocks ?? [])) return true;
+    if (anchorStart !== (initialTrigger.source.anchorStart ?? 'open')) return true;
+    if (anchorEnd !== (initialTrigger.source.anchorEnd ?? 'open')) return true;
+    if (JSON.stringify(actions) !== JSON.stringify(initialTrigger.actions)) return true;
+    return false;
+  };
+
+  const handleCancel = () => {
+    if (!isDirty()) {
+      onCancel();
+      return;
+    }
+    Alert.alert(
+      'Cambios sin guardar',
+      'Tienes cambios en este trigger que se perderán si sales sin guardar.',
+      [
+        { text: 'Seguir editando', style: 'cancel' },
+        { text: 'Descartar', style: 'destructive', onPress: onCancel },
+      ],
+    );
+  };
+
   const handleSave = () => {
     if (!name.trim()) {
       Alert.alert('Falta el nombre', 'El trigger necesita un nombre.');
@@ -284,10 +312,10 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
   };
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onCancel}>
+    <Modal visible={visible} animationType="slide" onRequestClose={handleCancel}>
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={onCancel} style={styles.headerBtn}>
+          <TouchableOpacity onPress={handleCancel} style={styles.headerBtn}>
             <Text style={styles.headerBtnText}>Cancelar</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>

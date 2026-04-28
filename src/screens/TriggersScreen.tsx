@@ -100,30 +100,55 @@ export function TriggersScreen({ navigation }: Props) {
           </View>
         }
         renderItem={({ item }) => (
-          <View style={styles.packItem}>
-            <TouchableOpacity
-              style={styles.packMain}
-              onPress={() => navigation.navigate('TriggerEditor', { packId: item.id })}
-            >
+          <TouchableOpacity
+            style={styles.packCard}
+            onPress={() => navigation.navigate('TriggerEditor', { packId: item.id })}
+            onLongPress={() => navigation.navigate('TriggerEditor', { packId: item.id })}
+            accessible={true}
+            accessibilityLabel={`Plantilla ${item.name}`}
+            accessibilityHint={`Tap para editar. ${item.triggers.length} triggers, ${item.assignedServerIds.length} servidores asignados.`}
+          >
+            <View style={styles.packInfo}>
               <Text style={styles.packName}>{item.name}</Text>
               <Text style={styles.packMeta}>
                 {item.triggers.length} trigger{item.triggers.length === 1 ? '' : 's'} ·{' '}
                 {item.assignedServerIds.length} servidor
                 {item.assignedServerIds.length === 1 ? '' : 'es'}
               </Text>
-            </TouchableOpacity>
+            </View>
             <View style={styles.packActions}>
-              <TouchableOpacity style={styles.iconBtn} onPress={() => handleDuplicate(item.id)}>
-                <Text style={styles.iconBtnText}>Duplicar</Text>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.editBtn]}
+                onPress={() => navigation.navigate('TriggerEditor', { packId: item.id })}
+                accessible={true}
+                accessibilityLabel="Editar"
+                accessibilityRole="button"
+                accessibilityHint={`Editar plantilla ${item.name}`}
+              >
+                <Text style={[styles.actionBtnText, styles.editBtnText]}>✎</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.iconBtn, styles.iconBtnDanger]}
-                onPress={() => handleDelete(item)}
+                style={[styles.actionBtn, styles.duplicateBtn]}
+                onPress={() => handleDuplicate(item.id)}
+                accessible={true}
+                accessibilityLabel="Duplicar"
+                accessibilityRole="button"
+                accessibilityHint={`Crear una copia de ${item.name}`}
               >
-                <Text style={[styles.iconBtnText, styles.iconBtnTextDanger]}>Borrar</Text>
+                <Text style={[styles.actionBtnText, styles.duplicateBtnText]}>⬚</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.deleteBtn]}
+                onPress={() => handleDelete(item)}
+                accessible={true}
+                accessibilityLabel="Borrar"
+                accessibilityRole="button"
+                accessibilityHint={`Borrar plantilla ${item.name}`}
+              >
+                <Text style={[styles.actionBtnText, styles.deleteBtnText]}>✕</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </TouchableOpacity>
         )}
       />
       </View>
@@ -211,33 +236,34 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
   },
-  packItem: {
+  packCard: {
     backgroundColor: '#1a1a1a',
     borderWidth: 1,
     borderColor: '#2a2a2a',
     borderRadius: 8,
-    marginBottom: 10,
-    overflow: 'hidden',
-  },
-  packMain: { padding: 14 },
-  packName: { color: '#fff', fontSize: 15, fontWeight: 'bold', fontFamily: 'monospace' },
-  packMeta: { color: '#666', fontSize: 11, fontFamily: 'monospace', marginTop: 4 },
-  packActions: {
+    padding: 16,
+    marginBottom: 12,
     flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: '#2a2a2a',
-  },
-  iconBtn: {
-    flex: 1,
-    paddingVertical: 10,
     alignItems: 'center',
-    justifyContent: 'center',
-    borderRightWidth: 1,
-    borderRightColor: '#2a2a2a',
   },
-  iconBtnDanger: { borderRightWidth: 0 },
-  iconBtnText: { color: '#0c0', fontSize: 12, fontFamily: 'monospace', fontWeight: 'bold' },
-  iconBtnTextDanger: { color: '#dd5555' },
+  packInfo: { flex: 1 },
+  packName: { color: '#ffffff', fontSize: 18, fontWeight: 'bold', fontFamily: 'monospace' },
+  packMeta: { color: '#888', fontSize: 13, fontFamily: 'monospace', marginTop: 4 },
+  packActions: { flexDirection: 'row', gap: 8 },
+  actionBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editBtn: { backgroundColor: '#0a3a0a' },
+  duplicateBtn: { backgroundColor: '#0a2a3a' },
+  deleteBtn: { backgroundColor: '#3a0a0a' },
+  actionBtnText: { fontSize: 20, fontWeight: 'bold' },
+  editBtnText: { color: '#0c0' },
+  duplicateBtnText: { color: '#0099ff' },
+  deleteBtnText: { color: '#cc3333' },
   addButtonContainer: {
     alignItems: 'center',
     paddingVertical: 20,
