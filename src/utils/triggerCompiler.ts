@@ -56,9 +56,33 @@ export function compileActionText(
     .map((b) => {
       if (b.kind === 'text') return b.text;
       const idx = captureMap.get(b.captureId);
-      return idx != null ? `$${idx}` : '';
+      if (idx == null) {
+        // Orphan capture_ref — its target capture no longer exists in the
+        // pattern. Compiles to empty so the runtime sub yields nothing,
+        // but log so the user can find out via adb logcat.
+        console.warn(
+          `[triggerCompiler] capture_ref points to unknown captureId "${b.captureId}" — orphaned chip. Action text will be empty at this position.`,
+        );
+        return '';
+      }
+      return `$${idx}`;
     })
     .join('');
+}
+
+/** Returns capture_ref blocks whose captureId isn't in the captureMap. */
+export function findOrphanCaptureRefs(
+  blocks: ActionTextBlock[] | undefined,
+  captureMap: Map<string, number>,
+): string[] {
+  if (!blocks) return [];
+  const out: string[] = [];
+  for (const b of blocks) {
+    if (b.kind === 'capture_ref' && !captureMap.has(b.captureId)) {
+      out.push(b.captureId);
+    }
+  }
+  return out;
 }
 
 let nextCaptureId = 1;

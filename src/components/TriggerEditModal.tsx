@@ -18,7 +18,7 @@ import { AVAILABLE_SOUNDS } from '../storage/settingsStorage';
 import { CustomSound, addCustomSound, loadCustomSounds } from '../storage/customSoundsStorage';
 import { TriggerPatternBuilder } from './TriggerPatternBuilder';
 import { TriggerActionTextBuilder } from './TriggerActionTextBuilder';
-import { captureColors, captureLabels, compileActionText, compilePattern } from '../utils/triggerCompiler';
+import { captureColors, captureLabels, compileActionText, compilePattern, findOrphanCaptureRefs } from '../utils/triggerCompiler';
 import { useSounds } from '../contexts/SoundContext';
 
 const BUILTIN_PREFIX = 'builtin:';
@@ -269,19 +269,23 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
     );
   };
 
-  const handleSave = () => {
-    if (!name.trim()) {
-      Alert.alert('Falta el nombre', 'El trigger necesita un nombre.');
-      return;
+  const collectOrphans = (): number => {
+    if (expertMode) return 0;
+    let total = 0;
+    for (const a of actions) {
+      if (a.type === 'replace') total += findOrphanCaptureRefs(a.withBlocks, compiled.captureMap).length;
+      else if (a.type === 'send') total += findOrphanCaptureRefs(a.commandBlocks, compiled.captureMap).length;
+      else if (a.type === 'notify') {
+        total += findOrphanCaptureRefs(a.titleBlocks, compiled.captureMap).length;
+        total += findOrphanCaptureRefs(a.messageBlocks, compiled.captureMap).length;
+      } else if (a.type === 'floating') {
+        total += findOrphanCaptureRefs(a.messageBlocks, compiled.captureMap).length;
+      }
     }
-    if (compiled.error) {
-      Alert.alert('Patrón inválido', compiled.error);
-      return;
-    }
-    if (actions.length === 0) {
-      Alert.alert('Sin acciones', 'Añade al menos una acción al trigger.');
-      return;
-    }
+    return total;
+  };
+
+  const doSave = () => {
     const flags = caseInsensitive ? 'i' : undefined;
     const finalActions = expertMode
       ? actions
@@ -309,6 +313,34 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
       source: finalSource,
       actions: finalActions,
     });
+  };
+
+  const handleSave = () => {
+    if (!name.trim()) {
+      Alert.alert('Falta el nombre', 'El trigger necesita un nombre.');
+      return;
+    }
+    if (compiled.error) {
+      Alert.alert('Patrón inválido', compiled.error);
+      return;
+    }
+    if (actions.length === 0) {
+      Alert.alert('Sin acciones', 'Añade al menos una acción al trigger.');
+      return;
+    }
+    const orphans = collectOrphans();
+    if (orphans > 0) {
+      Alert.alert(
+        'Capturas sin referencia',
+        `Hay ${orphans} chip(s) en las acciones que apuntan a capturas que ya no existen en el patrón (chips marcados con ⚠ borrada). En tiempo de ejecución se sustituirán por texto vacío. ¿Guardar igualmente?`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Guardar igualmente', onPress: doSave },
+        ],
+      );
+      return;
+    }
+    doSave();
   };
 
   return (
