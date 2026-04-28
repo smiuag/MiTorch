@@ -6,6 +6,7 @@ export interface FloatingMessage {
   id: number;
   text: string;
   level: FloatingMessageLevel;
+  leaving: boolean;
 }
 
 interface ContextValue {
@@ -17,30 +18,41 @@ const Ctx = createContext<ContextValue | null>(null);
 let nextId = 1;
 
 const DEFAULT_DURATION_MS = 4000;
+export const FLOATING_FADE_OUT_MS = 220;
 
 export function FloatingMessagesProvider({ children }: { children: React.ReactNode }) {
   const [messages, setMessages] = useState<FloatingMessage[]>([]);
-  const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>[]>>(new Map());
 
   const push = useCallback(
     (text: string, level: FloatingMessageLevel = 'info', durationMs: number = DEFAULT_DURATION_MS) => {
       const trimmed = text?.trim();
       if (!trimmed) return;
       const id = nextId++;
-      setMessages((prev) => [...prev, { id, text: trimmed, level }]);
+      setMessages((prev) => [...prev, { id, text: trimmed, level, leaving: false }]);
       AccessibilityInfo.announceForAccessibility(trimmed);
-      const t = setTimeout(() => {
+
+      // Two-phase removal: flag `leaving` first so FloatingItem can fade out,
+      // then drop from the array so the LayoutAnimation slides remaining
+      // messages up.
+      const fadeStartDelay = Math.max(0, durationMs - FLOATING_FADE_OUT_MS);
+      const fadeStart = setTimeout(() => {
+        setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, leaving: true } : m)));
+      }, fadeStartDelay);
+      const remove = setTimeout(() => {
         setMessages((prev) => prev.filter((m) => m.id !== id));
         timersRef.current.delete(id);
       }, durationMs);
-      timersRef.current.set(id, t);
+      timersRef.current.set(id, [fadeStart, remove]);
     },
     [],
   );
 
   useEffect(() => {
     return () => {
-      for (const t of timersRef.current.values()) clearTimeout(t);
+      for (const timers of timersRef.current.values()) {
+        for (const t of timers) clearTimeout(t);
+      }
       timersRef.current.clear();
     };
   }, []);

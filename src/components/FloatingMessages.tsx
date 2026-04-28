@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FloatingMessage, useFloatingMessages } from '../contexts/FloatingMessagesContext';
+import { FLOATING_FADE_OUT_MS, FloatingMessage, useFloatingMessages } from '../contexts/FloatingMessagesContext';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -47,6 +47,16 @@ function FloatingItem({ message }: { message: FloatingMessage }) {
       Animated.timing(translateY, { toValue: 0, duration: 220, useNativeDriver: true }),
     ]).start();
   }, [opacity, translateY]);
+
+  useEffect(() => {
+    if (message.leaving) {
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: FLOATING_FADE_OUT_MS,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [message.leaving, opacity]);
 
   const palette =
     message.level === 'success'
