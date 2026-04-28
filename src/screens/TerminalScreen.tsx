@@ -471,15 +471,10 @@ export function TerminalScreen({ route, navigation }: Props) {
     // and side effects are computed against the unmodified text the MUD sent.
     const rawSpans = parseAnsi(text);
     const triggerResult = triggerEngine.process(stripAnsi(text), rawSpans);
-    if (triggerResult.gagged) {
-      // Total suppression — drop side effects too. A user who wants the side
-      // effect AND the gag should split into two triggers.
-      return;
-    }
 
-    // Fire side effects unconditionally (works even when blind mode silences
-    // the line). Sound side effects respect the global silentMode toggle,
-    // which is mirrored from settings.soundsEnabled.
+    // Fire side effects FIRST — they must run even when the trigger gags the
+    // line (e.g. [gag, floating] silences display while still showing the
+    // floating message) and even when blind mode silences the line.
     for (const fx of triggerResult.sideEffects) {
       if (fx.type === 'play_sound') {
         if (fx.file && !silentModeEnabledRef.current) playSoundRef.current(fx.file);
@@ -492,6 +487,11 @@ export function TerminalScreen({ route, navigation }: Props) {
       } else if (fx.type === 'floating') {
         pushFloating(fx.message, fx.level);
       }
+    }
+
+    // gag suppresses display only — side effects already fired above.
+    if (triggerResult.gagged) {
+      return;
     }
 
     // Blind mode: Process with filters

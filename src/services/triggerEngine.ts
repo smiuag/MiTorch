@@ -89,10 +89,11 @@ class TriggerEngine {
 
       for (const action of c.trigger.actions) {
         const result = applyAction(action, match, plainText, mutatedSpans);
-        if (result.gag) {
-          gagged = true;
-          break;
-        }
+        // gag suppresses display, but does NOT short-circuit subsequent
+        // actions in the same trigger — users want patterns like
+        // [gag, floating] or [gag, play_sound] to silence the line AND fire
+        // the side effect.
+        if (result.gag) gagged = true;
         if (result.spans) mutatedSpans = result.spans;
         if (result.sideEffect) sideEffects.push(result.sideEffect);
       }
