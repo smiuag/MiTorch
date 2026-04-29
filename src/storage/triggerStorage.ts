@@ -1,13 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ActionTextBlock, PatternBlock, Trigger, TriggerAction, TriggerPack } from '../types';
+import { ActionTextBlock, FloatingMessageLevel, PatternBlock, Trigger, TriggerAction, TriggerPack, VariableCondition } from '../types';
 import { compileActionText, compilePattern, newCaptureId } from '../utils/triggerCompiler';
 import { loadServers } from './serverStorage';
 
 const PACKS_KEY = 'aljhtar_trigger_packs';
 const SEEDED_KEY = 'aljhtar_trigger_packs_seeded';
 const SOUNDS_SEEDED_KEY = 'aljhtar_trigger_packs_sounds_seeded';
+const MIRRORS_SKINS_SEEDED_KEY = 'aljhtar_trigger_packs_mirrors_skins_seeded';
 
 export const SOUNDS_PACK_ID = 'pack_seeded_sounds';
+export const MIRRORS_SKINS_PACK_ID = 'pack_seeded_mirrors_skins';
 
 let idCounter = Date.now();
 function genId(prefix: string): string {
@@ -46,10 +48,18 @@ async function ensureSeeded(): Promise<void> {
     dirty = true;
   }
 
+  const mirrorsSkinsSeeded = await AsyncStorage.getItem(MIRRORS_SKINS_SEEDED_KEY);
+  const mirrorsSkinsPresent = packs.some((p) => p.id === MIRRORS_SKINS_PACK_ID);
+  if (mirrorsSkinsSeeded !== '1' && !mirrorsSkinsPresent) {
+    packs.push(createMirrorsAndSkinsPack());
+    dirty = true;
+  }
+
   if (dirty) {
     await AsyncStorage.setItem(PACKS_KEY, JSON.stringify(packs));
     if (avisosSeeded !== '1') await AsyncStorage.setItem(SEEDED_KEY, '1');
     if (soundsSeeded !== '1') await AsyncStorage.setItem(SOUNDS_SEEDED_KEY, '1');
+    if (mirrorsSkinsSeeded !== '1') await AsyncStorage.setItem(MIRRORS_SKINS_SEEDED_KEY, '1');
   }
 }
 
@@ -172,6 +182,69 @@ function createSoundsPack(): TriggerPack {
       // Eventos: XP, curación
       buildSoundTrigger('XP ganada', ['Ganas ', NUMBER, ' puntos de experiencia'], 'eventos/xp.wav'),
       buildSoundTrigger('Curación', ['Tu salud ha aumentado'], 'eventos/curacion.wav'),
+    ],
+  };
+}
+
+function buildVariableTrigger(
+  name: string,
+  variableName: string,
+  condition: VariableCondition,
+  message: string,
+  level: FloatingMessageLevel,
+): Trigger {
+  return {
+    id: newTriggerId(),
+    name,
+    type: 'variable',
+    enabled: true,
+    source: { kind: 'variable', name: variableName, condition },
+    actions: [
+      { type: 'gag' },
+      { type: 'floating', message, level },
+    ],
+  };
+}
+
+function createMirrorsAndSkinsPack(): TriggerPack {
+  // Two triggers per variable: an `equals 0` trigger for the disappearance
+  // message and a `changes` trigger for the running count. The `equals 0`
+  // trigger MUST come first — the engine applies first-match-wins per
+  // variable, so on the 1→0 transition the disappearance message wins and
+  // the generic "Tienes 0 …" doesn't also fire.
+  return {
+    id: MIRRORS_SKINS_PACK_ID,
+    name: 'Espejos y pieles',
+    assignedServerIds: [],
+    triggers: [
+      buildVariableTrigger(
+        'Espejos desaparecen',
+        'imagenes',
+        { event: 'equals', value: 0 },
+        'Tus espejos desaparecen',
+        'error',
+      ),
+      buildVariableTrigger(
+        'Espejos cambian',
+        'imagenes',
+        { event: 'changes' },
+        'Tienes $new espejos',
+        'error',
+      ),
+      buildVariableTrigger(
+        'Pieles desaparecen',
+        'pieles',
+        { event: 'equals', value: 0 },
+        'Tus pieles desaparecen',
+        'error',
+      ),
+      buildVariableTrigger(
+        'Pieles cambian',
+        'pieles',
+        { event: 'changes' },
+        'Tienes $new pieles',
+        'error',
+      ),
     ],
   };
 }

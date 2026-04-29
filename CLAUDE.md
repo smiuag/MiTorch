@@ -639,9 +639,46 @@ HECHO (post-Fase 2): migración de los sonidos auto-detectados a la infraestruct
 
 DECIDIDO: el tipo `[número]` de las cajas se queda como `(\d+)` — solo dígitos, sin decimales ni separador de miles. Razón: en RdL todos los números del MUD son enteros (vida, energía, oro, XP, nivel). Si surge un MUD que use decimales o comas, se evaluará entonces añadir tipos nuevos `[número decimal]` o `[número con miles]` en lugar de generalizar `[número]` (que perdería predictibilidad).
 
-PENDIENTE (Fase 3): variables del sistema. Bloqueada por dos decisiones que dependen del usuario — lista exacta de variables a trackear y formato del prompt del MUD a parsear (ver "Decisiones pendientes" más abajo).
+HECHO (Fase 3): variables del sistema. Implementado el 2026-04-28 siguiendo el plan cerrado en esa misma fecha. Detalle:
+- `src/services/promptParser.ts` — singleton con regex por campo, anclado a tokens conocidos (`Pv:`, `Pe:`, `Xp:`, `Carga:`, `SL:`, `PL:`, `NM:`, `LD:`, `Jgd:`, `Imagenes:`, `Pieles:`, `Inercia:`, `Astucia:`, `Acc:`). Normaliza acentos antes del match. `parse(line)` devuelve `{ isPrompt, updates }`. Exporta `CANONICAL_PROMPT`.
+- `src/utils/variableMap.ts` — `VARIABLE_SPECS` con nombres en castellano, mapping a campos internos en inglés, y derivadas (`vida_pct`, `energia_pct`, `en_combate`). `getVariableDependencies()` devuelve los campos de los que depende una variable derivada.
+- `src/services/playerStatsService.ts` — campos nuevos (`roomPlayers`, `actionsMovement/Primary/Secondary/Minor`, `carry`), `prevValues`, método `setSnapshot(updates): (keyof PlayerVariables)[]` que captura `prevValues` antes del merge y devuelve las claves cambiadas.
+- `src/services/triggerEngine.ts` — `evaluateVariableTriggers(changedKeys, prev, current)` con first-match-wins **por variable** (no global, porque un solo prompt actualiza varias vars a la vez). `applyVariableAction` excluye `gag`/`replace`/`color` (no aplican a líneas ya gageadas). `expandVariableTemplate` soporta `$old` / `$new`. `checkVariableCondition` implementa los 5 eventos: `appears`, `changes`, `equals`, `crosses_below` y `crosses_above` (estos últimos edge-triggered, requieren cambio de tipo número).
+- `src/screens/TerminalScreen.tsx` — pipeline integrado: `promptParser.parse()` corre antes que blind mode y antes que regex triggers. Si `isPrompt`, actualiza vars, evalúa triggers de variable, dispara side-effects y gaguea la línea en TODOS los modos.
+- `src/screens/ServerListScreen.tsx` — botón "Aplicar prompt TorchZhyla" con confirmación previa. Solo activo si la conexión a ese server está abierta. Envía `prompt {CANONICAL_PROMPT}` y `promptcombate {CANONICAL_PROMPT}`. NO hay auto-aplicar al conectar (respeto a usuarios que no usan triggers).
+- `src/components/TriggerEditModal.tsx` — wizard "Alarma de variable": toggle `regex` ↔ `variable` en el header del editor, dropdown de variable (de `VARIABLE_SPECS`), dropdown de evento (`VARIABLE_EVENTS`), input de valor cuando el evento lo requiere, lista de acciones limitada a `play_sound`/`send`/`notify`/`floating`. Validación que bloquea guardar si el valor falta o no es numérico cuando toca.
+- Limpieza en blind mode: eliminadas `loadPromptFilters`, `isPromptLine` y `convertPromptPatternToRegexArray` de `blindModeService.ts`. Quitados los groups `prompt_stats` y `sala_entidades` de `blindModeFilters.json` — los reemplaza `promptParser` corriendo siempre.
 
-PENDIENTE (Fase 4): export/import de plantillas, drag-reorder, packs predefinidos.
+PENDIENTE (Fase 4): packs predefinidos.
+
+HECHO (adelantado de Fase 4): reordenación de triggers dentro de una plantilla. `TriggerEditorScreen` muestra dos flechas ▲/▼ a la izquierda de cada fila; `handleMoveTrigger(trigger, 'up'|'down')` swappea con el vecino en `pack.triggers[]` y persiste. Las flechas se deshabilitan en los extremos. El orden importa porque el motor evalúa de arriba abajo y aplica first-match-wins (regex absoluto, variables por nombre de variable). NO se hizo drag-and-drop real — flechas son suficientes en móvil y mucho más accesibles para TalkBack.
+
+HECHO (adelantado de Fase 4): export/import de plantillas **con sonidos incluidos**. Decisión revisada respecto al plan original (que era JSON-only sin sonidos): el usuario pidió empaquetar también los `.wav`/`.mp3` referenciados, así que cambiamos a ZIP. Implementación:
+- Dependencia nueva: `jszip` (puro JS, sin módulo nativo).
+- `src/services/triggerPackExport.ts` — `exportPackToZip(pack)` genera un ZIP en `${Paths.cache}` con `pack.json` (cabecera `{ format: 'torchzhyla-trigger-pack', version: 1 }`, nombre, triggers, `soundsManifest`) + `sounds/{uuid}.{ext}` por cada sonido custom referenciado. `importPackFromZip(uri)` lo lee, valida cabecera, instala cada sonido bajo un **uuid nuevo** (vía `addCustomSoundFromBytes` en `customSoundsStorage`), reescribe los `play_sound.file = "custom:..."` con los uuids nuevos, y devuelve un `TriggerPack` con id+triggerIds frescos y `assignedServerIds: []`.
+- Nuevo helper `addCustomSoundFromBytes(bytes, name, ext)` en `customSoundsStorage.ts` para escribir audio crudo (no copia desde URI). Usado solo por el importador.
+- `TriggersScreen` añade botón **"Importar"** en el header (abre `expo-document-picker` y deja al usuario elegir el ZIP) y botón **"Compartir"** ↗ por fila (genera ZIP, abre `expo-sharing`). En colisión de nombre al importar: alerta con opciones Sustituir / Duplicar (`"X (importada)"`) / Cancelar.
+- Sonidos faltantes en el ZIP: el manifest los reporta y la importación deja la acción `play_sound` apuntando al uuid huérfano (que el picker renderiza como "(falta) ..."). El usuario reasigna manualmente.
+- `assignedServerIds` siempre se vacía en el import — el usuario elige a qué servidores asignar, igual que con plantillas seeded.
+- Versionado: la cabecera `version` permite rechazar packs futuros con un error claro si la app es más vieja.
+
+DESCARTADO en favor de A: opción B "JSON con base64 inline" (sin deps pero ~33% overhead, archivos enormes, JSON ilegible si lo abres con un editor).
+
+HECHO: backup global de TODAS las plantillas en un solo ZIP (`format: 'torchzhyla-trigger-backup'`, version 1). Implementación en `src/services/triggerPackExport.ts`:
+- `exportAllPacksToZip(packs)` — genera `torchzhyla-triggers-{YYYY-MM-DD}.zip` en `${Paths.cache}` con `backup.json` (cabecera + lista de packs sin ids/asignaciones + `soundsManifest` consolidado y deduplicado por uuid) y `sounds/{uuid}.{ext}`. Útil sobre todo para cambio de móvil.
+- `importBackupFromZip(zipUri)` — instala los sonidos una sola vez bajo uuids nuevos (compartidos entre todos los packs que los referencian), regenera ids de pack y de trigger, reescribe `play_sound` refs y devuelve `{ packs, importedSoundCount, missingSoundCount }` con `assignedServerIds: []` siempre (los ids de servidor son locales y no sobreviven al cambio de móvil — el usuario reasigna desde el editor).
+- `importFromZip(zipUri)` — wrapper que detecta el formato (`backup.json` vs `pack.json`) y delega. La pantalla `TriggersScreen` lo usa siempre, evitando duplicar el sniff del archivo.
+
+UI en `TriggersScreen`:
+- Botón nuevo **"Exportar todo"** en el header junto a "Importar". Comparten estilo (`headerBtn`).
+- "Importar" ahora despacha sobre `result.kind`:
+  - `'pack'` → flujo per-pack existente (Cancelar / Sustituir / Duplicar para colisión por nombre).
+  - `'backup'` → flujo nuevo: si hay colisiones, alerta única con **3 botones** Cancelar / Saltar / Sustituir (límite real de `Alert.alert` en Android es 3). "Saltar" importa solo las que no colisionan; "Sustituir" reemplaza las colisiones manteniendo intactas las plantillas que no aparecen en el backup. **Merge, no wipe** — los packs existentes que no están en el backup se conservan siempre. Si el usuario quiere un restore exacto, debe borrar primero su lista.
+- Mensaje de éxito en backup recuerda que las asignaciones a servidores quedan vacías.
+
+DESCARTADO: 4º botón "Duplicar todas" en el flujo de backup. Razón: `Alert.alert` en Android limita a 3 botones. Para duplicar un pack concreto el usuario puede usar el export per-pack y la opción Duplicar de ese flujo.
+
+DESCARTADO: serializar `assignedServerIds` en el backup. Los ids son locales y no se pueden remappear sin export de servidores también. Mantener consistencia con el export per-pack y dejar que el usuario reasigne es lo más predecible.
 
 PENDIENTE (mejoras de accesibilidad): defaultear a modo experto cuando `uiMode === 'blind'` (las cajas son inherentemente visuales y mucho menos navegables con TalkBack que un campo de regex de texto plano), y añadir un resumen narrado del patrón debajo del editor. ~1 hora, alto impacto para invidentes.
 
@@ -747,45 +784,211 @@ Telnet → ansiParser → AnsiSpan[] → [TriggerEngine.process()] → MudLine �
 
 **Coste:** medio día.
 
-#### Fase 3 — Variables del sistema
+#### Fase 3 — Variables del sistema (plan cerrado 2026-04-28, IMPLEMENTADO 2026-04-28)
 
-**Entregable:** triggers que reaccionan a cambios en estado del juego (vida, energía, espejos, etc.).
+**Entregable:** triggers que reaccionan a cambios en estado del juego (vida, energía, imágenes, jugadores en sala, etc.) capturados parseando el prompt del MUD. ✅ Hecho — ver "HECHO (Fase 3)" arriba para el detalle de archivos. La sección que sigue se mantiene como referencia del diseño y de las decisiones cerradas durante la implementación.
 
-- Lista cerrada de variables, definida al empezar la fase (PENDIENTE — ver "Decisiones pendientes" abajo).
-- Formato concreto del prompt del MUD que parseamos para poblarlas (también pendiente).
-- Servicio `src/services/variableTracker.ts` (o integrado en `triggerEngine`) con regexes para extraer valores de cada línea entrante.
-- Sin acción `set_var`. El usuario NO modifica variables.
-- Sin counters de usuario.
-- Tipo de trigger `variable` con `source: { kind: 'variable', name, condition }` y las condiciones `appears`, `changes`, `equals`, `crosses_below`, `crosses_above` (edge-triggered).
-- En las acciones, soporte para `$old` y `$new` (valor anterior y actual de la variable).
-- Si una variable cambia varias veces en una sola línea: evaluar el trigger una sola vez con el valor final.
-- UI: nuevo tipo en el wizard "Alarma de variable" con dropdown de variable + condición + acciones.
-- Documentación en Settings: el formato de prompt requerido + botón "Copiar comando" que copia al portapapeles el comando para configurar el prompt en el MUD.
+##### Variables expuestas al usuario
 
-**Coste:** 1-2 días.
+Nombres en castellano en la UI del wizard, mapeados a los nombres internos en inglés ya existentes en `playerStatsService` (no se renombra el storage para no tocar `VitalBars`, blind mode, etc.).
+
+Numéricas (default `0`):
+- `vida` ($v) → `playerHP`
+- `vida_max` ($V) → `playerMaxHP`
+- `vida_pct` (derivada) → `playerHP / playerMaxHP * 100`
+- `energia` ($g) → `playerEnergy`
+- `energia_max` ($G) → `playerMaxEnergy`
+- `energia_pct` (derivada)
+- `xp` ($x) → `playerXP`
+- `imagenes` ($e) → `playerImages`
+- `pieles` ($p) → `playerSkins`
+- `inercia` ($n) → `playerInertia`
+- `astucia` ($t) → `playerAstuteness`
+- `jugadores_sala` ($j) → `roomPlayers` (NUEVO)
+- `acciones_movimiento` ($AM) → `actionsMovement` (NUEVO)
+- `acciones_principales` ($AP) → `actionsPrimary` (NUEVO)
+- `acciones_secundarias` ($AS) → `actionsSecondary` (NUEVO)
+- `acciones_menores` ($AZ) → `actionsMinor` (NUEVO)
+- `carga` ($c) → `carry` (NUEVO)
+
+Texto (default `""`):
+- `salidas` ($s) → `roomExits`
+- `enemigos` ($k — los que tú puedes matar) → `roomEnemies`
+- `aliados` ($K) → `roomAllies`
+- `combatientes` ($a — los que pelean contigo) → `roomCombatants`
+
+Derivada booleana:
+- `en_combate` = `roomCombatants !== ""`
+
+Las derivadas (`vida_pct`, `energia_pct`, `en_combate`) se computan al consultar, no se almacenan.
+
+##### Prompt canónico TorchZhyla
+
+```
+prompt $lPv:$v\$V Pe:$g\$G Xp:$x Carga:$c$lSL:$s$lPL:$a$lNM:$k$lLD:$K$lJgd:$j$lImagenes:$e$lPieles:$p$lInercia:$n$lAstucia:$t$lAcc:$AM\$AP\$AS\$AZ$l
+```
+
+`prompt` y `promptcombate` son **idénticos** (un solo formato, una sola regex set). El estado de combate se deriva de `en_combate`. `$k` en NM (los que tú puedes matar), no `$b`.
+
+##### UX "Aplicar prompt"
+
+Botón en la pantalla de edición del servidor, junto a host/port/auto-login. **Solo manual, one-shot.** NO hay toggle de auto-aplicar al conectar — hay usuarios que no usan triggers y no queremos modificarles el prompt en el MUD a sus espaldas. El usuario que sí los use lo aplica una vez por personaje (el MUD persiste el prompt server-side por PJ, así que normalmente solo hace falta una vez).
+
+Comportamiento:
+- Solo activo si la conexión a ese server está abierta.
+- Confirmación previa: "Esto sobrescribirá tu prompt actual en el MUD para este personaje. ¿Continuar?"
+- Envía `prompt {canonico}` y `promptcombate {canonico}` al MUD.
+- Toast (o announcement en blind) al terminar.
+
+##### Captura best-effort
+
+El parser corre **siempre** (en blind y en normal — sale del scope de `blindModeService`). Tiene una regex por campo, no por prompt completo. Si el usuario aplicó el prompt canónico → captura todas las variables. Si tiene el suyo propio → captura solo los campos que coincidan con el formato esperado; el resto queda en valor por defecto.
+
+##### Detección de "esto es una línea del prompt"
+
+Una línea cuenta como prompt si **empieza** (anclada con `^`) por uno de estos tokens:
+`Pv:`, `Pe:`, `Xp:`, `Carga:`, `SL:`, `PL:`, `NM:`, `LD:`, `Jgd:`, `Imagenes:`, `Pieles:`, `Inercia:`, `Astucia:`, `Acc:`.
+
+El anclado a `^` evita falsos positivos: si alguien escribe en un canal `"tengo Pv:50/100, ayuda"`, esa línea NO se gaguea (no empieza con el token).
+
+Una sola línea puede contener varios campos juntos (ej. `Pv:100/100 Pe:50/50 Xp:0 Carga:25`); se aplican todas las regex que matcheen.
+
+Si una línea es del prompt:
+- Se gaguea (no se muestra en terminal — ni en blind ni en normal).
+- Se actualizan las variables que matchean.
+- Se evalúan los triggers de variable.
+- **No** se evalúan triggers de regex sobre ella (el prompt es metadata, no contenido del juego).
+
+Si la línea no es del prompt: se evalúan triggers de regex normalmente, después blind mode si aplica, después se renderiza.
+
+##### Pipeline final
+
+```
+Telnet → ansiParser → AnsiSpan[] →
+  promptParser.parse(line) →
+    isPrompt → playerStatsService.setSnapshot(updates) → variableTriggers.eval(changedKeys) → return (gagged)
+    else → triggerEngine.process(regex) → blindModeService (si blind) → render
+```
+
+##### Eventos de triggers de variable
+
+UI label en castellano, internal en inglés:
+
+| UI label | Internal | Significado |
+|---|---|---|
+| aparece | `appears` | Pasa de `0`/`""` a un valor real |
+| cambia | `changes` | Cualquier cambio de valor |
+| igual a | `equals` | Valor exactamente igual a X (numérico o texto, case-sensitive) |
+| baja de | `crosses_below` | Estaba ≥N, ahora <N (edge-triggered, dispara una vez en la transición) |
+| sube de | `crosses_above` | Estaba ≤N, ahora >N (edge-triggered, dispara una vez en la transición) |
+
+Edge detection requiere guardar `prevValues` paralelo al estado actual en `playerStatsService`.
+
+##### Captura de cambios línea por línea
+
+Por cada línea del prompt, evaluamos triggers de variable con el valor actualizado. Si llegan N líneas seguidas, se evalúa después de cada una con el valor parcial. Si surge un caso real donde un trigger combina dos variables que llegan en líneas distintas y dispara desfasado, se optimiza a "batch al final del prompt" detectando el cierre por timeout. Por ahora simple.
+
+##### Variables en templates de acciones
+
+Soporte de `$old` y `$new` en `replace`/`send`/`notify`/`floating` (también en el `title` de `notify`). Los `$1`, `$2`, ... siguen disponibles para triggers de regex pero **no aplican** a triggers de variable.
+
+Ejemplos:
+- `notify` con `message: "Vida: $new (era $old)"`
+- `floating` con `message: "Quedan $new imágenes"`, `level: 'warning'`
+
+##### Tipos / interfaces
+
+```typescript
+type TriggerSource =
+  | { kind: 'regex'; pattern: string; flags?: string; blocks?: PatternBlock[] }
+  | { kind: 'variable'; name: string; condition: VariableCondition };
+
+type VariableCondition =
+  | { event: 'appears' }
+  | { event: 'changes' }
+  | { event: 'equals'; value: number | string }
+  | { event: 'crosses_below'; value: number }   // edge-triggered
+  | { event: 'crosses_above'; value: number };  // edge-triggered
+```
+
+##### Archivos
+
+Nuevos:
+- `src/services/promptParser.ts` — singleton con regex por campo. `parse(line): { isPrompt, updates }`. Reemplaza `loadPromptFilters` + `isPromptLine` + `convertPromptPatternToRegexArray` actuales de `blindModeService`.
+- `src/services/variableTriggerEvaluator.ts` (o método dentro de `triggerEngine`) — evalúa triggers `kind: 'variable'` cuando `playerStatsService.setSnapshot()` reporta cambios. Maneja edges con `prevValues`.
+- `src/utils/variableMap.ts` — mapping `nombreEspañol ↔ llaveInterna` + funciones de derivadas (`vida_pct`, `energia_pct`, `en_combate`).
+
+Modificados:
+- `src/services/playerStatsService.ts` — nuevos campos (`roomPlayers`, `actionsMovement/Primary/Secondary/Minor`, `carry`), `prevValues`, método `setSnapshot(updates): string[]` que devuelve las claves cambiadas.
+- `src/screens/TerminalScreen.tsx` — pipeline: `promptParser.parse(line)` corre antes que `blindModeService` y antes que `triggerEngine`. Si `isPrompt`, actualiza vars, evalúa triggers de variable, gaguea.
+- `src/services/blindModeService.ts` — quitar `loadPromptFilters` + `isPromptLine` + `convertPromptPatternToRegexArray`. Quitar groups `prompt_stats` y `sala_entidades` del set activo (ya los hace `promptParser`).
+- `src/config/blindModeFilters.json` — quitar groups `prompt_stats` y `sala_entidades`.
+- `src/screens/ServerEditScreen.tsx` (o donde se edite el server) — botón "Aplicar prompt TorchZhyla" con confirmación.
+- `src/components/TriggerEditModal.tsx` — wizard "Alarma de variable": dropdown variable + dropdown evento + input valor (si `equals`/`crosses_*`) + lista de acciones.
+- `src/types/index.ts` — `TriggerSource` extendido con `kind: 'variable'`, tipo `VariableCondition`.
+
+**Coste estimado:** 1-2 días.
+
+##### Decisiones cerradas (referencia rápida durante la implementación)
+
+- Variables internas en inglés (`playerHP` etc.). Mapeo a español solo en la capa de exposición a triggers.
+- `prompt` y `promptcombate` idénticos. `en_combate` derivado de `roomCombatants !== ""`.
+- Botón "Aplicar prompt" solo manual, one-shot. NO hay auto-aplicar al conectar (respeto a usuarios que no usan triggers).
+- Detección del prompt: anclado a `^` con tokens conocidos. Una línea de chat con `Pv:50/100` en medio NO se gaguea.
+- Captura best-effort: si el usuario tiene su propio prompt y los campos coinciden, se capturan; si no, default.
+- Triggers de regex NO se evalúan sobre líneas del prompt (son metadata, no contenido del juego).
+- Eventos `crosses_below`/`crosses_above` son edge-triggered: disparan UNA vez en la transición.
+- `appears` = `0`/`""` → valor real. `changes` = cualquier cambio. `equals` = comparación exacta case-sensitive.
+- Línea por línea, no batch. Si surge problema real, se optimiza después.
+- Soporte `$old` / `$new` en templates de acciones.
+- Quitamos del JSON de blind mode los groups `prompt_stats` y `sala_entidades` — los reemplaza `promptParser` corriendo siempre.
+
+##### Optimizaciones de rendimiento del prompt parser (post-Fase 3)
+
+Diagnóstico (2026-04-29): tras aplicar el prompt canónico se reportó retraso de 3-4 s en mensajes de variable (p.ej. floating de espejos al echar espejismo) y degradación general aun con pocos triggers de usuario. Causa: el prompt canónico es **multi-línea** (~11 líneas por prompt por los `$l`) y RdL lo manda en cada acción/animación; el coste por línea añadido por Fase 3 se amplifica. Además algo del trabajo corre ahora también en modo normal (antes solo en blind a través de `blindModeService`).
+
+Optimizaciones identificadas, por orden de coste/beneficio:
+
+1. **HECHO (2026-04-29)**: en `promptParser.parse`, sacar `normalized.toLowerCase()` y los `token.toLowerCase()` fuera del loop de detección de prompt. Antes: 28 lowercase ops por línea (14 iteraciones × 2). Ahora: 1 lowercase del haystack + tokens precomputados como constante de módulo.
+2. **HECHO (2026-04-29)**: cuando la línea es prompt, en lugar de ejecutar las 14 regex de campo a ciegas, hacer `normalizedLower.includes(discriminator)` por patrón antes del `regex.exec` — descarta en string-scan O(n) las regex cuyo token ni siquiera aparece. Cada `FieldPattern` lleva ahora un `discriminator` precomputado en minúsculas (`'pv:'`, `'sl:'`, ...).
+3. **HECHO (2026-04-29)**: quitar `stripAccents` del hot path. El único campo del prompt con tilde era `Imágenes` (`Astucia` ya iba sin acento). Solución pragmática: cambiar el `CANONICAL_PROMPT` para que envíe `Imagenes:` (sin tilde) y borrar `stripAccents` por completo. **Migración requerida**: cualquier personaje cuyo prompt server-side se aplicó con la versión vieja del canónico (`Imágenes:` con tilde) deja de capturar imágenes hasta que se vuelva a pulsar "Aplicar prompt TorchZhyla" desde la edición del server. Si un usuario tiene un prompt custom no canónico con tilde, también pierde la captura.
+4. **HECHO (2026-04-29)**: reescritas las regex de campo de texto (`SL:`, `PL:`, `NM:`, `LD:`) a `^SL:\s*([^>]*)/` ancladas, sin lookahead, sin alternación. Antes eran `[^\n>]*?` lazy + lookahead con alternación de 13 tokens — backtracking polinómico en líneas largas. Ahora O(N) lineal. Hecho como parte del rewrite de #7/#8 — todas las regex de campo viven juntas como constantes a nivel de módulo.
+5. **HECHO (2026-04-29)**: `blindModeService.processLine(text)` pasa a `processLine(text, stripped)` — el caller (TerminalScreen) le pasa el `stripped` que ya tiene calculado para el prompt parser y el trigger engine, así no se hace `stripAnsi` dos veces por línea no-prompt. Eliminado el método privado `stripAnsiCodes` y su `new RegExp(...)` en cada llamada (otra ganancia colateral: la regex ya no se compilaba sobre la marcha cada vez).
+6. **HECHO (2026-04-29)**: split del parser en detección barata + extracción cara, gateado por presencia de triggers de variable. Ahora `promptParser` expone `isPromptLine(line): boolean` (un único `regex.test` con anchor + alternación, sin allocs) y `parsePromptUpdates(line): Partial<PlayerVariables>`. `triggerEngine.hasVariableTriggers()` devuelve true si hay alguno compilado. El pipeline en `TerminalScreen.processingAndAddLine` ahora hace: (a) `isPromptLine` — siempre — para gaguear la línea. (b) Solo si `hasVariableTriggers` es true, ejecuta `parsePromptUpdates` + `setSnapshot` + `evaluateVariableTriggers`. Resultado: usuarios sin triggers de variable (la mayoría — la plantilla seeded "Espejos y pieles" no se asigna a ningún server por defecto) pagan solo el `regex.test` por línea de prompt y NADA en el snapshot/evaluator. El gag sigue funcionando para que el canónico no ensucie el terminal aunque no haya triggers de variable. Doctrina implícita confirmada: "canónico o nada" — si el usuario tiene un prompt custom las capturas best-effort siguen siendo posibles, pero el flujo está optimizado para el canónico.
+
+Optimizaciones nuevas tras adoptar la doctrina "canónico o nada" (prompt parser asume formato canónico):
+
+7. **HECHO (2026-04-29)**: dispatch directo por leading token. `parsePromptUpdates` ahora hace `PROMPT_LEADER_RE.exec(line)` (un solo regex con capture del leader), busca en `PARSERS: Record<string, FieldParser>` y llama exactamente UNA función parser que ejecuta UNA regex. Antes: 14 `includes` + 1-4 `exec`. Ahora: 1 `exec` (leader) + 1 lookup + 1 `exec` (campo). Las funciones parser viven a nivel de módulo (`parseStatLine`, `parseExits`, `parseCombatants`, ...) y son tipadas, ya no hay `assign` callback opaco. `Pe`, `Xp` y `Carga` no están mapeadas en `PARSERS` — nunca son leader en el canónico (siempre vienen detrás de `Pv:` en la primera línea).
+8. **HECHO (2026-04-29)**: combinada la primera línea (`Pv:X/Y Pe:X/Y Xp:N Carga:N`) en una sola regex `STAT_LINE_RE` con 6 capturas. Una `exec` actualiza `playerHP`, `playerMaxHP`, `playerEnergy`, `playerMaxEnergy`, `playerXP` y `carry` de un tirón. Antes eran 4 regex.exec separadas en esa línea (que es la más frecuente del prompt — RdL la repite en cada acción).
+9. **HECHO (2026-04-29)**: eliminado el `toLowerCase()` del haystack en `parsePromptUpdates` como subproducto de #7. El dispatch ya elige el parser correcto, no hay loop de patrones ni filtro `includes(discriminator)` que necesite el lowercase. 1 alloc menos por línea de prompt.
+10. **HECHO (2026-04-29)**: quitado el flag `/i` de todas las regex (leader y campos). Con canónico el MUD echo-back devuelve exactamente lo que enviamos (caso exacto). El leader se compara contra `Pv|SL|...` en exact-case, los parsers ejecutan `^Pv:...`/`^SL:...` también exact-case. Pequeño ahorro acumulativo y código más explícito sobre la doctrina canónica.
+11. **HECHO (2026-04-29)**: borrados `parse(line)` y la interfaz `ParseResult` del `promptParser`. Nadie los usaba tras el split del #6. Reducción de superficie API; cero impacto en perf.
+12. **HECHO (2026-04-29)**: coalescer `setLines` con `requestAnimationFrame` — el verdadero cuello de botella del burst. Tras instrumentar el pipeline con timers `performance.now()`, descubrimos que cada `onData` del TCP socket llega con UNA línea (el MUD las manda en paquetes separados, no como un único chunk multi-línea como asumía el código). El comentario "Single flush after the batch to avoid N re-renders" en `addMultipleLines` era engañoso: el "batch" tenía siempre 1 línea, así que cada línea disparaba un `setLines` que costaba **80-130 ms** de re-render síncrono del FlatList en un Xiaomi gama media. Para una ráfaga de 30 líneas (espejismo) eran 30 × 100 ms = 3 s de UI lag — no el parser, no los triggers. Fix: añadido `linesFlushScheduledRef` + helper `scheduleLinesFlush()` que envuelve `setLines` en un `requestAnimationFrame` y reentra como no-op si ya hay uno programado. Múltiples llamadas dentro del mismo frame (~16 ms) colapsan a un único render. Los dos sitios que llamaban `setLines([...linesRef.current])` (dentro de `processingAndAddLine` con `deferSetState=false` y al final de `addMultipleLines`) ahora llaman `scheduleLinesFlush()`. Mejora visible inmediata en burst.
+
+Lecciones del descubrimiento del #12 (para no repetir el error de diagnóstico):
+- Antes de optimizar un sub-sistema sospechoso, **medir**. Pasamos un día entero (#1 a #11) puliendo el `promptParser` cuando el cuello real era el render del FlatList. Las optimizaciones del parser siguen siendo válidas y aportan, pero el orden de magnitud del problema estaba en otro lado.
+- El supuesto `addMultipleLines` parecía un coalescing pero no lo era — los TCP packets llegan línea a línea. Cualquier "batch" en el código necesita venir del lado del consumidor (RAF, microtask, timer), no del lado del productor.
+- Instrumentar con `performance.now()` y dumpear logs por batch fue lo que reveló la verdad. Mantener un comentario o atajo para volver a instrumentar rápido si surge otro síntoma similar.
 
 #### Fase 4 — Polish (opcional)
 
-**Export / import de plantillas.** Dos modalidades:
+**Export / import de plantillas individuales.** ✅ HECHO (con sonidos en ZIP). Ver "HECHO (adelantado de Fase 4): export/import de plantillas **con sonidos incluidos**" arriba.
 
-- **Compartir una plantilla concreta** (botón en cada plantilla): JSON al portapapeles con cabecera `{ "format": "torchzhyla-trigger-pack", "version": 1, ... }`. NO incluye `id` ni `assignedServerIds` (en el import se generan ids nuevos y las asignaciones quedan vacías para que el usuario las haga).
-- **Backup de todas mis plantillas** (botón en Settings): JSON con cabecera `{ "format": "torchzhyla-trigger-backup", "version": 1, ... }` y array de plantillas. Para cambio de móvil o backup personal.
-- **Botón único "Importar JSON"** que detecta el `format` por la cabecera y aplica una u otra ruta. En colisión de nombre con una plantilla existente, preguntar: sustituir / duplicar con sufijo / saltar.
-
-**Sonidos personalizados en imports/exports.** El JSON solo lleva la referencia (`custom:{uuid}.wav`), no el archivo. Si al importar el sonido no existe en el destino, marcar como "missing" y avisar al usuario en un resumen al final del import. El trigger sigue existiendo pero la acción `play_sound` correspondiente queda desactivada hasta que el usuario reasigne. NO empaquetamos sonidos en base64 ni en zip en v1 — si surge demanda real, se evalúa después.
+**Backup de todas las plantillas a la vez.** ✅ HECHO. Ver "HECHO: backup global de TODAS las plantillas en un solo ZIP" arriba para el detalle.
 
 **Otros pulidos:**
 - Pack pre-hecho "Reinos de Leyenda básico" bundleado en `src/assets/triggerPacks/`.
-- Drag-to-reorder en la lista de triggers (cambia orden de evaluación; importante para "primera regla gana").
-- Drag-to-reorder de plantillas asignadas a un server (cuando hay varias) si surge la necesidad. Por defecto: orden alfabético por nombre de plantilla.
+- Reordenación de plantillas asignadas a un server (cuando hay varias) si surge la necesidad. Por defecto: orden alfabético por nombre de plantilla.
+
+(Reordenación de triggers dentro de una plantilla ya hecha — ver "HECHO (adelantado de Fase 4)" arriba.)
 
 **Coste:** medio día (export/import) + medio día (resto) = ~1 día.
 
 ### Decisiones pendientes
 
-- **Lista exacta de variables** a trackear (Fase 3). Candidatos discutidos: `vida`, `vida_max`, `vida_pct`, `energia`, `energia_max`, `energia_pct`, `xp`, `oro`, `nivel`, `espejos`, `pieles`, `sala_nombre`, `sala_id`, `enemigos`. El usuario lo cerrará al llegar a Fase 3.
-- **Formato concreto del prompt** del MUD para parsear las variables. A definir junto con la lista anterior.
-- **Orden entre plantillas** cuando un server tiene varias asignadas. Default propuesto: alfabético por nombre de plantilla. Drag-reorder se difiere a Fase 4 si hace falta.
+- **Orden entre plantillas** cuando un server tiene varias asignadas. Default actual: alfabético por nombre de plantilla. Reordenación manual entre plantillas se difiere a Fase 4 si hace falta. (La reordenación **dentro** de una plantilla ya está implementada con flechas ▲/▼.)
+
+(Las decisiones de Fase 3 — lista de variables, formato de prompt, semántica de eventos, UX de "Aplicar prompt" — se cerraron el 2026-04-28, ver sección "Fase 3" arriba.)
 
 ## Temas Pendientes
 

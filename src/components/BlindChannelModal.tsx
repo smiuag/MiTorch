@@ -71,7 +71,6 @@ export function BlindChannelModal({
   const [newAlias, setNewAlias] = useState('');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const aliasInputRef = useRef<TextInput>(null);
-  const messagesListRef = useRef<FlatList>(null);
 
   const sortedChannels = useMemo(() => sortChannels(channels, channelOrder), [channels, channelOrder]);
 
@@ -90,6 +89,13 @@ export function BlindChannelModal({
     if (!activeChannel) return [];
     return channelMessages.filter(m => m.channel === activeChannel);
   }, [channelMessages, activeChannel]);
+
+  // FlatList renders with `inverted` and the data reversed: newest message at
+  // index 0, oldest at the end. The `scaleY(-1)` that `inverted` applies then
+  // places newest at the visual bottom. New messages prepend to data[0]
+  // automatically, so the user stays pinned to the latest — no manual
+  // scrollToEnd needed when messages arrive, channel changes, or modal opens.
+  const reversedMessages = useMemo(() => [...filteredMessages].reverse(), [filteredMessages]);
 
   const currentAlias = activeChannel ? (channelAliases[activeChannel] || activeChannel) : '';
 
@@ -119,60 +125,23 @@ export function BlindChannelModal({
     }
   }, [askingAliasForChannel]);
 
-  // Listen to keyboard show/hide to adjust scroll
+  // Track keyboard height so the modal can pad its bottom edge while the
+  // keyboard is up. Scrolling is no longer needed: the inverted FlatList
+  // keeps the newest message pinned at offset 0 automatically.
   useEffect(() => {
     const showSub = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      (e) => {
-        setKeyboardHeight(e.endCoordinates.height);
-        // Esperar a que el teclado termine de subir antes de hacer scroll
-        setTimeout(() => {
-          if (messagesListRef.current) {
-            messagesListRef.current.scrollToEnd({ animated: true });
-          }
-        }, Platform.OS === 'ios' ? 250 : 300);
-      }
+      (e) => setKeyboardHeight(e.endCoordinates.height),
     );
-
     const hideSub = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => {
-        setKeyboardHeight(0);
-      }
+      () => setKeyboardHeight(0),
     );
-
     return () => {
       showSub.remove();
       hideSub.remove();
     };
   }, []);
-
-  // Scroll to end when changing channel
-  useEffect(() => {
-    if (activeChannel && messagesListRef.current) {
-      setTimeout(() => {
-        messagesListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }
-  }, [activeChannel]);
-
-  // Scroll to end when modal opens
-  useEffect(() => {
-    if (visible && activeChannel && messagesListRef.current) {
-      setTimeout(() => {
-        messagesListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }
-  }, [visible]);
-
-  // Scroll to end when new messages arrive
-  useEffect(() => {
-    if (activeChannel && messagesListRef.current && filteredMessages.length > 0) {
-      setTimeout(() => {
-        messagesListRef.current?.scrollToEnd({ animated: true });
-      }, 50);
-    }
-  }, [filteredMessages]);
 
   const handleSendMessage = useCallback(() => {
     if (!inputText.trim() || !activeChannel) return;
@@ -271,8 +240,8 @@ export function BlindChannelModal({
         {/* Messages list */}
         {activeChannel ? (
           <FlatList
-            ref={messagesListRef}
-            data={filteredMessages}
+            data={reversedMessages}
+            inverted
             renderItem={renderMessage}
             keyExtractor={item => String(item.id)}
             style={styles.messagesList}

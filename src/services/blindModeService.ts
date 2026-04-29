@@ -65,142 +65,12 @@ class BlindModeService {
   private activeFilters: Set<string>;
   private hpAlertInterval: ReturnType<typeof setInterval> | null = null;
   private lastHpPercent: number = 100;
-  private promptFilterRegexes: RegExp[] = [];
 
   constructor() {
     this.filters = { ...blindModeFiltersData.filters } as Record<string, FilterGroup>;
     this.activeFilters = new Set(
       blindModeFiltersData.classConfigs.generica.enabledFilters
     );
-
-    // Load and process prompt filters on initialization
-    this.loadPromptFilters();
-  }
-
-  /**
-   * Load and process blind mode prompt filters from raw alias_macros patterns
-   * Includes both "prompt" and "promptcombate" patterns
-   */
-  private loadPromptFilters() {
-    try {
-      // Pre-defined prompt patterns from alias_macros.set
-      // Both normal prompt and combat prompt patterns
-      const rawPatterns = [
-        // configurarpromptB
-        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lNM:$k$lLD:$K$l',
-        // configurarpromptBM
-        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lNM:$k$lLD:$K$lImágenes:$e$lPieles:$p$l',
-        // configurarpromptBI
-        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lNM:$k$lLD:$K$lInercia:$n$l',
-        // configurarpromptBMA
-        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lNM:$k$lLD:$K$lImágenes:$e$lPieles:$p$lAstucia:$t$l',
-        // configurarpromptA
-        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lNM:$b$lLD:$K$l',
-        // configurarpromptAM
-        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lNM:$b$lLD:$K$lImágenes:$e$lPieles:$p$l',
-        // configurarpromptAA
-        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lNM:$b$lLD:$K$lAstucia:$t$l',
-        // configurarpromptAMA
-        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lNM:$b$lLD:$K$lImágenes:$e$lPieles:$p$lAstucia:$t$l',
-        // configurarpromptX
-        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lJgd:$j$l',
-        // configurarpromptXM
-        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lJgd:$j$lImágenes:$e$lPieles:$p$l',
-        // configurarpromptXA
-        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lJgd:$j$lAstucia:$t$l',
-        // configurarpromptXMA
-        '$lPv:$v\\$V Pe:$g\\$G Xp:$x$lSL:$s$lPL:$a$lJgd:$j$lImágenes:$e$lPieles:$p$lAstucia:$t$l',
-      ];
-
-      // Note: Both prompt and promptcombate patterns are identical in alias_macros.set,
-      // so the same patterns apply to both normal and combat prompts
-      // Flatten all regex arrays into a single array
-      this.promptFilterRegexes = rawPatterns
-        .flatMap(pattern => this.convertPromptPatternToRegexArray(pattern));
-
-    } catch (e) {
-      console.warn('[BlindMode] Error loading prompt filters:', e);
-      this.promptFilterRegexes = [];
-    }
-  }
-
-  /**
-   * Convert a prompt pattern to multiple regexes (one per line)
-   * Example: "$lPv:$v\$V Pe:$g\$G Xp:$x$lSL:$s" → [regex for "Pv:...", regex for "SL:..."]
-   * Returns array of regexes instead of a single one
-   * Handles character encoding issues (like corrupted accented characters)
-   */
-  private convertPromptPatternToRegexArray(pattern: string): RegExp[] {
-    try {
-      // Split pattern by $l to get individual lines
-      const lines = pattern.split(/\$l/).filter(line => line.trim().length > 0);
-      const regexes: RegExp[] = [];
-
-      for (const line of lines) {
-        const variables = /\$[vVgGxsakhKnepbtj]/g;
-
-        // FIRST: Normalize accented characters BEFORE any processing
-        // This ensures "Imágenes" becomes "Imagenes" in the pattern
-        let normalizedLine = line
-          .replace(/[áÁ]/g, 'a')  // á, Á → a
-          .replace(/[éÉ]/g, 'e')  // é, É → e
-          .replace(/[íÍ]/g, 'i')  // í, Í → i
-          .replace(/[óÓ]/g, 'o')  // ó, Ó → o
-          .replace(/[úÚ]/g, 'u')  // ú, Ú → u
-          .replace(/[üÜ]/g, 'u')  // ü, Ü → u
-          .replace(/[ñÑ]/g, 'n'); // ñ, Ñ → n
-
-        // SECOND: Replace variables with placeholder so they don't get escaped
-        let regexStr = normalizedLine
-          .replace(variables, '___DIGIT___');  // Temporarily replace variables
-
-        // THIRD: Escape special regex characters
-        regexStr = regexStr
-          .replace(/[\\^$.|?*+(){}\[\]]/g, '\\$&');  // Escape special regex chars
-
-        // FOURTH: Replace placeholders with digit pattern (zero or more digits)
-        // Using \d* instead of \d+ to match cases where value might be missing
-        regexStr = regexStr
-          .replace(/___DIGIT___/g, '\\d*');
-
-        // Make the pattern more flexible to match varying whitespace
-        regexStr = regexStr.replace(/\s+/g, '\\s*');
-
-        try {
-          regexes.push(new RegExp(regexStr, 'i'));
-        } catch (e) {
-          console.warn('[BlindMode] Failed to create regex for line:', line, e);
-        }
-      }
-
-      return regexes;
-    } catch (e) {
-      console.warn('[BlindMode] Failed to convert prompt pattern:', e);
-      return [];
-    }
-  }
-
-  /**
-   * Check if a line matches any prompt filter pattern
-   * Normalizes text to handle encoding issues with accented characters
-   */
-  private isPromptLine(text: string): boolean {
-    let cleanText = this.stripAnsiCodes(text);
-    const originalText = cleanText;
-
-    // Normalize accented characters to handle corruption issues
-    // This helps match lines even if they arrive with encoding issues
-    cleanText = cleanText
-      .replace(/[áÁa?]/g, 'a')  // á, Á, a, or corrupted → a
-      .replace(/[éÉe?]/g, 'e')  // é, É, e, or corrupted → e
-      .replace(/[íÍi?]/g, 'i')  // í, Í, i, or corrupted → i
-      .replace(/[óÓo?]/g, 'o')  // ó, Ó, o, or corrupted → o
-      .replace(/[úÚu?]/g, 'u')  // ú, Ú, u, or corrupted → u
-      .replace(/[üÜu?]/g, 'u')  // ü, Ü, u, or corrupted → u
-      .replace(/[ñÑn?]/g, 'n'); // ñ, Ñ, n, or corrupted → n
-
-    const isPrompt = this.promptFilterRegexes.some(regex => regex.test(cleanText));
-    return isPrompt;
   }
 
   /**
@@ -209,7 +79,6 @@ class BlindModeService {
   updatePlayerVariables(variables: Partial<PlayerVariables>) {
     const currentStats = playerStatsService.getPlayerVariables();
     const oldHP = currentStats.playerHP;
-    const oldMaxHP = currentStats.playerMaxHP;
 
     // Update the unified service
     playerStatsService.updatePlayerVariables(variables);
@@ -307,35 +176,20 @@ class BlindModeService {
   }
 
   /**
-   * Remove ANSI escape codes from text for pattern matching
-   */
-  private stripAnsiCodes(text: string): string {
-    // Remove all ANSI escape sequences: ESC [ ... m
-    // Using character code 27 for ESC to be sure
-    const esc = String.fromCharCode(27);
-    return text.replace(new RegExp(esc + '\\[[0-9;]*m', 'g'), '');
-  }
-
-  /**
-   * Process a line of text from the server
+   * Process a line of text from the server.
+   * Caller passes both the raw `text` (kept for `modifiedText` fallback when
+   * no filter matches) and `stripped` (the ANSI-stripped version, already
+   * computed upstream by `TerminalScreen` and shared with the prompt parser
+   * and trigger engine — avoids re-stripping the same line twice per pass).
    * Returns { shouldDisplay, announcement, modifiedText, sound }
    */
-  processLine(text: string): {
+  processLine(text: string, stripped: string): {
     shouldDisplay: boolean;
     announcement?: string;
     modifiedText: string;
     action?: FilterAction;
   } {
-    // Strip ANSI codes for pattern matching
-    const cleanText = this.stripAnsiCodes(text);
-
-    // First: Check if this is a prompt line (suppress prompt output from terminal)
-    if (this.isPromptLine(cleanText)) {
-      return {
-        shouldDisplay: false,
-        modifiedText: text,
-      };
-    }
+    const cleanText = stripped;
 
     // Check all filter groups that are enabled
     for (const [groupName, group] of Object.entries(this.filters)) {
@@ -376,37 +230,7 @@ class BlindModeService {
     announcement?: string;
     modifiedText: string;
     action?: FilterAction;
-    capturedData?: Record<string, any>;
   } {
-    // Handle capture actions
-    if (pattern.action === 'capture' && (pattern as any).captureVars) {
-      const captureVars = (pattern as any).captureVars as string[];
-      const capturedData: Record<string, any> = {};
-      const updates: Partial<PlayerVariables> = {};
-
-      for (let i = 0; i < captureVars.length && i + 1 < regexMatch.length; i++) {
-        const varName = captureVars[i];
-        const value = regexMatch[i + 1];
-
-        // Try to convert to number, otherwise keep as string
-        const parsedValue = isNaN(Number(value)) ? value : Number(value);
-        capturedData[varName] = parsedValue;
-
-        // Update unified PlayerVariables service
-        (updates as any)[varName] = parsedValue;
-      }
-
-      if (Object.keys(updates).length > 0) {
-        playerStatsService.updatePlayerVariables(updates);
-      }
-
-      return {
-        shouldDisplay: pattern.silence === true ? false : true,
-        modifiedText: text,
-        capturedData,
-      };
-    }
-
     // Interpolate regex groups into message
     let message = pattern.message || text;
     if (regexMatch) {

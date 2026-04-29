@@ -49,7 +49,8 @@ export type TriggerType =
   | 'notify'
   | 'command'
   | 'replace'
-  | 'combo';
+  | 'combo'
+  | 'variable';
 
 export type FloatingMessageLevel = 'info' | 'success' | 'error';
 
@@ -76,16 +77,29 @@ export type ActionTextBlock =
   | { kind: 'text'; text: string }
   | { kind: 'capture_ref'; captureId: string };
 
-export type TriggerSource = {
-  kind: 'regex';
-  pattern: string;                  // compiled regex (read by engine)
-  flags?: string;
-  // Visual editor state — present when not in expert mode:
-  blocks?: PatternBlock[];
-  anchorStart?: AnchorMode;         // default 'open'
-  anchorEnd?: AnchorMode;           // default 'open'
-  expertMode?: boolean;             // true => editor shows raw regex, blocks ignored
-};
+export type TriggerSource =
+  | {
+      kind: 'regex';
+      pattern: string;                  // compiled regex (read by engine)
+      flags?: string;
+      // Visual editor state — present when not in expert mode:
+      blocks?: PatternBlock[];
+      anchorStart?: AnchorMode;         // default 'open'
+      anchorEnd?: AnchorMode;           // default 'open'
+      expertMode?: boolean;             // true => editor shows raw regex, blocks ignored
+    }
+  | {
+      kind: 'variable';
+      name: string;                     // e.g. 'vida', 'energia_pct', 'combatientes'
+      condition: VariableCondition;
+    };
+
+export type VariableCondition =
+  | { event: 'appears' }                          // 0/"" → valor real
+  | { event: 'changes' }                          // cualquier cambio
+  | { event: 'equals'; value: number | string }   // valor exactamente igual a X
+  | { event: 'crosses_below'; value: number }     // edge: estaba ≥N, ahora <N
+  | { event: 'crosses_above'; value: number };    // edge: estaba ≤N, ahora >N
 
 export interface Trigger {
   id: string;

@@ -8,6 +8,7 @@ import {
   TextInput,
   Modal,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -16,6 +17,8 @@ import { RootStackParamList, ServerProfile } from '../types';
 import { loadServers, saveServers } from '../storage/serverStorage';
 import { loadSettings, saveSettings } from '../storage/settingsStorage';
 import { loadServerLayout, saveServerLayout } from '../storage/layoutStorage';
+import { activeConnection } from '../services/activeConnection';
+import { CANONICAL_PROMPT } from '../services/promptParser';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ServerList'>;
 
@@ -128,6 +131,36 @@ export function ServerListScreen({ navigation }: Props) {
     const updated = servers.filter(s => s.id !== server.id);
     setServers(updated);
     await saveServers(updated);
+  };
+
+  const handleApplyPrompt = (server: ServerProfile) => {
+    if (!activeConnection.isConnectedTo(server.id)) {
+      Alert.alert(
+        'No estás conectado',
+        'Conéctate primero a este personaje desde la lista, vuelve a abrir la edición y entonces podrás aplicar el prompt.',
+      );
+      return;
+    }
+    Alert.alert(
+      'Aplicar prompt TorchZhyla',
+      'Esto sobrescribirá tu prompt actual en el MUD para este personaje. Es necesario para que las variables (vida, energía, salidas, ...) se capturen correctamente y puedan usarse en triggers. ¿Continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Aplicar',
+          onPress: () => {
+            const ok =
+              activeConnection.send(server.id, `prompt ${CANONICAL_PROMPT}`) &&
+              activeConnection.send(server.id, `promptcombate ${CANONICAL_PROMPT}`);
+            if (ok) {
+              Alert.alert('Prompt aplicado', 'El MUD recibió el nuevo prompt. A partir de ahora capturaremos las variables.');
+            } else {
+              Alert.alert('No se pudo enviar', 'La conexión se ha perdido. Reconéctate y vuelve a intentarlo.');
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleDuplicate = async (server: ServerProfile) => {
@@ -385,6 +418,25 @@ export function ServerListScreen({ navigation }: Props) {
               accessibilityLabel="Contraseña"
               accessibilityHint="Ingresa tu contraseña para auto-login"
             />
+
+            {editingServer && (
+              <>
+                <Text style={[styles.label, { marginTop: 20 }]}>Triggers</Text>
+                <TouchableOpacity
+                  style={styles.applyPromptBtn}
+                  onPress={() => handleApplyPrompt(editingServer)}
+                  accessible={true}
+                  accessibilityRole="button"
+                  accessibilityLabel="Aplicar prompt TorchZhyla"
+                  accessibilityHint="Configura el prompt del MUD para que las variables se capturen y puedan usarse en triggers. Solo funciona si estás conectado a este personaje."
+                >
+                  <Text style={styles.applyPromptBtnText}>Aplicar prompt TorchZhyla</Text>
+                  <Text style={styles.applyPromptBtnHint}>
+                    Configura el prompt del MUD para capturar variables (vida, energía, salidas…). Necesario si vas a usar triggers de variable.
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -864,5 +916,26 @@ const styles = StyleSheet.create({
   },
   saveTextDisabled: {
     color: '#666',
+  },
+  applyPromptBtn: {
+    backgroundColor: '#0a2a3a',
+    borderWidth: 1,
+    borderColor: '#0099ff',
+    borderRadius: 6,
+    padding: 12,
+    marginTop: 4,
+  },
+  applyPromptBtnText: {
+    color: '#0099ff',
+    fontSize: 14,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+  },
+  applyPromptBtnHint: {
+    color: '#888',
+    fontSize: 11,
+    fontFamily: 'monospace',
+    marginTop: 4,
+    lineHeight: 14,
   },
 });

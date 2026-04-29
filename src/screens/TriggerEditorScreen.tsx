@@ -98,6 +98,17 @@ export function TriggerEditorScreen({ route, navigation }: Props) {
     });
   };
 
+  const handleMoveTrigger = (trigger: Trigger, direction: 'up' | 'down') => {
+    if (!pack) return;
+    const idx = pack.triggers.findIndex((t) => t.id === trigger.id);
+    if (idx < 0) return;
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= pack.triggers.length) return;
+    const next = [...pack.triggers];
+    [next[idx], next[targetIdx]] = [next[targetIdx], next[idx]];
+    persist({ ...pack, triggers: next });
+  };
+
   const handleToggleServer = (serverId: string) => {
     if (!pack) return;
     const isAssigned = pack.assignedServerIds.includes(serverId);
@@ -147,55 +158,83 @@ export function TriggerEditorScreen({ route, navigation }: Props) {
             </Text>
           </View>
         }
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.triggerCard}
-            onPress={() => handleEditTrigger(item)}
-            onLongPress={() => handleEditTrigger(item)}
-            accessible={true}
-            accessibilityLabel={`Trigger ${item.name || 'sin nombre'}`}
-            accessibilityHint="Tap para editar"
-          >
-            <View style={styles.triggerInfo}>
-              <Text style={styles.triggerName}>{item.name || '(sin nombre)'}</Text>
-              <Text style={styles.triggerMeta}>
-                {labelForType(item.type)} · {item.actions.length} acción
-                {item.actions.length === 1 ? '' : 'es'}
-              </Text>
-              <Text style={styles.triggerRegex} numberOfLines={2}>
-                /{item.source.pattern}/{item.source.flags || ''}
-              </Text>
-            </View>
-            <View style={styles.triggerActions}>
-              <Switch
-                value={item.enabled}
-                onValueChange={(v) => handleToggleEnabled(item, v)}
-                trackColor={{ false: '#333', true: '#0c0' }}
-                thumbColor={item.enabled ? '#000' : '#666'}
-              />
-              <TouchableOpacity
-                style={[styles.actionBtn, styles.editBtn]}
-                onPress={() => handleEditTrigger(item)}
-                accessible={true}
-                accessibilityLabel="Editar"
-                accessibilityRole="button"
-                accessibilityHint={`Editar trigger ${item.name || 'sin nombre'}`}
-              >
-                <Text style={[styles.actionBtnText, styles.editBtnText]}>✎</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.actionBtn, styles.deleteBtn]}
-                onPress={() => handleDeleteTrigger(item)}
-                accessible={true}
-                accessibilityLabel="Borrar"
-                accessibilityRole="button"
-                accessibilityHint={`Borrar trigger ${item.name || 'sin nombre'}`}
-              >
-                <Text style={[styles.actionBtnText, styles.deleteBtnText]}>✕</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        )}
+        renderItem={({ item, index }) => {
+          const canUp = index > 0;
+          const canDown = index < pack.triggers.length - 1;
+          return (
+            <TouchableOpacity
+              style={styles.triggerCard}
+              onPress={() => handleEditTrigger(item)}
+              onLongPress={() => handleEditTrigger(item)}
+              accessible={true}
+              accessibilityLabel={`Trigger ${item.name || 'sin nombre'}`}
+              accessibilityHint="Tap para editar"
+            >
+              <View style={styles.reorderColumn}>
+                <TouchableOpacity
+                  style={[styles.reorderBtn, !canUp && styles.reorderBtnDisabled]}
+                  onPress={() => canUp && handleMoveTrigger(item, 'up')}
+                  disabled={!canUp}
+                  accessibilityRole="button"
+                  accessibilityLabel="Mover arriba"
+                  accessibilityHint={`Sube "${item.name || 'sin nombre'}" una posición. Los triggers se evalúan en orden de arriba abajo y gana el primero que matchea.`}
+                >
+                  <Text style={[styles.reorderBtnText, !canUp && styles.reorderBtnTextDisabled]}>▲</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.reorderBtn, !canDown && styles.reorderBtnDisabled]}
+                  onPress={() => canDown && handleMoveTrigger(item, 'down')}
+                  disabled={!canDown}
+                  accessibilityRole="button"
+                  accessibilityLabel="Mover abajo"
+                  accessibilityHint={`Baja "${item.name || 'sin nombre'}" una posición.`}
+                >
+                  <Text style={[styles.reorderBtnText, !canDown && styles.reorderBtnTextDisabled]}>▼</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.triggerInfo}>
+                <Text style={styles.triggerName}>{item.name || '(sin nombre)'}</Text>
+                <Text style={styles.triggerMeta}>
+                  {labelForType(item.type)} · {item.actions.length} acción
+                  {item.actions.length === 1 ? '' : 'es'}
+                </Text>
+                <Text style={styles.triggerRegex} numberOfLines={2}>
+                  {item.source.kind === 'variable'
+                    ? `${item.source.name} ${labelForVariableEvent(item.source.condition)}`
+                    : `/${item.source.pattern}/${item.source.flags || ''}`}
+                </Text>
+              </View>
+              <View style={styles.triggerActions}>
+                <Switch
+                  value={item.enabled}
+                  onValueChange={(v) => handleToggleEnabled(item, v)}
+                  trackColor={{ false: '#333', true: '#0c0' }}
+                  thumbColor={item.enabled ? '#000' : '#666'}
+                />
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.editBtn]}
+                  onPress={() => handleEditTrigger(item)}
+                  accessible={true}
+                  accessibilityLabel="Editar"
+                  accessibilityRole="button"
+                  accessibilityHint={`Editar trigger ${item.name || 'sin nombre'}`}
+                >
+                  <Text style={[styles.actionBtnText, styles.editBtnText]}>✎</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.deleteBtn]}
+                  onPress={() => handleDeleteTrigger(item)}
+                  accessible={true}
+                  accessibilityLabel="Borrar"
+                  accessibilityRole="button"
+                  accessibilityHint={`Borrar trigger ${item.name || 'sin nombre'}`}
+                >
+                  <Text style={[styles.actionBtnText, styles.deleteBtnText]}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          );
+        }}
       />
       </View>
 
@@ -287,7 +326,19 @@ function labelForType(t: string): string {
     case 'command': return 'Comando';
     case 'replace': return 'Reemplazar';
     case 'combo': return 'Combo';
+    case 'variable': return 'Variable';
     default: return t;
+  }
+}
+
+function labelForVariableEvent(cond: { event: string; value?: number | string }): string {
+  switch (cond.event) {
+    case 'appears': return 'aparece';
+    case 'changes': return 'cambia';
+    case 'equals': return `= ${cond.value}`;
+    case 'crosses_below': return `baja de ${cond.value}`;
+    case 'crosses_above': return `sube de ${cond.value}`;
+    default: return cond.event;
   }
 }
 
@@ -347,6 +398,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  reorderColumn: {
+    width: 28,
+    marginRight: 8,
+    justifyContent: 'center',
+    gap: 4,
+  },
+  reorderBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 4,
+    backgroundColor: '#222',
+    borderWidth: 1,
+    borderColor: '#444',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reorderBtnDisabled: {
+    backgroundColor: '#161616',
+    borderColor: '#2a2a2a',
+  },
+  reorderBtnText: { color: '#88aaff', fontSize: 12, fontWeight: 'bold' },
+  reorderBtnTextDisabled: { color: '#444' },
   triggerInfo: { flex: 1, marginRight: 8 },
   triggerName: { color: '#ffffff', fontSize: 16, fontWeight: 'bold', fontFamily: 'monospace' },
   triggerMeta: { color: '#888', fontSize: 12, fontFamily: 'monospace', marginTop: 2 },

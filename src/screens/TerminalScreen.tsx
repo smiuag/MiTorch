@@ -36,7 +36,7 @@ import { VitalBars } from '../components/VitalBars';
 import { ButtonGrid, GRID_COLS, GRID_ROWS } from '../components/ButtonGrid';
 import { ButtonEditModal } from '../components/ButtonEditModal';
 import { RoomSearchResults } from '../components/RoomSearchResults';
-import { loadSettings } from '../storage/settingsStorage';
+import { loadSettings, saveSettings } from '../storage/settingsStorage';
 import { MapService, MapRoom } from '../services/mapService';
 import { ButtonLayout, createDefaultLayout, createBlindModeLayout, loadLayout, saveLayout, loadServerLayout, saveServerLayout } from '../storage/layoutStorage';
 import { loadServers, saveServers } from '../storage/serverStorage';
@@ -45,6 +45,8 @@ import { triggerEngine } from '../services/triggerEngine';
 import { blindModeService } from '../services/blindModeService';
 import { logService } from '../services/logService';
 import { playerStatsService } from '../services/playerStatsService';
+import { promptParser } from '../services/promptParser';
+import { activeConnection } from '../services/activeConnection';
 import { useSounds } from '../contexts/SoundContext';
 import { useFloatingMessages } from '../contexts/FloatingMessagesContext';
 import { FloatingMessages } from '../components/FloatingMessages';
@@ -106,10 +108,6 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [channelAliases, setChannelAliases] = useState<Record<string, string>>({});
   const [channelOrder, setChannelOrder] = useState<string[]>([]);
   const [blindChannelModalVisible, setBlindChannelModalVisible] = useState(false);
-  const [playerXP, setPlayerXP] = useState(0);
-  const [roomEnemies, setRoomEnemies] = useState('');
-  const [roomAllies, setRoomAllies] = useState('');
-  const [hpHistory, setHpHistory] = useState<{ delta: number; label: string }[]>([]);
   const [currentBlindPanel, setCurrentBlindPanel] = useState(1);
   const [currentCompletoPanel, setCurrentCompletoPanel] = useState(1);
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
@@ -123,6 +121,14 @@ export function TerminalScreen({ route, navigation }: Props) {
   const fontSizeRef = useRef(14);
   const telnetRef = useRef<TelnetService | null>(null);
   const linesRef = useRef<MudLine[]>([]);
+  // Coalesces setLines into a single render per animation frame. The TCP
+  // socket fires `onData` per packet — typically once per MUD line — and
+  // each setLines was triggering a ~80-130ms FlatList re-render synchronously
+  // on a budget Android phone. During an action burst (espejismo: 30+ lines
+  // in tight sequence) that meant 30+ serialized renders = several seconds
+  // of UI lag. With RAF coalescing all linesRef pushes within ~16ms collapse
+  // into one render.
+  const linesFlushScheduledRef = useRef(false);
   const isCapturingAliasRef = useRef(false);
   const aliasBufferRef = useRef<string[]>([]);
   const aliasTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -136,7 +142,12 @@ export function TerminalScreen({ route, navigation }: Props) {
   const recentLinesRef = useRef<string[]>([]);
   const intentionalLocateRef = useRef(false);
   const waitingForIrsalaAfterLocateRef = useRef(false);
-  const autoLoginRef = useRef<boolean | string>(false);
+  // Auto-login state machine. Was a boolean+string union where `false` meant
+  // BOTH "haven't started" and "already finished" — a bug that made the
+  // username-prompt regex check re-fire on every line forever after a
+  // successful login. Explicit 3-state union makes the meaning unambiguous.
+  type AutoLoginState = 'pending' | 'waiting-for-password' | 'completed';
+  const autoLoginRef = useRef<AutoLoginState>('pending');
   const textInputRef = useRef<TextInput>(null);
   const lastSentChannelTime = useRef(0);
   const silentModeEnabledRef = useRef(false);
@@ -260,6 +271,11 @@ export function TerminalScreen({ route, navigation }: Props) {
         if (settings.notificationsEnabled !== undefined) {
           notificationsEnabledRef.current = settings.notificationsEnabled;
         }
+        if (settings.soundsEnabled !== undefined) {
+          // silent = !sounds. We track the inverse locally for the in-Terminal
+          // toggle UI (🔊/🔇), but the canonical state lives in settings.
+          setSilentModeEnabled(!settings.soundsEnabled);
+        }
         logService.configure(
           settings.logsEnabled ?? false,
           settings.logsMaxLines ?? 20000
@@ -361,7 +377,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     // Reset auto-login state when server changes
-    autoLoginRef.current = false;
+    autoLoginRef.current = 'pending';
     setLoginFailed(false);
 
     (async () => {
@@ -413,9 +429,25 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   // Process a single line with blind mode filters and add to display.
   // Pass `deferSetState=true` when batching multiple lines to avoid N re-renders.
+  // Schedules a single setLines render on the next animation frame.
+  // Multiple calls within the same frame collapse into one render — the
+  // primary fix for burst latency since each TCP packet (= 1 line) was
+  // forcing a synchronous FlatList render of ~80-130ms.
+  const scheduleLinesFlush = () => {
+    if (linesFlushScheduledRef.current) return;
+    linesFlushScheduledRef.current = true;
+    requestAnimationFrame(() => {
+      linesFlushScheduledRef.current = false;
+      setLines(linesRef.current.slice());
+    });
+  };
+
   const processingAndAddLine = (text: string, isChannelMessage: boolean = false, deferSetState: boolean = false) => {
-    // Auto-login: Try to log in with saved credentials if available and not yet attempted
-    if (!autoLoginRef.current && server.username && server.password) {
+    // Auto-login: Try to log in with saved credentials if available and not yet attempted.
+    // Gating on the explicit 'pending' state stops the regex from running on every
+    // line after login completes (the previous `!autoLoginRef.current` check matched
+    // the post-completion `false` value and ran forever).
+    if (autoLoginRef.current === 'pending' && server.username && server.password) {
       const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
       // Detect username prompt: "Introduce el nombre de tu personaje:"
       if (/introduce el nombre de tu personaje/i.test(withoutAnsi)) {
@@ -433,7 +465,7 @@ export function TerminalScreen({ route, navigation }: Props) {
       const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '');
       // Detect password prompt: "Introduce la clave de tu ficha o de tu cuenta:"
       if (/introduce la clave de tu ficha o de tu cuenta/i.test(withoutAnsi)) {
-        autoLoginRef.current = false; // Mark as completed before sending
+        autoLoginRef.current = 'completed';
         const id = setTimeout(() => {
           telnetRef.current?.send(server.password!);
           logService.markLoginComplete();
@@ -465,12 +497,53 @@ export function TerminalScreen({ route, navigation }: Props) {
     // Skip lines that are only template variables like <VERSION>, <NAME>, etc
     if (/^\s*<[A-Z_]+>\s*$/.test(text)) return;
 
+    const stripped = stripAnsi(text);
+
+    // Prompt parser runs before regex triggers and before blind mode. If the
+    // line looks like part of the MUD prompt (Pv:, Pe:, SL:, ...), gag it in
+    // BOTH modes (blind & normal). Regex triggers are NOT evaluated on
+    // prompt lines — the prompt is metadata, not game content; users react
+    // via variable triggers instead.
+    //
+    // Two-phase split: cheap detection (regex.test) is always paid so the
+    // gag works regardless of trigger config. The expensive field
+    // extraction + setSnapshot + variable evaluator only runs when there's
+    // at least one variable trigger that could consume the captured values.
+    if (promptParser.isPromptLine(stripped)) {
+      if (triggerEngine.hasVariableTriggers()) {
+        const updates = promptParser.parsePromptUpdates(stripped);
+        const changedKeys = playerStatsService.setSnapshot(updates);
+        if (changedKeys.length > 0) {
+          const prevSnapshot = playerStatsService.getPrevValues();
+          const currentSnapshot = playerStatsService.getPlayerVariables();
+          const variableEffects = triggerEngine.evaluateVariableTriggers(
+            changedKeys,
+            prevSnapshot,
+            currentSnapshot,
+          );
+          for (const fx of variableEffects) {
+            if (fx.type === 'play_sound') {
+              if (fx.file && !silentModeEnabledRef.current) playSoundRef.current(fx.file);
+            } else if (fx.type === 'send') {
+              if (fx.command) telnetRef.current?.send(fx.command);
+            } else if (fx.type === 'notify') {
+              if (notificationsEnabledRef.current && appStateRef.current !== 'active') {
+                fireNotification(fx.title || 'TorchZhyla', fx.message);
+              }
+            } else if (fx.type === 'floating') {
+              pushFloating(fx.message, fx.level);
+            }
+          }
+        }
+      }
+      return; // gag prompt lines in all modes
+    }
 
     // User-defined triggers run FIRST, on the raw line, so blind-filtered or
     // blind-modified lines still fire sounds/notifications/commands. Captures
     // and side effects are computed against the unmodified text the MUD sent.
     const rawSpans = parseAnsi(text);
-    const triggerResult = triggerEngine.process(stripAnsi(text), rawSpans);
+    const triggerResult = triggerEngine.process(stripped, rawSpans);
 
     // Fire side effects FIRST — they must run even when the trigger gags the
     // line (e.g. [gag, floating] silences display while still showing the
@@ -504,8 +577,10 @@ export function TerminalScreen({ route, navigation }: Props) {
     let shouldAnnounce = false;
     let announcementText = '';
 
-    // Process line with blind mode service to detect patterns and sounds (both modes use this)
-    const result = blindModeService.processLine(text);
+    // Process line with blind mode service to detect patterns and sounds
+    // (both modes use this). Pass `stripped` so blindModeService doesn't
+    // re-strip ANSI codes from a line we already stripped above.
+    const result = blindModeService.processLine(text, stripped);
 
     if (uiMode === 'blind') {
 
@@ -522,34 +597,6 @@ export function TerminalScreen({ route, navigation }: Props) {
         announcementText = result.announcement;
       }
 
-      // Sync captured data to React state and playerStatsService
-      if ((result as any).capturedData) {
-        const captured = (result as any).capturedData;
-        const updates: any = {};
-
-        if (captured.playerXP !== undefined) {
-          setPlayerXP(captured.playerXP);
-          updates.playerXP = captured.playerXP;
-        }
-        if (captured.roomEnemies !== undefined) {
-          setRoomEnemies(captured.roomEnemies);
-          updates.roomEnemies = captured.roomEnemies;
-        }
-        if (captured.roomAllies !== undefined) {
-          setRoomAllies(captured.roomAllies);
-          updates.roomAllies = captured.roomAllies;
-        }
-
-        if (Object.keys(updates).length > 0) {
-          playerStatsService.updatePlayerVariables(updates);
-        }
-      }
-
-      // Sync HP history from blindModeService
-      const playerVars = blindModeService.getPlayerVariables();
-      if (playerVars.hpHistory.length > 0) {
-        setHpHistory(playerVars.hpHistory);
-      }
     }
 
     // Detect player class from common text patterns
@@ -582,7 +629,7 @@ export function TerminalScreen({ route, navigation }: Props) {
       linesRef.current = linesRef.current.slice(-MAX_LINES);
     }
     if (!deferSetState) {
-      setLines([...linesRef.current]);
+      scheduleLinesFlush();
     }
 
     // Channel messages: always write to terminal, NEVER announce (even if silent mode is off).
@@ -613,8 +660,10 @@ export function TerminalScreen({ route, navigation }: Props) {
     texts.forEach(text => {
       processingAndAddLine(text, false, true);
     });
-    // Single flush after the batch to avoid N re-renders and mid-batch scrolls.
-    setLines([...linesRef.current]);
+    // Schedule a coalesced flush — multiple addMultipleLines calls (or
+    // multiple onData callbacks within the same frame) collapse into a
+    // single setLines render via requestAnimationFrame.
+    scheduleLinesFlush();
   };
 
   const mapServiceRef = useRef(new MapService());
@@ -634,6 +683,21 @@ export function TerminalScreen({ route, navigation }: Props) {
   // Keep silentModeEnabled ref in sync so processingAndAddLine can read current value
   useEffect(() => {
     silentModeEnabledRef.current = silentModeEnabled;
+  }, [silentModeEnabled]);
+
+  // Toggle silent mode AND persist to settings.soundsEnabled (inverted) so
+  // the change survives across sessions and stays in sync with the Settings
+  // screen toggle. Both UI toggles (🔊/🔇 in Terminal and "Usar sonidos" in
+  // Settings) end up writing to the same field.
+  const toggleSilentMode = useCallback(async () => {
+    const next = !silentModeEnabled;
+    setSilentModeEnabled(next);
+    try {
+      const current = await loadSettings();
+      await saveSettings({ ...current, soundsEnabled: !next });
+    } catch (e) {
+      console.warn('[TerminalScreen] persist soundsEnabled failed:', e);
+    }
   }, [silentModeEnabled]);
 
   // Keep playSound ref in sync so processingAndAddLine always has the latest version
@@ -732,7 +796,7 @@ export function TerminalScreen({ route, navigation }: Props) {
       onConnect: () => {
         setConnected(true);
         setConnecting(false);
-        autoLoginRef.current = false;
+        autoLoginRef.current = 'pending';
         setLoginFailed(false);
         logService.logConnect(server.host, server.port);
         if (!server.username || !server.password) {
@@ -745,7 +809,7 @@ export function TerminalScreen({ route, navigation }: Props) {
       onClose: () => {
         setConnected(false);
         setConnecting(false);
-        autoLoginRef.current = false;
+        autoLoginRef.current = 'pending';
         setLoginFailed(false);
         logService.logDisconnect();
         if (uiMode === 'blind') {
@@ -851,10 +915,12 @@ export function TerminalScreen({ route, navigation }: Props) {
     logService.setCurrentServer(server.name, server.host, server.password);
     const telnet = new TelnetService(server, handler, encoding);
     telnetRef.current = telnet;
+    activeConnection.set(server.id, (cmd) => telnet.send(cmd));
     setConnecting(true);
     telnet.connect();
 
     return () => {
+      activeConnection.clear(server.id);
       telnet.disconnect();
     };
   }, [server, uiMode, encoding]);
@@ -1660,7 +1726,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
                 onPress={() => {
                   setLoginFailed(false);
-                  autoLoginRef.current = false;
+                  autoLoginRef.current = 'pending';
                 }}
                 accessible={true}
                 accessibilityLabel="Reintentar login"
@@ -1730,7 +1796,7 @@ export function TerminalScreen({ route, navigation }: Props) {
               {uiMode === 'blind' && (
                 <TouchableOpacity
                   style={[styles.sendButton, { flex: 0.4, backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
-                  onPress={() => setSilentModeEnabled(!silentModeEnabled)}
+                  onPress={toggleSilentMode}
                   accessible={true}
                   accessibilityLabel={`Modo Silencio ${silentModeEnabled ? 'activado' : 'desactivado'}`}
                   accessibilityRole="button"
@@ -1830,7 +1896,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.compactButton, { backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
-                    onPress={() => setSilentModeEnabled(!silentModeEnabled)}
+                    onPress={toggleSilentMode}
                     accessible={true}
                     accessibilityLabel={`Silenciar sonidos ${silentModeEnabled ? 'desactivado' : 'activado'}`}
                     accessibilityRole="button"
@@ -2032,7 +2098,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 {uiMode === 'blind' && (
                   <TouchableOpacity
                     style={[styles.sendButton, { flex: 0.4, backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
-                    onPress={() => setSilentModeEnabled(!silentModeEnabled)}
+                    onPress={toggleSilentMode}
                     accessible={true}
                     accessibilityLabel={`Modo Silencio ${silentModeEnabled ? 'activado' : 'desactivado'}`}
                     accessibilityRole="button"
@@ -2132,7 +2198,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.compactButton, { backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
-                      onPress={() => setSilentModeEnabled(!silentModeEnabled)}
+                      onPress={toggleSilentMode}
                       accessible={true}
                       accessibilityLabel={`Silenciar sonidos ${silentModeEnabled ? 'desactivado' : 'activado'}`}
                       accessibilityRole="button"
@@ -2302,7 +2368,7 @@ export function TerminalScreen({ route, navigation }: Props) {
               navigation={navigation as unknown as NativeStackScreenProps<RootStackParamList, 'Settings'>['navigation']}
               sourceLocation="terminal"
               onFontSizeChange={setFontSize}
-              onSoundToggle={(enabled) => silentModeEnabledRef.current = !enabled}
+              onSoundToggle={(enabled) => setSilentModeEnabled(!enabled)}
               onGesturesEnabledChange={(enabled) => gesturesEnabledRef.current = enabled}
             />
           </View>

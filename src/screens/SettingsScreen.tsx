@@ -12,6 +12,8 @@ import { logService, ExportRange, slugifyServerName } from '../services/logServi
 import { loadServers } from '../storage/serverStorage';
 import { LogsMaxLines } from '../storage/settingsStorage';
 import { useSounds } from '../contexts/SoundContext';
+import { activeConnection } from '../services/activeConnection';
+import { CANONICAL_PROMPT } from '../services/promptParser';
 
 type Props = {
   navigation: NativeStackScreenProps<RootStackParamList, 'Settings'>['navigation'];
@@ -66,6 +68,42 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
     }
   };
 
+
+  const handleApplyPrompt = () => {
+    if (!activeConnection.isAnyConnected()) {
+      Alert.alert(
+        'No hay conexión activa',
+        'Conéctate primero al personaje y vuelve a intentarlo desde aquí.',
+      );
+      return;
+    }
+    Alert.alert(
+      'Aplicar prompt TorchZhyla',
+      'Esto sobrescribirá tu prompt actual en el MUD para este personaje. Es necesario para que las variables (vida, energía, salidas, espejos, pieles…) se capturen y puedan usarse en triggers. ¿Continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Aplicar',
+          onPress: () => {
+            const ok =
+              activeConnection.sendActive(`prompt ${CANONICAL_PROMPT}`) &&
+              activeConnection.sendActive(`promptcombate ${CANONICAL_PROMPT}`);
+            if (ok) {
+              Alert.alert(
+                'Prompt aplicado',
+                'El MUD recibió el nuevo prompt. A partir de ahora capturaremos las variables.',
+              );
+            } else {
+              Alert.alert(
+                'No se pudo enviar',
+                'La conexión se ha perdido. Reconéctate y vuelve a intentarlo.',
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
 
   // When opened from the terminal modal, the modal already provides its
   // own header (close button) and safe-area insets. Rendering another
@@ -540,6 +578,27 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             <Text style={styles.encodingBtnText}>Abrir</Text>
           </TouchableOpacity>
         </View>
+
+        {sourceLocation === 'terminal' && (
+          <View style={styles.row}>
+            <View style={styles.rowInfo}>
+              <Text style={styles.rowTitle}>Aplicar prompt TorchZhyla</Text>
+              <Text style={styles.rowDesc}>
+                Configura el prompt del MUD para este personaje (sobrescribe el actual). Necesario para que las variables (vida, energía, salidas, espejos, pieles…) se capturen y puedan usarse en triggers de variable.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.encodingBtn}
+              onPress={handleApplyPrompt}
+              accessible={true}
+              accessibilityLabel="Aplicar prompt TorchZhyla"
+              accessibilityRole="button"
+              accessibilityHint="Sobrescribe el prompt del MUD para este personaje"
+            >
+              <Text style={styles.encodingBtnText}>Aplicar</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
       </ScrollView>
 

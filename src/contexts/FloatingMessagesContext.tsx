@@ -23,6 +23,21 @@ export const FLOATING_FADE_OUT_MS = 220;
 export function FloatingMessagesProvider({ children }: { children: React.ReactNode }) {
   const [messages, setMessages] = useState<FloatingMessage[]>([]);
   const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>[]>>(new Map());
+  // Cached screen-reader state. announceForAccessibility is a no-op when
+  // TalkBack/VoiceOver is off, but it's still a JNI bridge call. Skipping
+  // it for users without a screen reader is a small correctness/clarity
+  // win (we're only "announcing" when there's actually a listener).
+  const screenReaderEnabledRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    AccessibilityInfo.isScreenReaderEnabled().then((enabled) => {
+      screenReaderEnabledRef.current = enabled;
+    });
+    const sub = AccessibilityInfo.addEventListener('screenReaderChanged', (enabled) => {
+      screenReaderEnabledRef.current = enabled;
+    });
+    return () => sub.remove();
+  }, []);
 
   const push = useCallback(
     (text: string, level: FloatingMessageLevel = 'info', durationMs: number = DEFAULT_DURATION_MS) => {
@@ -30,7 +45,9 @@ export function FloatingMessagesProvider({ children }: { children: React.ReactNo
       if (!trimmed) return;
       const id = nextId++;
       setMessages((prev) => [...prev, { id, text: trimmed, level, leaving: false }]);
-      AccessibilityInfo.announceForAccessibility(trimmed);
+      if (screenReaderEnabledRef.current) {
+        AccessibilityInfo.announceForAccessibility(trimmed);
+      }
 
       // Two-phase removal: flag `leaving` first so FloatingItem can fade out,
       // then drop from the array so the LayoutAnimation slides remaining

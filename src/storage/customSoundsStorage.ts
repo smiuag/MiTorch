@@ -80,6 +80,40 @@ export async function addCustomSound(srcUri: string, originalFilename: string): 
   return meta;
 }
 
+// Used by the trigger pack importer: writes the raw audio bytes from the zip
+// entry into a new file under ${Paths.document}/sounds/ with a fresh uuid,
+// so imported sounds never collide with existing ones. Returns the new
+// CustomSound metadata (caller uses meta.uuid to rewrite play_sound refs).
+export async function addCustomSoundFromBytes(
+  bytes: Uint8Array,
+  displayName: string,
+  rawExt: string,
+): Promise<CustomSound> {
+  const ext = rawExt.toLowerCase();
+  if (!ext || !ALLOWED_EXTS.has(ext)) {
+    throw new Error(`Formato no soportado: .${ext || '?'}.`);
+  }
+  const uuid = genUuid();
+  const filename = `${uuid}.${ext}`;
+  const dir = ensureDir();
+  const destFile = new File(dir, filename);
+  if (destFile.exists) destFile.delete();
+  destFile.create();
+  destFile.write(bytes);
+
+  const meta: CustomSound = {
+    uuid,
+    name: displayName?.trim() || 'Sonido importado',
+    filename,
+    ext,
+    addedAt: Date.now(),
+  };
+  const list = await loadCustomSounds();
+  list.push(meta);
+  await saveCustomSounds(list);
+  return meta;
+}
+
 export async function removeCustomSound(uuid: string): Promise<CustomSound[]> {
   const list = await loadCustomSounds();
   const target = list.find((s) => s.uuid === uuid);

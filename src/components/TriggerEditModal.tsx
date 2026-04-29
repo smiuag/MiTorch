@@ -13,13 +13,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
-import { ActionTextBlock, AnchorMode, PatternBlock, Trigger, TriggerAction, TriggerType } from '../types';
+import { ActionTextBlock, AnchorMode, PatternBlock, Trigger, TriggerAction, TriggerType, VariableCondition } from '../types';
 import { AVAILABLE_SOUNDS } from '../storage/settingsStorage';
 import { CustomSound, addCustomSound, loadCustomSounds } from '../storage/customSoundsStorage';
 import { TriggerPatternBuilder } from './TriggerPatternBuilder';
 import { TriggerActionTextBuilder } from './TriggerActionTextBuilder';
 import { captureColors, captureLabels, compileActionText, compilePattern, findOrphanCaptureRefs } from '../utils/triggerCompiler';
 import { useSounds } from '../contexts/SoundContext';
+import { VARIABLE_SPECS, getVariableSpec } from '../utils/variableMap';
 
 const BUILTIN_PREFIX = 'builtin:';
 const CUSTOM_PREFIX = 'custom:';
@@ -45,6 +46,25 @@ const ACTION_TYPES: Array<{ key: TriggerAction['type']; label: string }> = [
   { key: 'floating', label: 'Mensaje flotante' },
 ];
 
+// Variable triggers don't see a line (the prompt line is gagged), so actions
+// that mutate the line (gag, replace, color) are excluded.
+const VARIABLE_ACTION_TYPES: Array<{ key: TriggerAction['type']; label: string }> = [
+  { key: 'play_sound', label: 'Reproducir sonido' },
+  { key: 'send', label: 'Enviar comando' },
+  { key: 'notify', label: 'Notificación del sistema' },
+  { key: 'floating', label: 'Mensaje flotante' },
+];
+
+type VariableEvent = VariableCondition['event'];
+
+const VARIABLE_EVENTS: Array<{ key: VariableEvent; label: string; needsValue: boolean; numericOnly: boolean; hint: string }> = [
+  { key: 'appears', label: 'aparece', needsValue: false, numericOnly: false, hint: 'Pasa de 0/vacío a un valor real' },
+  { key: 'changes', label: 'cambia', needsValue: false, numericOnly: false, hint: 'Cualquier cambio de valor' },
+  { key: 'equals', label: 'igual a', needsValue: true, numericOnly: false, hint: 'Valor exactamente igual a X' },
+  { key: 'crosses_below', label: 'baja de', needsValue: true, numericOnly: true, hint: 'Estaba ≥N, ahora <N (solo números)' },
+  { key: 'crosses_above', label: 'sube de', needsValue: true, numericOnly: true, hint: 'Estaba ≤N, ahora >N (solo números)' },
+];
+
 const FLOATING_LEVELS: Array<{ key: 'info' | 'success' | 'error'; label: string; color: string }> = [
   { key: 'info', label: 'Info (azul)', color: '#223366' },
   { key: 'success', label: 'Éxito (verde)', color: '#0c0' },
@@ -64,30 +84,68 @@ interface Props {
 }
 
 /**
- * Decides which mode to open the editor in.
+ * Decides which mode to open the editor in for regex triggers.
  * - Respects an explicit `expertMode` flag if set (post-cajas-system saves).
  * - Legacy triggers (raw pattern with no blocks) stay in expert mode so the
  *   user can still see/edit their regex.
  * - Everything else (new triggers, post-migration triggers) defaults to cajas.
  */
 function computeInitialExpertMode(trigger: Trigger): boolean {
+  if (trigger.source.kind !== 'regex') return false;
   if (trigger.source.expertMode !== undefined) return trigger.source.expertMode;
   if (trigger.source.pattern && !trigger.source.blocks) return true;
   return false;
 }
 
+type TriggerKind = 'regex' | 'variable';
+
+function getInitialKind(trigger: Trigger): TriggerKind {
+  return trigger.source.kind === 'variable' ? 'variable' : 'regex';
+}
+
+function getInitialVarName(trigger: Trigger): string {
+  return trigger.source.kind === 'variable' ? trigger.source.name : 'vida';
+}
+
+function getInitialVarEvent(trigger: Trigger): VariableEvent {
+  return trigger.source.kind === 'variable' ? trigger.source.condition.event : 'changes';
+}
+
+function getInitialVarValue(trigger: Trigger): string {
+  if (trigger.source.kind !== 'variable') return '';
+  const cond = trigger.source.condition;
+  if (cond.event === 'equals' || cond.event === 'crosses_below' || cond.event === 'crosses_above') {
+    return String(cond.value);
+  }
+  return '';
+}
+
 export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: Props) {
   const initialExpert = computeInitialExpertMode(initialTrigger);
+  const initialKind = getInitialKind(initialTrigger);
 
   const [name, setName] = useState(initialTrigger.name);
+  const [kind, setKind] = useState<TriggerKind>(initialKind);
   const [expertMode, setExpertMode] = useState<boolean>(initialExpert);
-  const [blocks, setBlocks] = useState<PatternBlock[]>(initialTrigger.source.blocks ?? []);
-  const [anchorStart, setAnchorStart] = useState<AnchorMode>(initialTrigger.source.anchorStart ?? 'open');
-  const [anchorEnd, setAnchorEnd] = useState<AnchorMode>(initialTrigger.source.anchorEnd ?? 'open');
-  const [rawPattern, setRawPattern] = useState<string>(initialTrigger.source.pattern || '');
-  const [caseInsensitive, setCaseInsensitive] = useState(
-    (initialTrigger.source.flags || '').includes('i'),
+  const [blocks, setBlocks] = useState<PatternBlock[]>(
+    initialTrigger.source.kind === 'regex' ? (initialTrigger.source.blocks ?? []) : [],
   );
+  const [anchorStart, setAnchorStart] = useState<AnchorMode>(
+    initialTrigger.source.kind === 'regex' ? (initialTrigger.source.anchorStart ?? 'open') : 'open',
+  );
+  const [anchorEnd, setAnchorEnd] = useState<AnchorMode>(
+    initialTrigger.source.kind === 'regex' ? (initialTrigger.source.anchorEnd ?? 'open') : 'open',
+  );
+  const [rawPattern, setRawPattern] = useState<string>(
+    initialTrigger.source.kind === 'regex' ? (initialTrigger.source.pattern || '') : '',
+  );
+  const [caseInsensitive, setCaseInsensitive] = useState(
+    initialTrigger.source.kind === 'regex' ? (initialTrigger.source.flags || '').includes('i') : false,
+  );
+  const [varName, setVarName] = useState<string>(getInitialVarName(initialTrigger));
+  const [varEvent, setVarEvent] = useState<VariableEvent>(getInitialVarEvent(initialTrigger));
+  const [varValue, setVarValue] = useState<string>(getInitialVarValue(initialTrigger));
+  const [varPickerVisible, setVarPickerVisible] = useState(false);
   const [actions, setActions] = useState<TriggerAction[]>(initialTrigger.actions);
   const [testInput, setTestInput] = useState('');
   const [actionPickerVisible, setActionPickerVisible] = useState(false);
@@ -108,13 +166,26 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
   React.useEffect(() => {
     if (visible) {
       const exp = computeInitialExpertMode(initialTrigger);
+      const k = getInitialKind(initialTrigger);
       setName(initialTrigger.name);
+      setKind(k);
       setExpertMode(exp);
-      setBlocks(initialTrigger.source.blocks ?? []);
-      setAnchorStart(initialTrigger.source.anchorStart ?? 'open');
-      setAnchorEnd(initialTrigger.source.anchorEnd ?? 'open');
-      setRawPattern(initialTrigger.source.pattern || '');
-      setCaseInsensitive((initialTrigger.source.flags || '').includes('i'));
+      if (initialTrigger.source.kind === 'regex') {
+        setBlocks(initialTrigger.source.blocks ?? []);
+        setAnchorStart(initialTrigger.source.anchorStart ?? 'open');
+        setAnchorEnd(initialTrigger.source.anchorEnd ?? 'open');
+        setRawPattern(initialTrigger.source.pattern || '');
+        setCaseInsensitive((initialTrigger.source.flags || '').includes('i'));
+      } else {
+        setBlocks([]);
+        setAnchorStart('open');
+        setAnchorEnd('open');
+        setRawPattern('');
+        setCaseInsensitive(false);
+      }
+      setVarName(getInitialVarName(initialTrigger));
+      setVarEvent(getInitialVarEvent(initialTrigger));
+      setVarValue(getInitialVarValue(initialTrigger));
       setActions(initialTrigger.actions);
       setTestInput('');
       refreshCustomSounds();
@@ -147,6 +218,12 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
   };
 
   const compiled = useMemo(() => {
+    if (kind === 'variable') {
+      // Variable triggers don't compile a regex; this stays as a no-op so
+      // downstream code that reads `compiled.error` / `compiled.captureMap`
+      // doesn't have to special-case the kind.
+      return { pattern: '', regex: null as RegExp | null, captureMap: new Map<string, number>(), error: null as string | null };
+    }
     const flags = caseInsensitive ? 'i' : '';
     if (expertMode) {
       if (!rawPattern) return { pattern: '', regex: null as RegExp | null, captureMap: new Map<string, number>(), error: 'El patrón está vacío' };
@@ -163,7 +240,26 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
     } catch (e: any) {
       return { pattern, regex: null, captureMap, error: e?.message || 'Patrón inválido' };
     }
-  }, [expertMode, rawPattern, blocks, anchorStart, anchorEnd, caseInsensitive]);
+  }, [kind, expertMode, rawPattern, blocks, anchorStart, anchorEnd, caseInsensitive]);
+
+  const variableEventSpec = useMemo(() => VARIABLE_EVENTS.find((e) => e.key === varEvent), [varEvent]);
+  const variableSpec = useMemo(() => getVariableSpec(varName), [varName]);
+
+  const variableError = useMemo((): string | null => {
+    if (kind !== 'variable') return null;
+    if (!variableSpec) return 'Variable desconocida';
+    if (!variableEventSpec) return 'Evento desconocido';
+    if (variableEventSpec.needsValue) {
+      if (varValue.trim() === '') return 'Falta el valor';
+      if (variableEventSpec.numericOnly && Number.isNaN(Number(varValue))) {
+        return 'El valor debe ser numérico';
+      }
+      if (variableSpec.kind === 'number' && Number.isNaN(Number(varValue))) {
+        return 'El valor debe ser numérico para esta variable';
+      }
+    }
+    return null;
+  }, [kind, variableSpec, variableEventSpec, varValue]);
 
   const handleToggleExpert = () => {
     if (!expertMode) {
@@ -255,14 +351,22 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
   };
 
   const isDirty = (): boolean => {
-    const initialExpertMode = initialTrigger.source.expertMode ?? !initialTrigger.source.blocks;
     if (name !== initialTrigger.name) return true;
-    if (expertMode !== initialExpertMode) return true;
-    if (rawPattern !== (initialTrigger.source.pattern || '')) return true;
-    if (caseInsensitive !== (initialTrigger.source.flags || '').includes('i')) return true;
-    if (JSON.stringify(blocks) !== JSON.stringify(initialTrigger.source.blocks ?? [])) return true;
-    if (anchorStart !== (initialTrigger.source.anchorStart ?? 'open')) return true;
-    if (anchorEnd !== (initialTrigger.source.anchorEnd ?? 'open')) return true;
+    if (kind !== getInitialKind(initialTrigger)) return true;
+    if (kind === 'regex' && initialTrigger.source.kind === 'regex') {
+      const initialExpertMode = initialTrigger.source.expertMode ?? !initialTrigger.source.blocks;
+      if (expertMode !== initialExpertMode) return true;
+      if (rawPattern !== (initialTrigger.source.pattern || '')) return true;
+      if (caseInsensitive !== (initialTrigger.source.flags || '').includes('i')) return true;
+      if (JSON.stringify(blocks) !== JSON.stringify(initialTrigger.source.blocks ?? [])) return true;
+      if (anchorStart !== (initialTrigger.source.anchorStart ?? 'open')) return true;
+      if (anchorEnd !== (initialTrigger.source.anchorEnd ?? 'open')) return true;
+    }
+    if (kind === 'variable' && initialTrigger.source.kind === 'variable') {
+      if (varName !== initialTrigger.source.name) return true;
+      if (varEvent !== initialTrigger.source.condition.event) return true;
+      if (varValue !== getInitialVarValue(initialTrigger)) return true;
+    }
     if (JSON.stringify(actions) !== JSON.stringify(initialTrigger.actions)) return true;
     return false;
   };
@@ -283,6 +387,7 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
   };
 
   const collectOrphans = (): number => {
+    if (kind !== 'regex') return 0;
     if (expertMode) return 0;
     let total = 0;
     for (const a of actions) {
@@ -299,6 +404,23 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
   };
 
   const doSave = () => {
+    if (kind === 'variable') {
+      const condition = buildVariableCondition(varEvent, varValue, variableSpec?.kind === 'number');
+      const finalSource = {
+        kind: 'variable' as const,
+        name: varName,
+        condition,
+      };
+      onSave({
+        ...initialTrigger,
+        name: name.trim(),
+        type: 'variable',
+        source: finalSource,
+        actions,
+      });
+      return;
+    }
+
     const flags = caseInsensitive ? 'i' : undefined;
     const finalActions = expertMode
       ? actions
@@ -331,6 +453,18 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
   const handleSave = () => {
     if (!name.trim()) {
       Alert.alert('Falta el nombre', 'El trigger necesita un nombre.');
+      return;
+    }
+    if (kind === 'variable') {
+      if (variableError) {
+        Alert.alert('Configuración incompleta', variableError);
+        return;
+      }
+      if (actions.length === 0) {
+        Alert.alert('Sin acciones', 'Añade al menos una acción al trigger.');
+        return;
+      }
+      doSave();
       return;
     }
     if (compiled.error) {
@@ -382,67 +516,170 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
             autoCapitalize="sentences"
           />
 
-          <View style={[styles.switchRow, { marginTop: 12 }]}>
-            <Text style={styles.label}>Cuándo se activa</Text>
-            <TouchableOpacity style={styles.expertToggle} onPress={handleToggleExpert}>
-              <Text style={styles.expertToggleText}>
-                {expertMode ? '◀ Modo cajas' : 'Modo experto ▶'}
+          <Text style={[styles.label, { marginTop: 12 }]}>Tipo de trigger</Text>
+          <View style={styles.kindToggleRow}>
+            <TouchableOpacity
+              style={[styles.kindToggleBtn, kind === 'regex' && styles.kindToggleBtnActive]}
+              onPress={() => setKind('regex')}
+              accessibilityRole="button"
+              accessibilityState={{ selected: kind === 'regex' }}
+            >
+              <Text style={[styles.kindToggleText, kind === 'regex' && styles.kindToggleTextActive]}>
+                Línea de texto
               </Text>
+              <Text style={styles.kindToggleHint}>Reacciona a una línea del MUD</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.kindToggleBtn, kind === 'variable' && styles.kindToggleBtnActive]}
+              onPress={() => setKind('variable')}
+              accessibilityRole="button"
+              accessibilityState={{ selected: kind === 'variable' }}
+            >
+              <Text style={[styles.kindToggleText, kind === 'variable' && styles.kindToggleTextActive]}>
+                Alarma de variable
+              </Text>
+              <Text style={styles.kindToggleHint}>Reacciona a vida, energía, salidas…</Text>
             </TouchableOpacity>
           </View>
 
-          {expertMode ? (
+          {kind === 'regex' ? (
             <>
-              <TextInput
-                style={[styles.input, styles.monoInput, compiled.error ? styles.inputError : null]}
-                value={rawPattern}
-                onChangeText={setRawPattern}
-                placeholder="ej. ^(\w+) te ataca"
-                placeholderTextColor="#555"
-                autoCapitalize="none"
-                autoCorrect={false}
-                spellCheck={false}
-                multiline
-              />
-              <Text style={styles.hintText}>
-                Sintaxis regex completa. Usa $1, $2… en las acciones para referenciar capturas.
-              </Text>
+              <View style={[styles.switchRow, { marginTop: 12 }]}>
+                <Text style={styles.label}>Cuándo se activa</Text>
+                <TouchableOpacity style={styles.expertToggle} onPress={handleToggleExpert}>
+                  <Text style={styles.expertToggleText}>
+                    {expertMode ? '◀ Modo cajas' : 'Modo experto ▶'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {expertMode ? (
+                <>
+                  <TextInput
+                    style={[styles.input, styles.monoInput, compiled.error ? styles.inputError : null]}
+                    value={rawPattern}
+                    onChangeText={setRawPattern}
+                    placeholder="ej. ^(\w+) te ataca"
+                    placeholderTextColor="#555"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    spellCheck={false}
+                    multiline
+                  />
+                  <Text style={styles.hintText}>
+                    Sintaxis regex completa. Usa $1, $2… en las acciones para referenciar capturas.
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <TriggerPatternBuilder
+                    blocks={blocks}
+                    anchorStart={anchorStart}
+                    anchorEnd={anchorEnd}
+                    onChange={(b, s, e) => {
+                      setBlocks(b);
+                      setAnchorStart(s);
+                      setAnchorEnd(e);
+                    }}
+                  />
+                  <Text style={styles.hintText}>
+                    Construye el patrón con cajas. Las capturas (palabra/frase/número) se podrán reusar como chips de color en las acciones.
+                  </Text>
+                </>
+              )}
+
+              {compiled.error ? (
+                <Text style={styles.errorText}>{compiled.error}</Text>
+              ) : (
+                <Text style={styles.hintText}>
+                  Regex resultante: <Text style={styles.regexPreview}>/{compiled.pattern}/{caseInsensitive ? 'i' : ''}</Text>
+                </Text>
+              )}
+
+              <View style={styles.switchRow}>
+                <Text style={styles.label}>Ignorar mayúsculas/minúsculas</Text>
+                <Switch
+                  value={caseInsensitive}
+                  onValueChange={setCaseInsensitive}
+                  trackColor={{ false: '#333', true: '#0c0' }}
+                  thumbColor={caseInsensitive ? '#000' : '#666'}
+                />
+              </View>
             </>
           ) : (
             <>
-              <TriggerPatternBuilder
-                blocks={blocks}
-                anchorStart={anchorStart}
-                anchorEnd={anchorEnd}
-                onChange={(b, s, e) => {
-                  setBlocks(b);
-                  setAnchorStart(s);
-                  setAnchorEnd(e);
-                }}
-              />
-              <Text style={styles.hintText}>
-                Construye el patrón con cajas. Las capturas (palabra/frase/número) se podrán reusar como chips de color en las acciones.
-              </Text>
+              <Text style={[styles.label, { marginTop: 12 }]}>Variable a vigilar</Text>
+              <TouchableOpacity
+                style={styles.varPickerBtn}
+                onPress={() => setVarPickerVisible(true)}
+                accessibilityRole="button"
+                accessibilityLabel={`Variable ${varName}`}
+              >
+                <Text style={styles.varPickerBtnText}>{varName}</Text>
+                <Text style={styles.varPickerBtnHint}>
+                  {variableSpec ? variableSpec.description : 'Variable desconocida'}
+                </Text>
+              </TouchableOpacity>
+
+              <Text style={[styles.label, { marginTop: 12 }]}>Cuándo se dispara</Text>
+              <View style={styles.varEventRow}>
+                {VARIABLE_EVENTS.map((ev) => {
+                  const disabled = ev.numericOnly && variableSpec?.kind !== 'number';
+                  const selected = varEvent === ev.key;
+                  return (
+                    <TouchableOpacity
+                      key={ev.key}
+                      style={[
+                        styles.varEventChip,
+                        selected && styles.varEventChipSelected,
+                        disabled && styles.varEventChipDisabled,
+                      ]}
+                      onPress={() => {
+                        if (disabled) return;
+                        setVarEvent(ev.key);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected, disabled }}
+                    >
+                      <Text style={[
+                        styles.varEventChipText,
+                        selected && styles.varEventChipTextSelected,
+                        disabled && styles.varEventChipTextDisabled,
+                      ]}>
+                        {ev.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {variableEventSpec && (
+                <Text style={styles.hintText}>{variableEventSpec.hint}</Text>
+              )}
+
+              {variableEventSpec?.needsValue && (
+                <>
+                  <Text style={[styles.smallLabel, { marginTop: 8 }]}>Valor</Text>
+                  <TextInput
+                    style={[styles.input, styles.monoInput, variableError ? styles.inputError : null]}
+                    value={varValue}
+                    onChangeText={setVarValue}
+                    placeholder={variableEventSpec.numericOnly || variableSpec?.kind === 'number' ? 'ej. 30' : 'ej. ninguno'}
+                    placeholderTextColor="#555"
+                    keyboardType={variableEventSpec.numericOnly || variableSpec?.kind === 'number' ? 'number-pad' : 'default'}
+                    autoCapitalize="none"
+                  />
+                </>
+              )}
+
+              {variableError ? (
+                <Text style={styles.errorText}>{variableError}</Text>
+              ) : (
+                <Text style={styles.hintText}>
+                  En las acciones puedes usar <Text style={styles.regexPreview}>$old</Text> y <Text style={styles.regexPreview}>$new</Text> para referirte al valor anterior y al nuevo.
+                </Text>
+              )}
             </>
           )}
-
-          {compiled.error ? (
-            <Text style={styles.errorText}>{compiled.error}</Text>
-          ) : (
-            <Text style={styles.hintText}>
-              Regex resultante: <Text style={styles.regexPreview}>/{compiled.pattern}/{caseInsensitive ? 'i' : ''}</Text>
-            </Text>
-          )}
-
-          <View style={styles.switchRow}>
-            <Text style={styles.label}>Ignorar mayúsculas/minúsculas</Text>
-            <Switch
-              value={caseInsensitive}
-              onValueChange={setCaseInsensitive}
-              trackColor={{ false: '#333', true: '#0c0' }}
-              thumbColor={caseInsensitive ? '#000' : '#666'}
-            />
-          </View>
 
           <View style={styles.sectionDivider} />
 
@@ -466,7 +703,7 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
             <ActionEditor
               key={idx}
               action={action}
-              expertMode={expertMode}
+              expertMode={kind === 'variable' ? true : expertMode}
               patternBlocks={blocks}
               customSounds={customSounds}
               onChange={(a) => handleUpdateAction(idx, a)}
@@ -478,51 +715,55 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
             />
           ))}
 
-          <View style={styles.sectionDivider} />
+          {kind === 'regex' && (
+            <>
+              <View style={styles.sectionDivider} />
 
-          <Text style={styles.sectionTitle}>Probar contra una línea</Text>
-          <TextInput
-            style={[styles.input, styles.monoInput]}
-            value={testInput}
-            onChangeText={setTestInput}
-            placeholder="Pega aquí una línea del MUD para probar"
-            placeholderTextColor="#555"
-            autoCapitalize="none"
-            multiline
-          />
-          {testResult && (
-            <View style={styles.testResultBox}>
-              <Text
-                style={[
-                  styles.testResultText,
-                  testResult.matched ? styles.testMatched : styles.testNotMatched,
-                ]}
-              >
-                {testResult.matched ? '✓ Matchea' : '✗ No matchea'}
-              </Text>
-              {testResult.captures.length > 0 && (
-                <View style={{ marginTop: 6 }}>
-                  {testResult.captures.map((cap, i) => {
-                    const meta = expertMode ? null : captureMeta[i];
-                    if (meta) {
-                      return (
-                        <View key={i} style={styles.captureRow}>
-                          <View style={[styles.captureSwatch, { backgroundColor: meta.color }]}>
-                            <Text style={styles.captureSwatchText}>{meta.label}</Text>
-                          </View>
-                          <Text style={styles.captureValue}>= "{cap}"</Text>
-                        </View>
-                      );
-                    }
-                    return (
-                      <Text key={i} style={styles.captureText}>
-                        ${i + 1} = "{cap}"
-                      </Text>
-                    );
-                  })}
+              <Text style={styles.sectionTitle}>Probar contra una línea</Text>
+              <TextInput
+                style={[styles.input, styles.monoInput]}
+                value={testInput}
+                onChangeText={setTestInput}
+                placeholder="Pega aquí una línea del MUD para probar"
+                placeholderTextColor="#555"
+                autoCapitalize="none"
+                multiline
+              />
+              {testResult && (
+                <View style={styles.testResultBox}>
+                  <Text
+                    style={[
+                      styles.testResultText,
+                      testResult.matched ? styles.testMatched : styles.testNotMatched,
+                    ]}
+                  >
+                    {testResult.matched ? '✓ Matchea' : '✗ No matchea'}
+                  </Text>
+                  {testResult.captures.length > 0 && (
+                    <View style={{ marginTop: 6 }}>
+                      {testResult.captures.map((cap, i) => {
+                        const meta = expertMode ? null : captureMeta[i];
+                        if (meta) {
+                          return (
+                            <View key={i} style={styles.captureRow}>
+                              <View style={[styles.captureSwatch, { backgroundColor: meta.color }]}>
+                                <Text style={styles.captureSwatchText}>{meta.label}</Text>
+                              </View>
+                              <Text style={styles.captureValue}>= "{cap}"</Text>
+                            </View>
+                          );
+                        }
+                        return (
+                          <Text key={i} style={styles.captureText}>
+                            ${i + 1} = "{cap}"
+                          </Text>
+                        );
+                      })}
+                    </View>
+                  )}
                 </View>
               )}
-            </View>
+            </>
           )}
         </ScrollView>
 
@@ -540,7 +781,7 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
           >
             <View style={styles.pickerBox}>
               <Text style={styles.pickerTitle}>Tipo de acción</Text>
-              {ACTION_TYPES.map((t) => (
+              {(kind === 'variable' ? VARIABLE_ACTION_TYPES : ACTION_TYPES).map((t) => (
                 <TouchableOpacity
                   key={t.key}
                   style={styles.pickerItem}
@@ -550,6 +791,49 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
                 </TouchableOpacity>
               ))}
             </View>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* Variable picker */}
+        <Modal
+          visible={varPickerVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setVarPickerVisible(false)}
+        >
+          <TouchableOpacity
+            style={styles.pickerOverlay}
+            activeOpacity={1}
+            onPress={() => setVarPickerVisible(false)}
+          >
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={() => {}}
+              style={[styles.pickerBox, { maxHeight: '85%' }]}
+            >
+              <Text style={styles.pickerTitle}>Elegir variable</Text>
+              <FlatList
+                data={VARIABLE_SPECS}
+                keyExtractor={(s) => s.name}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[styles.pickerItem, varName === item.name && styles.pickerItemSelected]}
+                    onPress={() => {
+                      setVarName(item.name);
+                      // If current event is numericOnly but new var isn't number, fall back.
+                      const evSpec = VARIABLE_EVENTS.find((e) => e.key === varEvent);
+                      if (evSpec?.numericOnly && item.kind !== 'number') {
+                        setVarEvent('changes');
+                      }
+                      setVarPickerVisible(false);
+                    }}
+                  >
+                    <Text style={styles.pickerItemText}>{item.name}</Text>
+                    <Text style={styles.pickerItemSubtext}>{item.description}</Text>
+                  </TouchableOpacity>
+                )}
+              />
+            </TouchableOpacity>
           </TouchableOpacity>
         </Modal>
 
@@ -939,6 +1223,27 @@ function compileActionWithBlocks(
   }
 }
 
+function buildVariableCondition(
+  event: VariableEvent,
+  rawValue: string,
+  isNumeric: boolean,
+): VariableCondition {
+  switch (event) {
+    case 'appears':
+      return { event: 'appears' };
+    case 'changes':
+      return { event: 'changes' };
+    case 'equals':
+      return isNumeric
+        ? { event: 'equals', value: Number(rawValue) }
+        : { event: 'equals', value: rawValue };
+    case 'crosses_below':
+      return { event: 'crosses_below', value: Number(rawValue) };
+    case 'crosses_above':
+      return { event: 'crosses_above', value: Number(rawValue) };
+  }
+}
+
 function inferType(actions: TriggerAction[]): TriggerType {
   if (actions.length === 0) return 'combo';
   if (actions.length > 1) return 'combo';
@@ -1187,6 +1492,92 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   expertToggleText: { color: '#bbb', fontSize: 11, fontFamily: 'monospace', fontWeight: 'bold' },
+  kindToggleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  kindToggleBtn: {
+    flex: 1,
+    backgroundColor: '#141414',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  kindToggleBtnActive: {
+    borderColor: '#0c0',
+    backgroundColor: '#0a3a0a',
+  },
+  kindToggleText: {
+    color: '#888',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
+  },
+  kindToggleTextActive: {
+    color: '#0c0',
+  },
+  kindToggleHint: {
+    color: '#666',
+    fontSize: 10,
+    fontFamily: 'monospace',
+    marginTop: 2,
+  },
+  varPickerBtn: {
+    backgroundColor: '#1a1a1a',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  varPickerBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
+  },
+  varPickerBtnHint: {
+    color: '#888',
+    fontSize: 11,
+    fontFamily: 'monospace',
+    marginTop: 2,
+  },
+  varEventRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 4,
+  },
+  varEventChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#333',
+    backgroundColor: '#141414',
+  },
+  varEventChipSelected: {
+    borderColor: '#0c0',
+    backgroundColor: '#0a3a0a',
+  },
+  varEventChipDisabled: {
+    opacity: 0.35,
+  },
+  varEventChipText: {
+    color: '#aaa',
+    fontSize: 12,
+    fontFamily: 'monospace',
+  },
+  varEventChipTextSelected: {
+    color: '#0c0',
+    fontWeight: 'bold',
+  },
+  varEventChipTextDisabled: {
+    color: '#666',
+  },
   captureRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 6 },
   captureSwatch: {
     paddingHorizontal: 8,

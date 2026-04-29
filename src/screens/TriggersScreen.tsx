@@ -12,8 +12,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
 import { RootStackParamList, TriggerPack } from '../types';
 import { loadPacks, savePacks, newPackId, deletePack as removePack, duplicatePack } from '../storage/triggerStorage';
+import { exportPackToZip, exportAllPacksToZip, importFromZip } from '../services/triggerPackExport';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Triggers'>;
 
@@ -58,6 +61,165 @@ export function TriggersScreen({ navigation }: Props) {
     setPacks(list);
   };
 
+  const handleShare = async (pack: TriggerPack) => {
+    try {
+      const zipUri = await exportPackToZip(pack);
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert('Compartir no disponible', `El archivo está en:\n${zipUri}`);
+        return;
+      }
+      await Sharing.shareAsync(zipUri, {
+        mimeType: 'application/zip',
+        dialogTitle: `Compartir "${pack.name}"`,
+        UTI: 'public.zip-archive',
+      });
+    } catch (e: any) {
+      Alert.alert('No se pudo exportar', e?.message ?? String(e));
+    }
+  };
+
+  const handleExportAll = async () => {
+    if (packs.length === 0) {
+      Alert.alert('No hay plantillas', 'No hay nada que exportar todavía.');
+      return;
+    }
+    try {
+      const zipUri = await exportAllPacksToZip(packs);
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert('Compartir no disponible', `El archivo está en:\n${zipUri}`);
+        return;
+      }
+      await Sharing.shareAsync(zipUri, {
+        mimeType: 'application/zip',
+        dialogTitle: 'Compartir backup de triggers',
+        UTI: 'public.zip-archive',
+      });
+    } catch (e: any) {
+      Alert.alert('No se pudo exportar', e?.message ?? String(e));
+    }
+  };
+
+  const handleImport = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/zip', 'application/x-zip-compressed', '*/*'],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+
+      const zipResult = await importFromZip(asset.uri);
+      if (zipResult.kind === 'pack') {
+        await handleSinglePackImport(zipResult.result);
+      } else {
+        await handleBackupImport(zipResult.result);
+      }
+    } catch (e: any) {
+      Alert.alert('No se pudo importar', e?.message ?? String(e));
+    }
+  };
+
+  const handleSinglePackImport = async (
+    result: { pack: TriggerPack; importedSoundCount: number; missingSoundCount: number },
+  ) => {
+    const { pack: imported, importedSoundCount, missingSoundCount } = result;
+    const existing = await loadPacks();
+    const collision = existing.find((p) => p.name === imported.name);
+
+    const finalize = async (toSave: TriggerPack, list: TriggerPack[]) => {
+      const next = [...list, toSave];
+      await savePacks(next);
+      setPacks(next);
+      const parts = [`"${toSave.name}" importada con ${toSave.triggers.length} triggers`];
+      if (importedSoundCount > 0) parts.push(`${importedSoundCount} sonido${importedSoundCount === 1 ? '' : 's'} añadido${importedSoundCount === 1 ? '' : 's'}`);
+      if (missingSoundCount > 0) parts.push(`⚠ ${missingSoundCount} sonido${missingSoundCount === 1 ? '' : 's'} no se pudieron extraer (las acciones quedan marcadas como "(falta)")`);
+      Alert.alert('Importación completa', parts.join('. ') + '.');
+    };
+
+    if (!collision) {
+      await finalize(imported, existing);
+      return;
+    }
+
+    Alert.alert(
+      'Ya existe una plantilla con ese nombre',
+      `Ya tienes "${imported.name}". ¿Qué hago con la importada?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Sustituir',
+          style: 'destructive',
+          onPress: async () => {
+            const filtered = existing.filter((p) => p.id !== collision.id);
+            await finalize(imported, filtered);
+          },
+        },
+        {
+          text: 'Duplicar',
+          onPress: async () => {
+            const renamed: TriggerPack = { ...imported, name: `${imported.name} (importada)` };
+            await finalize(renamed, existing);
+          },
+        },
+      ],
+    );
+  };
+
+  const handleBackupImport = async (
+    result: { packs: TriggerPack[]; importedSoundCount: number; missingSoundCount: number },
+  ) => {
+    const { packs: imported, importedSoundCount, missingSoundCount } = result;
+    if (imported.length === 0) {
+      Alert.alert('Backup vacío', 'El archivo no contiene plantillas.');
+      return;
+    }
+    const existing = await loadPacks();
+    const existingNames = new Set(existing.map((p) => p.name));
+    const collisions = imported.filter((ip) => existingNames.has(ip.name));
+
+    const finalize = async (toAdd: TriggerPack[], cleanedExisting: TriggerPack[]) => {
+      const next = [...cleanedExisting, ...toAdd];
+      await savePacks(next);
+      setPacks(next);
+      const parts = [`${toAdd.length} plantilla${toAdd.length === 1 ? '' : 's'} importada${toAdd.length === 1 ? '' : 's'}`];
+      if (importedSoundCount > 0) parts.push(`${importedSoundCount} sonido${importedSoundCount === 1 ? '' : 's'} añadido${importedSoundCount === 1 ? '' : 's'}`);
+      if (missingSoundCount > 0) parts.push(`⚠ ${missingSoundCount} sonido${missingSoundCount === 1 ? '' : 's'} no se pudieron extraer`);
+      parts.push('Las plantillas se importan sin asignación a servidores — reasígnalas en el editor');
+      Alert.alert('Importación completa', parts.join('. ') + '.');
+    };
+
+    if (collisions.length === 0) {
+      await finalize(imported, existing);
+      return;
+    }
+
+    const collisionList = collisions.map((p) => `"${p.name}"`).join(', ');
+    Alert.alert(
+      `Hay ${collisions.length} plantilla${collisions.length === 1 ? '' : 's'} con el mismo nombre`,
+      `Ya tienes: ${collisionList}.\n\n• Saltar: importa solo las nuevas, conserva las tuyas.\n• Sustituir: reemplaza las tuyas con las del backup.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Saltar',
+          onPress: async () => {
+            const onlyNew = imported.filter((ip) => !existingNames.has(ip.name));
+            await finalize(onlyNew, existing);
+          },
+        },
+        {
+          text: 'Sustituir',
+          style: 'destructive',
+          onPress: async () => {
+            const collisionNames = new Set(collisions.map((c) => c.name));
+            const cleaned = existing.filter((ep) => !collisionNames.has(ep.name));
+            await finalize(imported, cleaned);
+          },
+        },
+      ],
+    );
+  };
+
   const handleDelete = (pack: TriggerPack) => {
     Alert.alert(
       'Borrar plantilla',
@@ -82,7 +244,31 @@ export function TriggersScreen({ navigation }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Text style={styles.backText}>{'< Volver'}</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Plantillas de triggers</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.title}>Plantillas de triggers</Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.headerBtn}
+              onPress={handleExportAll}
+              accessible={true}
+              accessibilityLabel="Exportar todas las plantillas"
+              accessibilityRole="button"
+              accessibilityHint="Genera un ZIP con todas las plantillas y sus sonidos personalizados para hacer backup"
+            >
+              <Text style={styles.headerBtnText}>Exportar todo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerBtn}
+              onPress={handleImport}
+              accessible={true}
+              accessibilityLabel="Importar plantilla o backup"
+              accessibilityRole="button"
+              accessibilityHint="Abre el selector de archivos para importar una plantilla individual o un backup completo desde un ZIP"
+            >
+              <Text style={styles.headerBtnText}>Importar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
 
       <View style={styles.contentContainer}>
@@ -136,6 +322,16 @@ export function TriggersScreen({ navigation }: Props) {
                 accessibilityHint={`Crear una copia de ${item.name}`}
               >
                 <Text style={[styles.actionBtnText, styles.duplicateBtnText]}>⬚</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.shareBtn]}
+                onPress={() => handleShare(item)}
+                accessible={true}
+                accessibilityLabel="Compartir"
+                accessibilityRole="button"
+                accessibilityHint={`Exportar ${item.name} como ZIP con sus sonidos`}
+              >
+                <Text style={[styles.actionBtnText, styles.shareBtnText]}>↗</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.actionBtn, styles.deleteBtn]}
@@ -259,11 +455,37 @@ const styles = StyleSheet.create({
   },
   editBtn: { backgroundColor: '#0a3a0a' },
   duplicateBtn: { backgroundColor: '#0a2a3a' },
+  shareBtn: { backgroundColor: '#3a2a0a' },
   deleteBtn: { backgroundColor: '#3a0a0a' },
   actionBtnText: { fontSize: 20, fontWeight: 'bold' },
   editBtnText: { color: '#0c0' },
   duplicateBtnText: { color: '#0099ff' },
+  shareBtnText: { color: '#ffaa33' },
   deleteBtnText: { color: '#cc3333' },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  headerBtn: {
+    backgroundColor: '#0a3a0a',
+    borderWidth: 1,
+    borderColor: '#0c0',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  headerBtnText: {
+    color: '#0c0',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
+  },
   addButtonContainer: {
     alignItems: 'center',
     paddingVertical: 20,
