@@ -990,14 +990,23 @@ Variables de "memoria" que el usuario puede crear desde acciones de trigger y re
 
 **Decisiones cerradas (2026-04-29):**
 - Nombres libres con sintaxis `[a-z][a-z0-9_]*` (lowercase forzado al crear). NO slots fijos `x1-x20`.
-- Alcance: por server. Cambiar de server vacía el store.
+- Alcance: por server. Cambiar de server resetea valores; las declaraciones se cargan de storage del nuevo server.
 - Tipo: solo string. Las condiciones numéricas (`crosses_below`/`above`) hacen `Number()` perezoso y fallan silenciosamente si el valor no es numérico.
-- Persistencia: **memoria-only**. Disconnect/reconnect al MISMO server preserva valores; cambio de server o restart de app los borra. NO disco.
+- Persistencia **two-layer**: las **declaraciones** SÍ persisten a AsyncStorage (key `aljhtar_user_vars_{serverId}`); los **valores** son memoria-only. Disconnect/reconnect al MISMO server preserva valores; restart de app conserva las declaraciones (pero los valores se vacían a `''`).
 - Sintaxis en templates: `${nombre}` con llaves siempre — distingue de `$1`/`$2` (capturas regex) y `$old`/`$new` (variable trigger context). Compila a literal `${nombre}` en el regex y se expande live a `userVariablesService.get(name)` en tiempo de fire.
-- Variable no inicializada → templates expanden a `""` (mismo fail-quiet que capturas inexistentes).
-- Auto-creación perezosa: la primera vez que un `set_var foo = ...` dispara, `foo` aparece en la lista. No hay paso de declaración separado.
-- Reservadas: nombres de `VARIABLE_SPECS` (vida, energia, imagenes, ...) — la validación rechaza colisiones al guardar el trigger.
+- Variable no declarada o sin valor → templates expanden a `""` (mismo fail-quiet que capturas inexistentes).
+- **Las variables solo se crean desde la pantalla "Mis variables"** (con botón "+ Nueva"). No hay creación inline desde el editor de triggers — el editor solo deja seleccionar de un picker de declaradas vía `<VariablePicker>`. Esta decisión se tomó tras un primer iteración donde había auto-creación perezosa: feo y poco descubrible.
+- **Bootstrap de packs**: al cargar un servidor (en `TerminalScreen.useEffect`), se recolectan todos los nombres de user-vars referenciados en sus packs asignados y se auto-declaran si faltan. Esto cubre packs creados antes del modelo explícito y packs importados.
+- **Auto-declare en import de pack**: al importar un pack (per-pack o backup), se recolectan las refs de user-vars y se llaman a `userVariablesService.declareMany(names)`. Las que ya estaban declaradas se ignoran (mantienen su valor); las nuevas se añaden. El alert de "Importación completa" indica cuántas variables se declararon.
+- Reservadas: nombres de `VARIABLE_SPECS` (vida, energia, imagenes, ...) — bloqueadas en el botón "+ Nueva" de Mis variables y al guardar el trigger.
 - Loop protection: hard-cap de profundidad **3** en cascadas user-var → user-var. Si A setea x1 que dispara B que setea x2 que dispara C que setea x3 que disparaba algo... a la 4ª se corta y se loguea `console.warn`.
+
+**Pantalla "Mis variables" (UserVariablesScreen):**
+- Botón "+ Nueva" en el header. Modal pequeño con TextInput (validación + colisiones).
+- Botón "Resetear" — ahora vacía solo VALORES, no las declaraciones.
+- Cada variable: fila con nombre, valor actual, "Usada en N triggers" expansible.
+- Al expandir: lista de filas con `pack name → trigger name (rol)` donde rol = `escribe` | `lee` | `vigila`. Tap en una fila navega a `TriggerEditor` con `autoOpenTriggerId` que abre el modal del trigger directamente.
+- Botón ✕ por variable: confirma con cuenta de triggers que la usan; si la borras, las refs quedan colgando (expand a `""`, set_var ignora).
 
 **Implementación:**
 

@@ -11,7 +11,7 @@ import {
   Switch,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import { ActionTextBlock, AnchorMode, PatternBlock, Trigger, TriggerAction, TriggerType, VariableCondition } from '../types';
 import { AVAILABLE_SOUNDS } from '../storage/settingsStorage';
@@ -22,6 +22,7 @@ import { captureColors, captureLabels, compileActionText, compilePattern, findOr
 import { useSounds } from '../contexts/SoundContext';
 import { VARIABLE_SPECS, getVariableSpec, isPredefinedVariable } from '../utils/variableMap';
 import { isValidUserVarName, userVariablesService } from '../services/userVariablesService';
+import { VariablePicker } from './VariablePicker';
 
 const BUILTIN_PREFIX = 'builtin:';
 const CUSTOM_PREFIX = 'custom:';
@@ -125,6 +126,14 @@ function getInitialVarValue(trigger: Trigger): string {
 }
 
 export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: Props) {
+  const insets = useSafeAreaInsets();
+  // Modal-on-Android quirk: SafeAreaView + ScrollView mount before the
+  // Modal's window is fully laid out, so they cache wrong dimensions and
+  // scroll stays disabled / content extends behind the system nav bar.
+  // RN's <Modal onShow> fires AFTER the slide animation completes — at that
+  // point insets and window size are stable. Bumping `layoutNonce` forces a
+  // re-mount of the inner content with correct measurements.
+  const [layoutNonce, setLayoutNonce] = useState(0);
   const initialExpert = computeInitialExpertMode(initialTrigger);
   const initialKind = getInitialKind(initialTrigger);
 
@@ -150,9 +159,6 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
   const [varEvent, setVarEvent] = useState<VariableEvent>(getInitialVarEvent(initialTrigger));
   const [varValue, setVarValue] = useState<string>(getInitialVarValue(initialTrigger));
   const [varPickerVisible, setVarPickerVisible] = useState(false);
-  // Buffer for the "Otra variable de usuario..." free-text input inside the
-  // var picker. Lets the user watch a user var that hasn't been written yet.
-  const [newUserVarName, setNewUserVarName] = useState('');
   const [actions, setActions] = useState<TriggerAction[]>(initialTrigger.actions);
   const [testInput, setTestInput] = useState('');
   const [actionPickerVisible, setActionPickerVisible] = useState(false);
@@ -472,24 +478,37 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
       Alert.alert('Falta el nombre', 'El trigger necesita un nombre.');
       return;
     }
-    // Common validation for set_var actions in either kind: name must be a
-    // valid identifier and not collide with predefined prompt variables.
+    // Common validation for set_var actions in either kind: must reference
+    // a currently-declared user variable. Names are no longer free-typed —
+    // the user picks from the VariablePicker which only lists declared
+    // names — but we re-validate here in case the var was undeclared
+    // between picking and saving (rare race) or in case of expert-mode
+    // edits.
     for (const a of actions) {
       if (a.type !== 'set_var') continue;
-      if (!a.varName || !isValidUserVarName(a.varName)) {
+      if (!a.varName) {
         Alert.alert(
-          'Variable inválida',
-          'Una acción "Guardar en variable" tiene un nombre vacío o inválido. Usa solo letras minúsculas, números y guiones bajos, empezando por letra.',
+          'Variable no elegida',
+          'Una acción "Guardar en variable" no tiene variable destino. Selecciónala desde el botón "(elige una variable)".',
         );
         return;
       }
-      if (isPredefinedVariable(a.varName)) {
+      if (!userVariablesService.isDeclared(a.varName)) {
         Alert.alert(
-          'Nombre reservado',
-          `"${a.varName}" es una variable del sistema (vida, energia, etc.). Elige otro nombre.`,
+          'Variable no declarada',
+          `La variable "${a.varName}" no está declarada en este servidor. Créala desde Settings → Mis variables y selecciónala aquí.`,
         );
         return;
       }
+    }
+    // Variable triggers watching a user-defined var: the name must be
+    // declared. Predefined names are always valid (vida, energia, ...).
+    if (kind === 'variable' && !isPredefinedVariable(varName) && !userVariablesService.isDeclared(varName)) {
+      Alert.alert(
+        'Variable no declarada',
+        `"${varName}" no es una variable del sistema ni una declarada. Créala desde Settings → Mis variables o elige una existente.`,
+      );
+      return;
     }
     if (kind === 'variable') {
       if (variableError) {
@@ -527,8 +546,28 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
   };
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={handleCancel}>
-      <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      onRequestClose={handleCancel}
+      statusBarTranslucent={false}
+      onShow={() => setLayoutNonce((n) => n + 1)}
+    >
+      {/*
+        On Android, react-native-safe-area-context's SafeAreaView often does
+        NOT apply bottom-inset padding inside Modal — the Modal renders in a
+        separate native window where the inset context doesn't propagate
+        cleanly. We work around that by NOT relying on SafeAreaView's bottom
+        edge, and instead applying `insets.bottom` (plus a generous static
+        fallback) directly to the ScrollView's contentContainerStyle. The
+        SafeAreaView still handles top/left/right normally.
+
+        The `key={layoutNonce}` forces a fresh mount after Modal.onShow fires
+        so the ScrollView re-measures with correct viewport dimensions —
+        without it, the initial mount caches wrong sizes and scroll fails
+        until the user adds another action that triggers a re-render.
+      */}
+      <SafeAreaView key={layoutNonce} style={styles.container} edges={['top', 'left', 'right']}>
         <View style={styles.header}>
           <TouchableOpacity onPress={handleCancel} style={styles.headerBtn}>
             <Text style={styles.headerBtnText}>Cancelar</Text>
@@ -541,7 +580,19 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
           </TouchableOpacity>
         </View>
 
-        <ScrollView contentContainerStyle={styles.body}>
+        <ScrollView
+          style={styles.scrollContainer}
+          contentContainerStyle={[
+            styles.body,
+            // 120dp static fallback clears any 3-button nav bar (~48dp) and
+            // any gesture-bar home indicator (~24-34dp), and `insets.bottom`
+            // adds the actual measured inset on top when available.
+            { paddingBottom: 120 + insets.bottom },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={true}
+        >
           <Text style={styles.label}>Nombre</Text>
           <TextInput
             style={styles.input}
@@ -878,7 +929,7 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
                 ))}
 
                 <Text style={styles.pickerSection}>Mías</Text>
-                {Object.keys(userVariablesService.getAll()).sort().map((name) => (
+                {userVariablesService.getDeclared().map((name) => (
                   <TouchableOpacity
                     key={name}
                     style={[styles.pickerItem, varName === name && styles.pickerItemSelected]}
@@ -893,47 +944,9 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
                     </Text>
                   </TouchableOpacity>
                 ))}
-                {Object.keys(userVariablesService.getAll()).length === 0 && (
+                {userVariablesService.getDeclared().length === 0 && (
                   <Text style={styles.pickerEmpty}>
-                    Aún no hay variables de usuario en este servidor.
-                  </Text>
-                )}
-
-                <Text style={styles.pickerSection}>Crear nueva</Text>
-                <View style={styles.newUserVarRow}>
-                  <TextInput
-                    style={[styles.input, styles.monoInput, { flex: 1 }]}
-                    value={newUserVarName}
-                    onChangeText={(t) => setNewUserVarName(t.toLowerCase())}
-                    placeholder="ej. ultima_direccion"
-                    placeholderTextColor="#555"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  <TouchableOpacity
-                    style={[
-                      styles.newUserVarBtn,
-                      (!isValidUserVarName(newUserVarName) || isPredefinedVariable(newUserVarName)) &&
-                        styles.newUserVarBtnDisabled,
-                    ]}
-                    disabled={!isValidUserVarName(newUserVarName) || isPredefinedVariable(newUserVarName)}
-                    onPress={() => {
-                      setVarName(newUserVarName);
-                      setNewUserVarName('');
-                      setVarPickerVisible(false);
-                    }}
-                  >
-                    <Text style={styles.newUserVarBtnText}>Usar</Text>
-                  </TouchableOpacity>
-                </View>
-                {newUserVarName !== '' && !isValidUserVarName(newUserVarName) && (
-                  <Text style={styles.errorText}>
-                    Solo letras minúsculas, números y guiones bajos. Empieza por letra.
-                  </Text>
-                )}
-                {isValidUserVarName(newUserVarName) && isPredefinedVariable(newUserVarName) && (
-                  <Text style={styles.errorText}>
-                    "{newUserVarName}" es una variable del sistema.
+                    Aún no hay variables de usuario declaradas. Créalas desde Settings → Mis variables.
                   </Text>
                 )}
               </ScrollView>
@@ -1275,54 +1288,95 @@ function ActionEditor({ action, expertMode, patternBlocks, customSounds, onChang
       )}
 
       {action.type === 'set_var' && (
-        <>
-          <Text style={styles.smallLabel}>Nombre de variable</Text>
-          <TextInput
-            style={[
-              styles.input,
-              styles.monoInput,
-              action.varName && !isValidUserVarName(action.varName) ? styles.inputError : null,
-            ]}
-            value={action.varName}
-            onChangeText={(t) => onChange({ ...action, varName: t.toLowerCase() })}
-            placeholder="ej. ultima_direccion"
-            placeholderTextColor="#555"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {action.varName && !isValidUserVarName(action.varName) && (
-            <Text style={styles.errorText}>
-              Nombre inválido. Solo letras minúsculas, números y guiones bajos. Debe empezar por letra.
-            </Text>
-          )}
-          {action.varName && isPredefinedVariable(action.varName) && (
-            <Text style={styles.errorText}>
-              "{action.varName}" es una variable del sistema. Elige otro nombre.
-            </Text>
-          )}
-          <Text style={styles.smallLabel}>Valor a guardar</Text>
-          {expertMode ? (
-            <TextInput
-              style={styles.input}
-              value={action.value}
-              onChangeText={(t) => onChange({ ...action, value: t })}
-              placeholder="ej. $1  (capturas y/o ${otra_var})"
-              placeholderTextColor="#555"
-            />
-          ) : (
-            <TriggerActionTextBuilder
-              blocks={action.valueBlocks || []}
-              patternBlocks={patternBlocks}
-              placeholder="Vacío."
-              onChange={(b) => onChange({ ...action, valueBlocks: b })}
-            />
-          )}
-          <Text style={styles.actionHint}>
-            Guarda el valor en una variable de usuario que persiste mientras estés conectado a este servidor. Otros triggers pueden leerla con ${'${nombre}'} o reaccionar a sus cambios con una "Alarma de variable".
-          </Text>
-        </>
+        <SetVarActionEditor
+          action={action}
+          onChange={onChange}
+          expertMode={expertMode}
+          patternBlocks={patternBlocks}
+        />
       )}
     </View>
+  );
+}
+
+// Sub-component for the set_var action editor. Replaces the free-text name
+// input with a VariablePicker — under the new design, names are declared
+// from the "Mis variables" screen and only selectable here. If no vars
+// exist yet, the picker shows an empty state pointing the user there.
+function SetVarActionEditor({
+  action,
+  onChange,
+  expertMode,
+  patternBlocks,
+}: {
+  action: Extract<TriggerAction, { type: 'set_var' }>;
+  onChange: (a: TriggerAction) => void;
+  expertMode: boolean;
+  patternBlocks: PatternBlock[];
+}) {
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const isDeclared = action.varName !== '' && userVariablesService.isDeclared(action.varName);
+
+  return (
+    <>
+      <Text style={styles.smallLabel}>Variable destino</Text>
+      <TouchableOpacity
+        style={[styles.varTargetBtn, !isDeclared && action.varName !== '' && styles.varTargetBtnInvalid]}
+        onPress={() => setPickerVisible(true)}
+        accessibilityRole="button"
+        accessibilityLabel={
+          action.varName
+            ? `Variable destino: ${action.varName}${isDeclared ? '' : ' (no declarada)'}`
+            : 'Sin variable elegida'
+        }
+        accessibilityHint="Tap para abrir el picker de variables declaradas"
+      >
+        <Text style={styles.varTargetBtnText}>
+          {action.varName ? `\${${action.varName}}` : '(elige una variable)'}
+        </Text>
+        <Text style={styles.varTargetBtnHint}>
+          {action.varName === ''
+            ? 'Crea variables desde Settings → Mis variables'
+            : isDeclared
+              ? 'Declarada'
+              : '⚠ No declarada — el set_var se ignorará'}
+        </Text>
+      </TouchableOpacity>
+
+      <Text style={styles.smallLabel}>Valor a guardar</Text>
+      {expertMode ? (
+        <TextInput
+          style={styles.input}
+          value={action.value}
+          onChangeText={(t) => onChange({ ...action, value: t })}
+          placeholder="ej. $1  (capturas y/o ${otra_var})"
+          placeholderTextColor="#555"
+        />
+      ) : (
+        <TriggerActionTextBuilder
+          blocks={action.valueBlocks || []}
+          patternBlocks={patternBlocks}
+          placeholder="Vacío."
+          onChange={(b) => onChange({ ...action, valueBlocks: b })}
+        />
+      )}
+      <Text style={styles.actionHint}>
+        Guarda el valor en la variable seleccionada. Otros triggers pueden leerla con ${'${nombre}'}
+        o vigilar sus cambios con "Alarma de variable".
+      </Text>
+
+      <VariablePicker
+        visible={pickerVisible}
+        selectedName={action.varName || null}
+        title="Elegir variable destino"
+        emptyHint="Para usar set_var, crea primero una variable desde Settings → Mis variables."
+        onPick={(name) => {
+          onChange({ ...action, varName: name });
+          setPickerVisible(false);
+        }}
+        onCancel={() => setPickerVisible(false)}
+      />
+    </>
   );
 }
 
@@ -1445,7 +1499,8 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     textAlign: 'center',
   },
-  body: { padding: 16, paddingBottom: 40 },
+  scrollContainer: { flex: 1 },
+  body: { padding: 16, paddingBottom: 120 },
   label: {
     color: '#ccc',
     fontSize: 13,
@@ -1476,6 +1531,18 @@ const styles = StyleSheet.create({
   monoInput: { fontFamily: 'monospace' },
   inputError: { borderColor: '#dd5555' },
   errorText: { color: '#dd5555', fontSize: 11, marginTop: 4, fontFamily: 'monospace' },
+  varTargetBtn: {
+    backgroundColor: '#2a1a3a',
+    borderWidth: 1,
+    borderColor: '#9966cc',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  varTargetBtnInvalid: { backgroundColor: '#3a1a1a', borderColor: '#cc6666' },
+  varTargetBtnText: { color: '#cc99ff', fontSize: 14, fontFamily: 'monospace', fontWeight: 'bold' },
+  varTargetBtnHint: { color: '#888', fontSize: 11, fontFamily: 'monospace', marginTop: 4 },
   hintText: { color: '#666', fontSize: 11, marginTop: 4, fontFamily: 'monospace' },
   switchRow: {
     flexDirection: 'row',

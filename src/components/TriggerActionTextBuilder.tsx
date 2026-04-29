@@ -1,8 +1,9 @@
 import React, { useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { ActionTextBlock, PatternBlock } from '../types';
 import { captureColors, captureLabels } from '../utils/triggerCompiler';
-import { isValidUserVarName } from '../services/userVariablesService';
+import { userVariablesService } from '../services/userVariablesService';
+import { VariablePicker } from './VariablePicker';
 
 interface Props {
   blocks: ActionTextBlock[];
@@ -13,6 +14,8 @@ interface Props {
 
 export function TriggerActionTextBuilder({ blocks, patternBlocks, placeholder, onChange }: Props) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [varPickerVisible, setVarPickerVisible] = useState(false);
+  const [varPickerTargetIndex, setVarPickerTargetIndex] = useState<number | null>(null);
   const editInputRef = useRef<TextInput | null>(null);
 
   const colors = React.useMemo(() => captureColors(patternBlocks), [patternBlocks]);
@@ -25,10 +28,51 @@ export function TriggerActionTextBuilder({ blocks, patternBlocks, placeholder, o
   const insertBlock = (block: ActionTextBlock) => {
     const next = [...blocks, block];
     onChange(next);
-    if (block.kind === 'text' || block.kind === 'user_var_ref') {
+    if (block.kind === 'text') {
       setEditingIndex(next.length - 1);
       setTimeout(() => editInputRef.current?.focus(), 50);
     }
+  };
+
+  const openVarPickerForNewChip = () => {
+    if (userVariablesService.getDeclared().length === 0) {
+      Alert.alert(
+        'No hay variables declaradas',
+        'Crea variables desde Settings → Mis variables. Luego podrás insertarlas aquí.',
+      );
+      return;
+    }
+    setVarPickerTargetIndex(null); // null = append new
+    setVarPickerVisible(true);
+  };
+
+  const openVarPickerForExistingChip = (index: number) => {
+    if (userVariablesService.getDeclared().length === 0) {
+      Alert.alert(
+        'No hay variables declaradas',
+        'Crea variables desde Settings → Mis variables.',
+      );
+      return;
+    }
+    setVarPickerTargetIndex(index);
+    setVarPickerVisible(true);
+  };
+
+  const handleVarPicked = (name: string) => {
+    if (varPickerTargetIndex == null) {
+      // Append a fresh user_var_ref chip with the chosen name.
+      const next: ActionTextBlock[] = [...blocks, { kind: 'user_var_ref', varName: name }];
+      onChange(next);
+    } else {
+      // Replace the chip at varPickerTargetIndex with the new var name.
+      const idx = varPickerTargetIndex;
+      const next = blocks.map((b, i) =>
+        i === idx && b.kind === 'user_var_ref' ? { ...b, varName: name } : b,
+      );
+      onChange(next);
+    }
+    setVarPickerVisible(false);
+    setVarPickerTargetIndex(null);
   };
 
   const removeBlock = (index: number) => {
@@ -42,23 +86,11 @@ export function TriggerActionTextBuilder({ blocks, patternBlocks, placeholder, o
     onChange(next);
   };
 
-  const updateVarName = (index: number, varName: string) => {
-    const lower = varName.toLowerCase();
-    const next = blocks.map((b, i) =>
-      i === index && b.kind === 'user_var_ref' ? { ...b, varName: lower } : b,
-    );
-    onChange(next);
-  };
-
   const commitEdit = (index: number) => {
     setEditingIndex(null);
     const b = blocks[index];
     if (!b) return;
-    // Drop empty text chips (existing behaviour); also drop user_var_ref
-    // chips left empty (the user tapped + Variable but didn't name it).
     if (b.kind === 'text' && (b as any).text === '') {
-      removeBlock(index);
-    } else if (b.kind === 'user_var_ref' && b.varName === '') {
       removeBlock(index);
     }
   };
@@ -105,26 +137,12 @@ export function TriggerActionTextBuilder({ blocks, patternBlocks, placeholder, o
             );
           }
           if (block.kind === 'user_var_ref') {
-            const isEditing = editingIndex === idx;
-            const valid = isValidUserVarName(block.varName);
-            return isEditing ? (
-              <View key={idx} style={[styles.chip, styles.userVarChip, styles.userVarChipEditing]}>
-                <Text style={styles.userVarChipPrefix}>$</Text>
-                <TextInput
-                  ref={editInputRef}
-                  style={styles.userVarChipInput}
-                  value={block.varName}
-                  onChangeText={(t) => updateVarName(idx, t)}
-                  onBlur={() => commitEdit(idx)}
-                  onSubmitEditing={() => commitEdit(idx)}
-                  autoFocus
-                  autoCorrect={false}
-                  autoCapitalize="none"
-                  placeholder="nombre"
-                  placeholderTextColor="#777"
-                />
-              </View>
-            ) : (
+            // Tap on chip body opens VariablePicker to change the var. Free
+            // typing is no longer allowed — the user creates vars from the
+            // "Mis variables" screen and selects them here from the list.
+            // A var that's no longer declared shows as invalid (red).
+            const valid = userVariablesService.isDeclared(block.varName);
+            return (
               <TouchableOpacity
                 key={idx}
                 style={[
@@ -132,7 +150,14 @@ export function TriggerActionTextBuilder({ blocks, patternBlocks, placeholder, o
                   styles.userVarChip,
                   !valid && styles.userVarChipInvalid,
                 ]}
-                onPress={() => setEditingIndex(idx)}
+                onPress={() => openVarPickerForExistingChip(idx)}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  valid
+                    ? `Variable ${block.varName}`
+                    : `Variable ${block.varName} (no declarada)`
+                }
+                accessibilityHint="Tap para cambiar la variable"
               >
                 <Text style={styles.userVarChipText}>
                   ${block.varName ? '{' + block.varName + '}' : '?'}
@@ -178,11 +203,11 @@ export function TriggerActionTextBuilder({ blocks, patternBlocks, placeholder, o
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.addVarBtn}
-          onPress={() => insertBlock({ kind: 'user_var_ref', varName: '' })}
+          onPress={openVarPickerForNewChip}
           accessible
           accessibilityRole="button"
           accessibilityLabel="Insertar referencia a variable de usuario"
-          accessibilityHint="Añade un chip que se rellena con el valor actual de una variable de usuario"
+          accessibilityHint="Abre el picker para elegir una variable declarada"
         >
           <Text style={styles.addVarBtnText}>+ Variable</Text>
         </TouchableOpacity>
@@ -199,6 +224,20 @@ export function TriggerActionTextBuilder({ blocks, patternBlocks, placeholder, o
           </TouchableOpacity>
         ))}
       </ScrollView>
+
+      <VariablePicker
+        visible={varPickerVisible}
+        selectedName={
+          varPickerTargetIndex != null && blocks[varPickerTargetIndex]?.kind === 'user_var_ref'
+            ? (blocks[varPickerTargetIndex] as any).varName
+            : null
+        }
+        onPick={handleVarPicked}
+        onCancel={() => {
+          setVarPickerVisible(false);
+          setVarPickerTargetIndex(null);
+        }}
+      />
     </View>
   );
 }

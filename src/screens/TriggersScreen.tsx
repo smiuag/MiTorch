@@ -17,6 +17,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import { RootStackParamList, TriggerPack } from '../types';
 import { loadPacks, savePacks, newPackId, deletePack as removePack, duplicatePack } from '../storage/triggerStorage';
 import { exportPackToZip, exportAllPacksToZip, importFromZip } from '../services/triggerPackExport';
+import { userVariablesService } from '../services/userVariablesService';
+import { collectVarsReferencedByPack, collectVarsReferencedByPacks } from '../utils/userVariablesUsage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Triggers'>;
 
@@ -130,10 +132,17 @@ export function TriggersScreen({ navigation }: Props) {
     const finalize = async (toSave: TriggerPack, list: TriggerPack[]) => {
       const next = [...list, toSave];
       await savePacks(next);
+      // Auto-declare any user-variable names referenced by the imported
+      // pack's triggers. New names get added to the active server's
+      // declared set; existing declarations are left untouched (the user
+      // keeps their current values).
+      const refs = collectVarsReferencedByPack(toSave);
+      const newlyAdded = refs.length > 0 ? await userVariablesService.declareMany(refs) : [];
       setPacks(next);
       const parts = [`"${toSave.name}" importada con ${toSave.triggers.length} triggers`];
       if (importedSoundCount > 0) parts.push(`${importedSoundCount} sonido${importedSoundCount === 1 ? '' : 's'} añadido${importedSoundCount === 1 ? '' : 's'}`);
       if (missingSoundCount > 0) parts.push(`⚠ ${missingSoundCount} sonido${missingSoundCount === 1 ? '' : 's'} no se pudieron extraer (las acciones quedan marcadas como "(falta)")`);
+      if (newlyAdded.length > 0) parts.push(`${newlyAdded.length} variable${newlyAdded.length === 1 ? '' : 's'} de usuario declarada${newlyAdded.length === 1 ? '' : 's'} (${newlyAdded.join(', ')})`);
       Alert.alert('Importación completa', parts.join('. ') + '.');
     };
 
@@ -181,10 +190,16 @@ export function TriggersScreen({ navigation }: Props) {
     const finalize = async (toAdd: TriggerPack[], cleanedExisting: TriggerPack[]) => {
       const next = [...cleanedExisting, ...toAdd];
       await savePacks(next);
+      // Auto-declare user vars referenced by the imported packs (only the
+      // names that aren't already declared on the active server are added
+      // — collisions keep the existing values).
+      const refs = collectVarsReferencedByPacks(toAdd);
+      const newlyAdded = refs.length > 0 ? await userVariablesService.declareMany(refs) : [];
       setPacks(next);
       const parts = [`${toAdd.length} plantilla${toAdd.length === 1 ? '' : 's'} importada${toAdd.length === 1 ? '' : 's'}`];
       if (importedSoundCount > 0) parts.push(`${importedSoundCount} sonido${importedSoundCount === 1 ? '' : 's'} añadido${importedSoundCount === 1 ? '' : 's'}`);
       if (missingSoundCount > 0) parts.push(`⚠ ${missingSoundCount} sonido${missingSoundCount === 1 ? '' : 's'} no se pudieron extraer`);
+      if (newlyAdded.length > 0) parts.push(`${newlyAdded.length} variable${newlyAdded.length === 1 ? '' : 's'} de usuario declarada${newlyAdded.length === 1 ? '' : 's'}`);
       parts.push('Las plantillas se importan sin asignación a servidores — reasígnalas en el editor');
       Alert.alert('Importación completa', parts.join('. ') + '.');
     };
@@ -245,7 +260,7 @@ export function TriggersScreen({ navigation }: Props) {
           <Text style={styles.backText}>{'< Volver'}</Text>
         </TouchableOpacity>
         <View style={styles.headerRow}>
-          <Text style={styles.title}>Plantillas de triggers</Text>
+          <Text style={styles.title}>Plantillas</Text>
           <View style={styles.headerActions}>
             <TouchableOpacity
               style={styles.headerBtn}
@@ -255,7 +270,7 @@ export function TriggersScreen({ navigation }: Props) {
               accessibilityRole="button"
               accessibilityHint="Genera un ZIP con todas las plantillas y sus sonidos personalizados para hacer backup"
             >
-              <Text style={styles.headerBtnText}>Exportar todo</Text>
+              <Text style={styles.headerBtnText}>Exportar</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerBtn}

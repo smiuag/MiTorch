@@ -40,7 +40,8 @@ import { loadSettings, saveSettings } from '../storage/settingsStorage';
 import { MapService, MapRoom } from '../services/mapService';
 import { ButtonLayout, createDefaultLayout, createBlindModeLayout, loadLayout, saveLayout, loadServerLayout, saveServerLayout } from '../storage/layoutStorage';
 import { loadServers, saveServers } from '../storage/serverStorage';
-import { getTriggersForServer } from '../storage/triggerStorage';
+import { getTriggersForServer, loadPacks } from '../storage/triggerStorage';
+import { collectVarsReferencedByPacks } from '../utils/userVariablesUsage';
 import { triggerEngine } from '../services/triggerEngine';
 import { blindModeService } from '../services/blindModeService';
 import { logService } from '../services/logService';
@@ -708,12 +709,21 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   // Load triggers for the active server. Reloads when the server changes or
   // when the settings modal closes (user may have edited triggers from there).
-  // Also tells userVariablesService which server is active so its store wipes
-  // when navigating to a different server (memory-only, per-server scope).
+  // Also wires userVariablesService: switches server (loads declared vars
+  // from storage, resets values), then auto-declares any user-var names
+  // referenced by the assigned packs that aren't already declared. This
+  // bootstrap covers (a) packs imported / created before the explicit-
+  // declare model and (b) packs imported with new var refs.
   useEffect(() => {
     let cancelled = false;
-    userVariablesService.setActiveServer(server.id);
     (async () => {
+      await userVariablesService.setActiveServer(server.id);
+      const packs = await loadPacks();
+      const assignedPacks = packs.filter((p) => p.assignedServerIds.includes(server.id));
+      const referenced = collectVarsReferencedByPacks(assignedPacks);
+      if (referenced.length > 0) {
+        await userVariablesService.declareMany(referenced);
+      }
       const triggers = await getTriggersForServer(server.id);
       if (!cancelled) triggerEngine.setActiveTriggers(triggers);
     })();

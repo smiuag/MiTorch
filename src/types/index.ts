@@ -38,7 +38,7 @@ export type RootStackParamList = {
   Terminal: { server: ServerProfile };
   Settings: undefined;
   Triggers: undefined;
-  TriggerEditor: { packId: string };
+  TriggerEditor: { packId: string; autoOpenTriggerId?: string };
   MySounds: undefined;
   UserVariables: undefined;
 };

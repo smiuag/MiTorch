@@ -20,12 +20,13 @@ import { TriggerEditModal } from '../components/TriggerEditModal';
 type Props = NativeStackScreenProps<RootStackParamList, 'TriggerEditor'>;
 
 export function TriggerEditorScreen({ route, navigation }: Props) {
-  const { packId } = route.params;
+  const { packId, autoOpenTriggerId } = route.params;
   const [pack, setPack] = useState<TriggerPack | null>(null);
   const [editingTrigger, setEditingTrigger] = useState<Trigger | null>(null);
   const [editorVisible, setEditorVisible] = useState(false);
   const [assignVisible, setAssignVisible] = useState(false);
   const [servers, setServers] = useState<ServerProfile[]>([]);
+  const [hasAutoOpened, setHasAutoOpened] = useState(false);
 
   const refresh = useCallback(async () => {
     const list = await loadPacks();
@@ -37,6 +38,20 @@ export function TriggerEditorScreen({ route, navigation }: Props) {
     refresh();
     loadServers().then(setServers);
   }, [refresh]);
+
+  // Auto-open editor for a specific trigger when arriving from "Mis variables"
+  // (or any other deep-link). Runs once after the pack loads. Re-navigating
+  // back here later won't re-trigger because hasAutoOpened stays true for
+  // the lifetime of this screen instance.
+  useEffect(() => {
+    if (hasAutoOpened || !autoOpenTriggerId || !pack) return;
+    const target = pack.triggers.find((t) => t.id === autoOpenTriggerId);
+    if (target) {
+      setEditingTrigger(target);
+      setEditorVisible(true);
+      setHasAutoOpened(true);
+    }
+  }, [pack, autoOpenTriggerId, hasAutoOpened]);
 
   const persist = async (next: TriggerPack) => {
     setPack(next);

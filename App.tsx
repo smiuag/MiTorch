@@ -2,6 +2,7 @@ import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Sentry from '@sentry/react-native';
 import { captureConsoleIntegration } from '@sentry/core';
 import { RootStackParamList } from './src/types';
@@ -28,6 +29,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function App() {
   return (
+    <SafeAreaProvider>
     <SoundProvider>
       <FloatingMessagesProvider>
       <NavigationContainer
@@ -95,6 +97,7 @@ function App() {
       </NavigationContainer>
       </FloatingMessagesProvider>
     </SoundProvider>
+    </SafeAreaProvider>
   );
 }
 
