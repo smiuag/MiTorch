@@ -20,7 +20,8 @@ import { TriggerPatternBuilder } from './TriggerPatternBuilder';
 import { TriggerActionTextBuilder } from './TriggerActionTextBuilder';
 import { captureColors, captureLabels, compileActionText, compilePattern, findOrphanCaptureRefs } from '../utils/triggerCompiler';
 import { useSounds } from '../contexts/SoundContext';
-import { VARIABLE_SPECS, getVariableSpec } from '../utils/variableMap';
+import { VARIABLE_SPECS, getVariableSpec, isPredefinedVariable } from '../utils/variableMap';
+import { isValidUserVarName, userVariablesService } from '../services/userVariablesService';
 
 const BUILTIN_PREFIX = 'builtin:';
 const CUSTOM_PREFIX = 'custom:';
@@ -44,15 +45,18 @@ const ACTION_TYPES: Array<{ key: TriggerAction['type']; label: string }> = [
   { key: 'send', label: 'Enviar comando' },
   { key: 'notify', label: 'Notificación del sistema' },
   { key: 'floating', label: 'Mensaje flotante' },
+  { key: 'set_var', label: 'Guardar en variable' },
 ];
 
 // Variable triggers don't see a line (the prompt line is gagged), so actions
-// that mutate the line (gag, replace, color) are excluded.
+// that mutate the line (gag, replace, color) are excluded. set_var works fine
+// in either context.
 const VARIABLE_ACTION_TYPES: Array<{ key: TriggerAction['type']; label: string }> = [
   { key: 'play_sound', label: 'Reproducir sonido' },
   { key: 'send', label: 'Enviar comando' },
   { key: 'notify', label: 'Notificación del sistema' },
   { key: 'floating', label: 'Mensaje flotante' },
+  { key: 'set_var', label: 'Guardar en variable' },
 ];
 
 type VariableEvent = VariableCondition['event'];
@@ -146,6 +150,9 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
   const [varEvent, setVarEvent] = useState<VariableEvent>(getInitialVarEvent(initialTrigger));
   const [varValue, setVarValue] = useState<string>(getInitialVarValue(initialTrigger));
   const [varPickerVisible, setVarPickerVisible] = useState(false);
+  // Buffer for the "Otra variable de usuario..." free-text input inside the
+  // var picker. Lets the user watch a user var that hasn't been written yet.
+  const [newUserVarName, setNewUserVarName] = useState('');
   const [actions, setActions] = useState<TriggerAction[]>(initialTrigger.actions);
   const [testInput, setTestInput] = useState('');
   const [actionPickerVisible, setActionPickerVisible] = useState(false);
@@ -244,22 +251,29 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
 
   const variableEventSpec = useMemo(() => VARIABLE_EVENTS.find((e) => e.key === varEvent), [varEvent]);
   const variableSpec = useMemo(() => getVariableSpec(varName), [varName]);
+  // True when the watched name is a user-defined variable (not in
+  // VARIABLE_SPECS). User vars are always treated as string-typed at the
+  // condition level — numeric conditions do lazy Number() conversion.
+  const isUserVar = useMemo(
+    () => kind === 'variable' && !variableSpec && isValidUserVarName(varName),
+    [kind, variableSpec, varName],
+  );
 
   const variableError = useMemo((): string | null => {
     if (kind !== 'variable') return null;
-    if (!variableSpec) return 'Variable desconocida';
+    if (!variableSpec && !isUserVar) return 'Variable desconocida';
     if (!variableEventSpec) return 'Evento desconocido';
     if (variableEventSpec.needsValue) {
       if (varValue.trim() === '') return 'Falta el valor';
       if (variableEventSpec.numericOnly && Number.isNaN(Number(varValue))) {
         return 'El valor debe ser numérico';
       }
-      if (variableSpec.kind === 'number' && Number.isNaN(Number(varValue))) {
+      if (variableSpec?.kind === 'number' && Number.isNaN(Number(varValue))) {
         return 'El valor debe ser numérico para esta variable';
       }
     }
     return null;
-  }, [kind, variableSpec, variableEventSpec, varValue]);
+  }, [kind, variableSpec, isUserVar, variableEventSpec, varValue]);
 
   const handleToggleExpert = () => {
     if (!expertMode) {
@@ -337,6 +351,9 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
         break;
       case 'floating':
         newAction = { type: 'floating', message: '', messageBlocks: [], level: 'info' };
+        break;
+      case 'set_var':
+        newAction = { type: 'set_var', varName: '', value: '', valueBlocks: [] };
         break;
     }
     setActions([...actions, newAction]);
@@ -454,6 +471,25 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
     if (!name.trim()) {
       Alert.alert('Falta el nombre', 'El trigger necesita un nombre.');
       return;
+    }
+    // Common validation for set_var actions in either kind: name must be a
+    // valid identifier and not collide with predefined prompt variables.
+    for (const a of actions) {
+      if (a.type !== 'set_var') continue;
+      if (!a.varName || !isValidUserVarName(a.varName)) {
+        Alert.alert(
+          'Variable inválida',
+          'Una acción "Guardar en variable" tiene un nombre vacío o inválido. Usa solo letras minúsculas, números y guiones bajos, empezando por letra.',
+        );
+        return;
+      }
+      if (isPredefinedVariable(a.varName)) {
+        Alert.alert(
+          'Nombre reservado',
+          `"${a.varName}" es una variable del sistema (vida, energia, etc.). Elige otro nombre.`,
+        );
+        return;
+      }
     }
     if (kind === 'variable') {
       if (variableError) {
@@ -617,14 +653,23 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
               >
                 <Text style={styles.varPickerBtnText}>{varName}</Text>
                 <Text style={styles.varPickerBtnHint}>
-                  {variableSpec ? variableSpec.description : 'Variable desconocida'}
+                  {variableSpec
+                    ? variableSpec.description
+                    : isUserVar
+                      ? 'Variable de usuario (texto)'
+                      : 'Variable desconocida'}
                 </Text>
               </TouchableOpacity>
 
               <Text style={[styles.label, { marginTop: 12 }]}>Cuándo se dispara</Text>
               <View style={styles.varEventRow}>
                 {VARIABLE_EVENTS.map((ev) => {
-                  const disabled = ev.numericOnly && variableSpec?.kind !== 'number';
+                  // Numeric-only events (crosses_below/above) are disabled
+                  // only when we KNOW the var isn't number-typed (predefined
+                  // string vars like `salidas`). User vars have unknown type
+                  // — Number() conversion happens lazily at runtime, so let
+                  // the user pick numeric events on their own user vars.
+                  const disabled = ev.numericOnly && variableSpec != null && variableSpec.kind !== 'number';
                   const selected = varEvent === ev.key;
                   return (
                     <TouchableOpacity
@@ -812,15 +857,14 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
               style={[styles.pickerBox, { maxHeight: '85%' }]}
             >
               <Text style={styles.pickerTitle}>Elegir variable</Text>
-              <FlatList
-                data={VARIABLE_SPECS}
-                keyExtractor={(s) => s.name}
-                renderItem={({ item }) => (
+              <ScrollView keyboardShouldPersistTaps="handled">
+                <Text style={styles.pickerSection}>Del sistema</Text>
+                {VARIABLE_SPECS.map((item) => (
                   <TouchableOpacity
+                    key={item.name}
                     style={[styles.pickerItem, varName === item.name && styles.pickerItemSelected]}
                     onPress={() => {
                       setVarName(item.name);
-                      // If current event is numericOnly but new var isn't number, fall back.
                       const evSpec = VARIABLE_EVENTS.find((e) => e.key === varEvent);
                       if (evSpec?.numericOnly && item.kind !== 'number') {
                         setVarEvent('changes');
@@ -831,8 +875,68 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
                     <Text style={styles.pickerItemText}>{item.name}</Text>
                     <Text style={styles.pickerItemSubtext}>{item.description}</Text>
                   </TouchableOpacity>
+                ))}
+
+                <Text style={styles.pickerSection}>Mías</Text>
+                {Object.keys(userVariablesService.getAll()).sort().map((name) => (
+                  <TouchableOpacity
+                    key={name}
+                    style={[styles.pickerItem, varName === name && styles.pickerItemSelected]}
+                    onPress={() => {
+                      setVarName(name);
+                      setVarPickerVisible(false);
+                    }}
+                  >
+                    <Text style={styles.pickerItemText}>{name}</Text>
+                    <Text style={styles.pickerItemSubtext}>
+                      = "{userVariablesService.get(name)}"
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+                {Object.keys(userVariablesService.getAll()).length === 0 && (
+                  <Text style={styles.pickerEmpty}>
+                    Aún no hay variables de usuario en este servidor.
+                  </Text>
                 )}
-              />
+
+                <Text style={styles.pickerSection}>Crear nueva</Text>
+                <View style={styles.newUserVarRow}>
+                  <TextInput
+                    style={[styles.input, styles.monoInput, { flex: 1 }]}
+                    value={newUserVarName}
+                    onChangeText={(t) => setNewUserVarName(t.toLowerCase())}
+                    placeholder="ej. ultima_direccion"
+                    placeholderTextColor="#555"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <TouchableOpacity
+                    style={[
+                      styles.newUserVarBtn,
+                      (!isValidUserVarName(newUserVarName) || isPredefinedVariable(newUserVarName)) &&
+                        styles.newUserVarBtnDisabled,
+                    ]}
+                    disabled={!isValidUserVarName(newUserVarName) || isPredefinedVariable(newUserVarName)}
+                    onPress={() => {
+                      setVarName(newUserVarName);
+                      setNewUserVarName('');
+                      setVarPickerVisible(false);
+                    }}
+                  >
+                    <Text style={styles.newUserVarBtnText}>Usar</Text>
+                  </TouchableOpacity>
+                </View>
+                {newUserVarName !== '' && !isValidUserVarName(newUserVarName) && (
+                  <Text style={styles.errorText}>
+                    Solo letras minúsculas, números y guiones bajos. Empieza por letra.
+                  </Text>
+                )}
+                {isValidUserVarName(newUserVarName) && isPredefinedVariable(newUserVarName) && (
+                  <Text style={styles.errorText}>
+                    "{newUserVarName}" es una variable del sistema.
+                  </Text>
+                )}
+              </ScrollView>
             </TouchableOpacity>
           </TouchableOpacity>
         </Modal>
@@ -1169,6 +1273,55 @@ function ActionEditor({ action, expertMode, patternBlocks, customSounds, onChang
           </Text>
         </>
       )}
+
+      {action.type === 'set_var' && (
+        <>
+          <Text style={styles.smallLabel}>Nombre de variable</Text>
+          <TextInput
+            style={[
+              styles.input,
+              styles.monoInput,
+              action.varName && !isValidUserVarName(action.varName) ? styles.inputError : null,
+            ]}
+            value={action.varName}
+            onChangeText={(t) => onChange({ ...action, varName: t.toLowerCase() })}
+            placeholder="ej. ultima_direccion"
+            placeholderTextColor="#555"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {action.varName && !isValidUserVarName(action.varName) && (
+            <Text style={styles.errorText}>
+              Nombre inválido. Solo letras minúsculas, números y guiones bajos. Debe empezar por letra.
+            </Text>
+          )}
+          {action.varName && isPredefinedVariable(action.varName) && (
+            <Text style={styles.errorText}>
+              "{action.varName}" es una variable del sistema. Elige otro nombre.
+            </Text>
+          )}
+          <Text style={styles.smallLabel}>Valor a guardar</Text>
+          {expertMode ? (
+            <TextInput
+              style={styles.input}
+              value={action.value}
+              onChangeText={(t) => onChange({ ...action, value: t })}
+              placeholder="ej. $1  (capturas y/o ${otra_var})"
+              placeholderTextColor="#555"
+            />
+          ) : (
+            <TriggerActionTextBuilder
+              blocks={action.valueBlocks || []}
+              patternBlocks={patternBlocks}
+              placeholder="Vacío."
+              onChange={(b) => onChange({ ...action, valueBlocks: b })}
+            />
+          )}
+          <Text style={styles.actionHint}>
+            Guarda el valor en una variable de usuario que persiste mientras estés conectado a este servidor. Otros triggers pueden leerla con ${'${nombre}'} o reaccionar a sus cambios con una "Alarma de variable".
+          </Text>
+        </>
+      )}
     </View>
   );
 }
@@ -1190,6 +1343,8 @@ function actionToCajas(a: TriggerAction): TriggerAction {
       };
     case 'floating':
       return { ...a, messageBlocks: a.message ? [{ kind: 'text', text: a.message }] : [] };
+    case 'set_var':
+      return { ...a, valueBlocks: a.value ? [{ kind: 'text', text: a.value }] : [] };
     default:
       return a;
   }
@@ -1218,6 +1373,10 @@ function compileActionWithBlocks(
       return a.messageBlocks
         ? { ...a, message: compileActionText(a.messageBlocks, captureMap) }
         : a;
+    case 'set_var':
+      return a.valueBlocks
+        ? { ...a, value: compileActionText(a.valueBlocks, captureMap) }
+        : a;
     default:
       return a;
   }
@@ -1241,6 +1400,10 @@ function buildVariableCondition(
       return { event: 'crosses_below', value: Number(rawValue) };
     case 'crosses_above':
       return { event: 'crosses_above', value: Number(rawValue) };
+    default: {
+      const _exhaustive: never = event;
+      throw new Error(`Unhandled VariableEvent: ${String(_exhaustive)}`);
+    }
   }
 }
 
@@ -1256,6 +1419,7 @@ function inferType(actions: TriggerAction[]): TriggerType {
     case 'send': return 'command';
     case 'notify': return 'notify';
     case 'floating': return 'combo';
+    case 'set_var': return 'combo';
   }
 }
 
@@ -1438,6 +1602,42 @@ const styles = StyleSheet.create({
   pickerItemSelected: { backgroundColor: '#0a3a0a' },
   pickerItemText: { color: '#fff', fontSize: 14, fontFamily: 'monospace' },
   pickerItemSubtext: { color: '#666', fontSize: 11, fontFamily: 'monospace', marginTop: 2 },
+  pickerSection: {
+    color: '#888',
+    fontSize: 11,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginTop: 12,
+    marginBottom: 4,
+    paddingHorizontal: 8,
+  },
+  pickerEmpty: {
+    color: '#555',
+    fontSize: 12,
+    fontStyle: 'italic',
+    fontFamily: 'monospace',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+  },
+  newUserVarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 8,
+    marginTop: 4,
+  },
+  newUserVarBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: '#0a3a0a',
+    borderWidth: 1,
+    borderColor: '#0c0',
+    borderRadius: 6,
+  },
+  newUserVarBtnDisabled: { backgroundColor: '#1a1a1a', borderColor: '#333' },
+  newUserVarBtnText: { color: '#0c0', fontSize: 13, fontFamily: 'monospace', fontWeight: 'bold' },
   tabRow: {
     flexDirection: 'row',
     marginBottom: 10,

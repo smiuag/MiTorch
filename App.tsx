@@ -11,6 +11,7 @@ import { SettingsScreen } from './src/screens/SettingsScreen';
 import { TriggersScreen } from './src/screens/TriggersScreen';
 import { TriggerEditorScreen } from './src/screens/TriggerEditorScreen';
 import { MySoundsScreen } from './src/screens/MySoundsScreen';
+import { UserVariablesScreen } from './src/screens/UserVariablesScreen';
 import { SoundProvider } from './src/contexts/SoundContext';
 import { FloatingMessagesProvider } from './src/contexts/FloatingMessagesContext';
 
@@ -84,6 +85,11 @@ function App() {
             name="MySounds"
             component={MySoundsScreen}
             options={{ headerShown: false, title: 'Mis sonidos' }}
+          />
+          <Stack.Screen
+            name="UserVariables"
+            component={UserVariablesScreen}
+            options={{ headerShown: false, title: 'Mis variables' }}
           />
         </Stack.Navigator>
       </NavigationContainer>

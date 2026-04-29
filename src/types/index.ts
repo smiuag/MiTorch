@@ -40,6 +40,7 @@ export type RootStackParamList = {
   Triggers: undefined;
   TriggerEditor: { packId: string };
   MySounds: undefined;
+  UserVariables: undefined;
 };
 
 export type TriggerType =
@@ -63,7 +64,13 @@ export type TriggerAction =
   | { type: 'play_sound'; file: string }
   | { type: 'send'; command: string; commandBlocks?: ActionTextBlock[] }
   | { type: 'notify'; title?: string; titleBlocks?: ActionTextBlock[]; message: string; messageBlocks?: ActionTextBlock[] }
-  | { type: 'floating'; message: string; messageBlocks?: ActionTextBlock[]; level?: FloatingMessageLevel };
+  | { type: 'floating'; message: string; messageBlocks?: ActionTextBlock[]; level?: FloatingMessageLevel }
+  // User-defined variable: writes a templated value into the user-vars store.
+  // varName must be a valid identifier ([a-z][a-z0-9_]*) and not collide with
+  // a predefined variable name (vida, energia, ...). value template can use
+  // capture refs ($1, $2 — only meaningful in regex triggers), $old/$new
+  // (only in variable triggers), and ${otherVar} for nested user-var refs.
+  | { type: 'set_var'; varName: string; value: string; valueBlocks?: ActionTextBlock[] };
 
 export type CaptureType = 'word' | 'phrase' | 'number';
 
@@ -75,7 +82,11 @@ export type AnchorMode = 'open' | 'anchored';
 
 export type ActionTextBlock =
   | { kind: 'text'; text: string }
-  | { kind: 'capture_ref'; captureId: string };
+  | { kind: 'capture_ref'; captureId: string }
+  // Reference to a user-defined variable. Compiles to "${varName}" in the
+  // engine's template string, expanded at fire-time against the current
+  // user-vars store for the active server.
+  | { kind: 'user_var_ref'; varName: string };
 
 export type TriggerSource =
   | {

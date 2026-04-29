@@ -62,6 +62,14 @@ export function getVariableSpec(name: string): VariableSpec | undefined {
   return SPEC_BY_NAME.get(name);
 }
 
+// True if `name` is a predefined (prompt-driven) variable name. Used to
+// (a) reject collisions when the user names their own variable, and
+// (b) decide which evaluation path to use for variable triggers (predefined
+//     vs user-defined).
+export function isPredefinedVariable(name: string): boolean {
+  return SPEC_BY_NAME.has(name);
+}
+
 export function readVariable(name: string, snapshot: PlayerVariables): number | string | boolean | undefined {
   const spec = SPEC_BY_NAME.get(name);
   if (!spec) return undefined;

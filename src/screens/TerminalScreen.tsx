@@ -46,6 +46,7 @@ import { blindModeService } from '../services/blindModeService';
 import { logService } from '../services/logService';
 import { playerStatsService } from '../services/playerStatsService';
 import { promptParser } from '../services/promptParser';
+import { userVariablesService } from '../services/userVariablesService';
 import { activeConnection } from '../services/activeConnection';
 import { useSounds } from '../contexts/SoundContext';
 import { useFloatingMessages } from '../contexts/FloatingMessagesContext';
@@ -707,8 +708,11 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   // Load triggers for the active server. Reloads when the server changes or
   // when the settings modal closes (user may have edited triggers from there).
+  // Also tells userVariablesService which server is active so its store wipes
+  // when navigating to a different server (memory-only, per-server scope).
   useEffect(() => {
     let cancelled = false;
+    userVariablesService.setActiveServer(server.id);
     (async () => {
       const triggers = await getTriggersForServer(server.id);
       if (!cancelled) triggerEngine.setActiveTriggers(triggers);

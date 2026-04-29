@@ -579,6 +579,24 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
           </TouchableOpacity>
         </View>
 
+        <View style={styles.row}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Mis variables</Text>
+            <Text style={styles.rowDesc}>
+              Variables de usuario que se rellenan desde acciones "Guardar en variable" en triggers. Memoria-only — se borran al cambiar de servidor o reiniciar la app.
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.encodingBtn}
+            onPress={() => navigation.navigate('UserVariables')}
+            accessible={true}
+            accessibilityLabel="Abrir mis variables de usuario"
+            accessibilityRole="button"
+          >
+            <Text style={styles.encodingBtnText}>Abrir</Text>
+          </TouchableOpacity>
+        </View>
+
         {sourceLocation === 'terminal' && (
           <View style={styles.row}>
             <View style={styles.rowInfo}>

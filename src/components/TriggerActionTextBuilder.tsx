@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { ActionTextBlock, PatternBlock } from '../types';
 import { captureColors, captureLabels } from '../utils/triggerCompiler';
+import { isValidUserVarName } from '../services/userVariablesService';
 
 interface Props {
   blocks: ActionTextBlock[];
@@ -24,7 +25,7 @@ export function TriggerActionTextBuilder({ blocks, patternBlocks, placeholder, o
   const insertBlock = (block: ActionTextBlock) => {
     const next = [...blocks, block];
     onChange(next);
-    if (block.kind === 'text') {
+    if (block.kind === 'text' || block.kind === 'user_var_ref') {
       setEditingIndex(next.length - 1);
       setTimeout(() => editInputRef.current?.focus(), 50);
     }
@@ -41,9 +42,23 @@ export function TriggerActionTextBuilder({ blocks, patternBlocks, placeholder, o
     onChange(next);
   };
 
+  const updateVarName = (index: number, varName: string) => {
+    const lower = varName.toLowerCase();
+    const next = blocks.map((b, i) =>
+      i === index && b.kind === 'user_var_ref' ? { ...b, varName: lower } : b,
+    );
+    onChange(next);
+  };
+
   const commitEdit = (index: number) => {
     setEditingIndex(null);
-    if (blocks[index]?.kind === 'text' && (blocks[index] as any).text === '') {
+    const b = blocks[index];
+    if (!b) return;
+    // Drop empty text chips (existing behaviour); also drop user_var_ref
+    // chips left empty (the user tapped + Variable but didn't name it).
+    if (b.kind === 'text' && (b as any).text === '') {
+      removeBlock(index);
+    } else if (b.kind === 'user_var_ref' && b.varName === '') {
       removeBlock(index);
     }
   };
@@ -89,6 +104,43 @@ export function TriggerActionTextBuilder({ blocks, patternBlocks, placeholder, o
               </TouchableOpacity>
             );
           }
+          if (block.kind === 'user_var_ref') {
+            const isEditing = editingIndex === idx;
+            const valid = isValidUserVarName(block.varName);
+            return isEditing ? (
+              <View key={idx} style={[styles.chip, styles.userVarChip, styles.userVarChipEditing]}>
+                <Text style={styles.userVarChipPrefix}>$</Text>
+                <TextInput
+                  ref={editInputRef}
+                  style={styles.userVarChipInput}
+                  value={block.varName}
+                  onChangeText={(t) => updateVarName(idx, t)}
+                  onBlur={() => commitEdit(idx)}
+                  onSubmitEditing={() => commitEdit(idx)}
+                  autoFocus
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  placeholder="nombre"
+                  placeholderTextColor="#777"
+                />
+              </View>
+            ) : (
+              <TouchableOpacity
+                key={idx}
+                style={[
+                  styles.chip,
+                  styles.userVarChip,
+                  !valid && styles.userVarChipInvalid,
+                ]}
+                onPress={() => setEditingIndex(idx)}
+              >
+                <Text style={styles.userVarChipText}>
+                  ${block.varName ? '{' + block.varName + '}' : '?'}
+                </Text>
+                <DeleteX onPress={() => removeBlock(idx)} />
+              </TouchableOpacity>
+            );
+          }
           // capture_ref chip
           const exists = labels.has(block.captureId);
           const bg = colors.get(block.captureId) || '#700';
@@ -123,6 +175,16 @@ export function TriggerActionTextBuilder({ blocks, patternBlocks, placeholder, o
           onPress={() => insertBlock({ kind: 'text', text: '' })}
         >
           <Text style={styles.addBtnText}>+ Texto</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.addVarBtn}
+          onPress={() => insertBlock({ kind: 'user_var_ref', varName: '' })}
+          accessible
+          accessibilityRole="button"
+          accessibilityLabel="Insertar referencia a variable de usuario"
+          accessibilityHint="Añade un chip que se rellena con el valor actual de una variable de usuario"
+        >
+          <Text style={styles.addVarBtnText}>+ Variable</Text>
         </TouchableOpacity>
         {captureIds.map((id) => (
           <TouchableOpacity
@@ -186,6 +248,22 @@ const styles = StyleSheet.create({
   captureChip: {},
   captureChipMissing: { backgroundColor: '#700' },
   captureChipText: { color: '#000', fontFamily: 'monospace', fontSize: 12, fontWeight: 'bold' },
+  userVarChip: {
+    backgroundColor: '#3a2a4a',
+    borderWidth: 1,
+    borderColor: '#9966cc',
+  },
+  userVarChipEditing: { borderColor: '#cc99ff', backgroundColor: '#2a1a3a' },
+  userVarChipInvalid: { backgroundColor: '#5a2a2a', borderColor: '#cc6666' },
+  userVarChipText: { color: '#cc99ff', fontFamily: 'monospace', fontSize: 12, fontWeight: 'bold' },
+  userVarChipPrefix: { color: '#cc99ff', fontFamily: 'monospace', fontSize: 13, fontWeight: 'bold', marginRight: 1 },
+  userVarChipInput: {
+    color: '#fff',
+    fontFamily: 'monospace',
+    fontSize: 13,
+    minWidth: 60,
+    paddingVertical: 0,
+  },
   deleteX: {
     width: 18,
     height: 18,
@@ -217,6 +295,15 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   addBtnText: { color: '#ddd', fontSize: 11, fontFamily: 'monospace', fontWeight: 'bold' },
+  addVarBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#2a1a3a',
+    borderWidth: 1,
+    borderColor: '#9966cc',
+    borderRadius: 4,
+  },
+  addVarBtnText: { color: '#cc99ff', fontSize: 11, fontFamily: 'monospace', fontWeight: 'bold' },
   addCaptureBtn: {
     paddingHorizontal: 10,
     paddingVertical: 6,

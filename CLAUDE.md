@@ -984,6 +984,64 @@ Lecciones del descubrimiento del #12 (para no repetir el error de diagnóstico):
 
 **Coste:** medio día (export/import) + medio día (resto) = ~1 día.
 
+#### Fase 5 — Variables de usuario (HECHO 2026-04-29)
+
+Variables de "memoria" que el usuario puede crear desde acciones de trigger y referenciar en otras acciones / triggers. Cierra la brecha "triggers reactivos sin estado" → "triggers con estado persistente entre disparos". Es el feature que diferencia un cliente de avisos de un cliente de automatización.
+
+**Decisiones cerradas (2026-04-29):**
+- Nombres libres con sintaxis `[a-z][a-z0-9_]*` (lowercase forzado al crear). NO slots fijos `x1-x20`.
+- Alcance: por server. Cambiar de server vacía el store.
+- Tipo: solo string. Las condiciones numéricas (`crosses_below`/`above`) hacen `Number()` perezoso y fallan silenciosamente si el valor no es numérico.
+- Persistencia: **memoria-only**. Disconnect/reconnect al MISMO server preserva valores; cambio de server o restart de app los borra. NO disco.
+- Sintaxis en templates: `${nombre}` con llaves siempre — distingue de `$1`/`$2` (capturas regex) y `$old`/`$new` (variable trigger context). Compila a literal `${nombre}` en el regex y se expande live a `userVariablesService.get(name)` en tiempo de fire.
+- Variable no inicializada → templates expanden a `""` (mismo fail-quiet que capturas inexistentes).
+- Auto-creación perezosa: la primera vez que un `set_var foo = ...` dispara, `foo` aparece en la lista. No hay paso de declaración separado.
+- Reservadas: nombres de `VARIABLE_SPECS` (vida, energia, imagenes, ...) — la validación rechaza colisiones al guardar el trigger.
+- Loop protection: hard-cap de profundidad **3** en cascadas user-var → user-var. Si A setea x1 que dispara B que setea x2 que dispara C que setea x3 que disparaba algo... a la 4ª se corta y se loguea `console.warn`.
+
+**Implementación:**
+
+- `src/services/userVariablesService.ts` — singleton con `vars: Record<string, string>` + `activeServerId`. API: `setActiveServer`, `set` (devuelve `boolean changed`), `get`, `getAll`, `reset`, `setOnUpdateCallback` (subscriber único para la pantalla "Mis variables"). Helper exportado `isValidUserVarName`.
+- `src/utils/variableMap.ts` — añadido `isPredefinedVariable(name): boolean`.
+- `src/types/index.ts` — nueva acción `{ type: 'set_var'; varName: string; value: string; valueBlocks?: ActionTextBlock[] }`. Nuevo `ActionTextBlock` kind: `{ kind: 'user_var_ref'; varName: string }`.
+- `src/services/triggerEngine.ts` — reescrito para particionar variable triggers en `compiledPromptVars` (en VARIABLE_SPECS) vs `compiledUserVars` (no). Añadido `evaluateUserVarTriggersInto` con depth guard. `applyAction`/`applyVariableAction` ahora son métodos (no funciones libres) para poder cascadear; aceptan `sideEffectsOut` que mutan en lugar de retornar. Función `expandTemplate` unifica los 3 placeholder families: `$1..$9`/`$&` (capturas), `$old`/`$new` (variable triggers), `${name}` (user vars). `checkVariableCondition` ahora hace `Number()` perezoso para `crosses_below/above` cuando el valor no es number-typed (soporta user vars con contenido numérico).
+- `src/utils/triggerCompiler.ts` — `compileActionText` ahora compila bloques `user_var_ref` a `${varName}` literal.
+- `src/components/TriggerActionTextBuilder.tsx` — botón nuevo "+ Variable" en la toolbar. Chips morados (con `${name}` o `?` si vacío) editables inline; valida nombre con `isValidUserVarName` y marca rojo si inválido.
+- `src/components/TriggerEditModal.tsx`:
+  - `ACTION_TYPES` y `VARIABLE_ACTION_TYPES` añaden "Guardar en variable".
+  - Nuevo formulario para `set_var` con input de nombre (validado) + builder/textinput de valor.
+  - Wizard "Alarma de variable": picker reescrito a 3 secciones — "Del sistema" (predefinidas), "Mías" (existentes en `userVariablesService.getAll()`) y "Crear nueva" con TextInput inline.
+  - `variableError` y filtro de `numericOnly` ahora aceptan user vars (no spec).
+  - `handleSave` valida que cualquier `set_var` tenga `varName` válido y no colisione con predefinidas.
+  - `actionToCajas`/`compileActionWithBlocks`/`inferType` añaden caso para `set_var`.
+- `src/screens/UserVariablesScreen.tsx` (NUEVO) — lista de `nombre = valor`, botón "Resetear todas". Live-updates vía `setOnUpdateCallback`. Accesible desde Settings → "Mis variables".
+- `src/screens/SettingsScreen.tsx` — link añadido bajo "Mis sonidos".
+- `App.tsx` — registrada la ruta `UserVariables`.
+- `src/screens/TerminalScreen.tsx` — al cargar/cambiar server (`useEffect [server.id, ...]`) llama `userVariablesService.setActiveServer(server.id)`. Esto vacía el store cuando cambias de server.
+
+**Casos de uso desbloqueados:**
+- Capturar última dirección, último enemigo, último hechizo lanzado.
+- Combos: trigger A captura nick del que abre cofre en `${ultimo_abridor}`, trigger B usa `dar llave a ${ultimo_abridor}`.
+- Tracking: contador `${muertes}` que se incrementa con `set_var muertes = ${muertes}1`... bueno no, la suma string-to-number no la hacemos. Pero `set_var ultimo_objetivo = $1` sí.
+- State machines simples: trigger A pone `${modo} = combate`, trigger B solo activa acciones cuando `equals "combate"`.
+
+**Lo que NO desbloquea (deliberado):**
+- Operaciones aritméticas en templates (`${count} + 1`). Fuera de scope, requiere parser de expresiones.
+- Lógica condicional dentro de un trigger (`if-then-else`). Fuera de scope.
+- Loops/temporizadores. Fuera de scope.
+
+**Riesgos conocidos:**
+- Si el usuario nombra una variable como otra que ya existe pero la usa diferente en otro pack → colisión. Documentar en futuras docs de usuario.
+- Aún no hay UI para BORRAR una variable de usuario individual (solo "Resetear todas" desde la pantalla). Si surge el caso, añadir.
+
+**No bundleado:** ningún pack seeded usa `set_var` por ahora — feature pura sin defaults ruidosos. El usuario explora cuando quiera.
+
+**PENDIENTE — Expansión de variables en botones del terminal**
+
+Los botones del `ButtonGrid` mandan hoy un comando literal (`command: string`) tal cual al MUD. Para que el feature de user vars sea útil de verdad — p.ej. el caso "volver" con `${direccion_opuesta}` — hay que pasar el comando del botón por `expandTemplate` antes de enviarlo. Lugar concreto: en `TerminalScreen` el handler que dispara el botón llama `telnetRef.current?.send(button.command)`; sustituir por `telnetRef.current?.send(expandUserVars(button.command))` donde `expandUserVars` solo resuelve `${name}` desde `userVariablesService.get(name)` (no `$1`, no `$old/$new` — esos no aplican fuera de un trigger). Coste estimado: ~15 min. Lo mismo para el comando de auto-walk si se quiere por consistencia.
+
+Aplica también al `secondaryCommand` de los botones en blind mode. Ambos campos (`command` y `secondaryCommand`) viven en `LayoutButton` (`src/storage/layoutStorage.ts`) y se mandan literalmente.
+
 ### Decisiones pendientes
 
 - **Orden entre plantillas** cuando un server tiene varias asignadas. Default actual: alfabético por nombre de plantilla. Reordenación manual entre plantillas se difiere a Fase 4 si hace falta. (La reordenación **dentro** de una plantilla ya está implementada con flechas ▲/▼.)

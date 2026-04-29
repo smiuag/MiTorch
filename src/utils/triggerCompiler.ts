@@ -55,6 +55,12 @@ export function compileActionText(
   return blocks
     .map((b) => {
       if (b.kind === 'text') return b.text;
+      if (b.kind === 'user_var_ref') {
+        // Compiles to "${name}" — the engine's expandTemplate resolves it
+        // live against userVariablesService at fire time. Unset vars expand
+        // to empty string. Validation of the var name happens at save time.
+        return `\${${b.varName}}`;
+      }
       const idx = captureMap.get(b.captureId);
       if (idx == null) {
         // Orphan capture_ref — its target capture no longer exists in the
