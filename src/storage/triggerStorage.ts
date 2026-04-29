@@ -7,9 +7,11 @@ const PACKS_KEY = 'aljhtar_trigger_packs';
 const SEEDED_KEY = 'aljhtar_trigger_packs_seeded';
 const SOUNDS_SEEDED_KEY = 'aljhtar_trigger_packs_sounds_seeded';
 const MIRRORS_SKINS_SEEDED_KEY = 'aljhtar_trigger_packs_mirrors_skins_seeded';
+const NICK_EXAMPLES_SEEDED_KEY = 'aljhtar_trigger_packs_nick_examples_seeded';
 
 export const SOUNDS_PACK_ID = 'pack_seeded_sounds';
 export const MIRRORS_SKINS_PACK_ID = 'pack_seeded_mirrors_skins';
+export const NICK_EXAMPLES_PACK_ID = 'pack_seeded_nick_examples';
 
 let idCounter = Date.now();
 function genId(prefix: string): string {
@@ -55,11 +57,19 @@ async function ensureSeeded(): Promise<void> {
     dirty = true;
   }
 
+  const nickExamplesSeeded = await AsyncStorage.getItem(NICK_EXAMPLES_SEEDED_KEY);
+  const nickExamplesPresent = packs.some((p) => p.id === NICK_EXAMPLES_PACK_ID);
+  if (nickExamplesSeeded !== '1' && !nickExamplesPresent) {
+    packs.push(createNickExamplesPack());
+    dirty = true;
+  }
+
   if (dirty) {
     await AsyncStorage.setItem(PACKS_KEY, JSON.stringify(packs));
     if (avisosSeeded !== '1') await AsyncStorage.setItem(SEEDED_KEY, '1');
     if (soundsSeeded !== '1') await AsyncStorage.setItem(SOUNDS_SEEDED_KEY, '1');
     if (mirrorsSkinsSeeded !== '1') await AsyncStorage.setItem(MIRRORS_SKINS_SEEDED_KEY, '1');
+    if (nickExamplesSeeded !== '1') await AsyncStorage.setItem(NICK_EXAMPLES_SEEDED_KEY, '1');
   }
 }
 
@@ -244,6 +254,76 @@ function createMirrorsAndSkinsPack(): TriggerPack {
         { event: 'changes' },
         'Tienes $new pieles',
         'error',
+      ),
+    ],
+  };
+}
+
+// Builds a regex trigger that captures a word and writes it to a user var.
+// Pattern: anchored start, [capture] + literal text, open end. Action:
+// set_var with the captured word as value (compiled as $1 internally).
+function buildCaptureToSetVarTrigger(
+  name: string,
+  prefixCapture: PatternBlock,
+  literal: string,
+  varName: string,
+): Trigger {
+  const blocks: PatternBlock[] = [prefixCapture, { kind: 'text', text: literal }];
+  const compiled = compilePattern(blocks, 'anchored', 'open');
+
+  const captureId = (prefixCapture as { kind: 'capture'; id: string }).id;
+  const valueBlocks: ActionTextBlock[] = [{ kind: 'capture_ref', captureId }];
+  const value = compileActionText(valueBlocks, compiled.captureMap);
+
+  return {
+    id: newTriggerId(),
+    name,
+    type: 'combo',
+    enabled: true,
+    source: {
+      kind: 'regex',
+      pattern: compiled.pattern,
+      flags: 'i',
+      blocks,
+      anchorStart: 'anchored',
+      anchorEnd: 'open',
+      expertMode: false,
+    },
+    actions: [
+      { type: 'set_var', varName, value, valueBlocks },
+    ],
+  };
+}
+
+// Seeded pack with two complementary example triggers showing how user
+// variables work end-to-end:
+//   1) Capture the nick from "<nick> te dice: ..." into the user var `nick`.
+//   2) When `nick` becomes "Brigid", show a floating "Brigid conectado".
+//
+// Both triggers ship `enabled: true`. The pack starts unassigned —
+// the user has to assign it to their server to see it fire. The user
+// variable `nick` is auto-declared via the bootstrap in TerminalScreen
+// (collectVarsReferencedByPacks scans for set_var refs and declares them).
+function createNickExamplesPack(): TriggerPack {
+  const nickCap: PatternBlock = { kind: 'capture', captureType: 'word', id: newCaptureId() };
+
+  return {
+    id: NICK_EXAMPLES_PACK_ID,
+    name: 'Ejemplos: nick que me habla',
+    assignedServerIds: [],
+    triggers: [
+      buildCaptureToSetVarTrigger(
+        'Capturar nick que me habla',
+        nickCap,
+        ' te dice: ',
+        'nick',
+      ),
+      buildVariableTrigger(
+        'Avisar cuando Brigid hable',
+        'nick',
+        { event: 'equals', value: 'Brigid' },
+        'Brigid conectado',
+        'success',
       ),
     ],
   };

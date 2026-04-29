@@ -717,7 +717,10 @@ export function TerminalScreen({ route, navigation }: Props) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      await userVariablesService.setActiveServer(server.id);
+      // Variables are GLOBAL (declarations persist app-wide), so no
+      // per-server "active server" call is needed. ensureLoaded reads the
+      // persisted declared list once; subsequent calls are no-ops.
+      await userVariablesService.ensureLoaded();
       const packs = await loadPacks();
       const assignedPacks = packs.filter((p) => p.assignedServerIds.includes(server.id));
       const referenced = collectVarsReferencedByPacks(assignedPacks);

@@ -10,6 +10,7 @@ import {
   FlatList,
   Switch,
   Alert,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
@@ -127,6 +128,16 @@ function getInitialVarValue(trigger: Trigger): string {
 
 export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: Props) {
   const insets = useSafeAreaInsets();
+  const { height: viewportHeight } = useWindowDimensions();
+  // Explicit max height for inline pickers (variable picker, sound picker)
+  // because percentage-based maxHeight is unreliable inside nested Modals
+  // on Android. Reserves 60dp + safe-area on top, 80dp + safe-area on
+  // bottom (for nav bar), so the box's vertical bounds are always within
+  // touch reach.
+  const pickerMaxHeight = Math.max(
+    240,
+    viewportHeight - (60 + insets.top) - (80 + insets.bottom),
+  );
   // Modal-on-Android quirk: SafeAreaView + ScrollView mount before the
   // Modal's window is fully laid out, so they cache wrong dimensions and
   // scroll stays disabled / content extends behind the system nav bar.
@@ -898,17 +909,27 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
           onRequestClose={() => setVarPickerVisible(false)}
         >
           <TouchableOpacity
-            style={styles.pickerOverlay}
+            style={[
+              styles.pickerOverlay,
+              {
+                justifyContent: 'flex-start',
+                paddingTop: 60 + insets.top,
+                paddingBottom: 80 + insets.bottom,
+              },
+            ]}
             activeOpacity={1}
             onPress={() => setVarPickerVisible(false)}
           >
             <TouchableOpacity
               activeOpacity={1}
               onPress={() => {}}
-              style={[styles.pickerBox, { maxHeight: '85%' }]}
+              style={[styles.pickerBox, { maxHeight: pickerMaxHeight }]}
             >
               <Text style={styles.pickerTitle}>Elegir variable</Text>
-              <ScrollView keyboardShouldPersistTaps="handled">
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 16 }}
+              >
                 <Text style={styles.pickerSection}>Del sistema</Text>
                 {VARIABLE_SPECS.map((item) => (
                   <TouchableOpacity
@@ -1532,16 +1553,16 @@ const styles = StyleSheet.create({
   inputError: { borderColor: '#dd5555' },
   errorText: { color: '#dd5555', fontSize: 11, marginTop: 4, fontFamily: 'monospace' },
   varTargetBtn: {
-    backgroundColor: '#2a1a3a',
+    backgroundColor: '#0a3a0a',
     borderWidth: 1,
-    borderColor: '#9966cc',
+    borderColor: '#0c0',
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 12,
   },
   varTargetBtnInvalid: { backgroundColor: '#3a1a1a', borderColor: '#cc6666' },
-  varTargetBtnText: { color: '#cc99ff', fontSize: 14, fontFamily: 'monospace', fontWeight: 'bold' },
+  varTargetBtnText: { color: '#0c0', fontSize: 14, fontFamily: 'monospace', fontWeight: 'bold' },
   varTargetBtnHint: { color: '#888', fontSize: 11, fontFamily: 'monospace', marginTop: 4 },
   hintText: { color: '#666', fontSize: 11, marginTop: 4, fontFamily: 'monospace' },
   switchRow: {

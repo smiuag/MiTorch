@@ -33,6 +33,9 @@ export function UserVariablesScreen({ navigation }: Props) {
   const [newName, setNewName] = useState('');
 
   const refresh = useCallback(async () => {
+    // Make sure the persisted declared list is loaded before rendering.
+    // Idempotent — only the first call hits AsyncStorage.
+    await userVariablesService.ensureLoaded();
     const declared = userVariablesService.getDeclared();
     const packs = await loadPacks();
     const rows: VarRow[] = declared.map((name) => ({
@@ -305,7 +308,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#333',
   },
   backBtn: { marginBottom: 8 },
-  backText: { color: '#cc99ff', fontSize: 14, fontFamily: 'monospace' },
+  backText: { color: '#0c0', fontSize: 14, fontFamily: 'monospace' },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -325,14 +328,14 @@ const styles = StyleSheet.create({
   },
   resetBtnText: { color: '#cc3333', fontSize: 12, fontFamily: 'monospace', fontWeight: 'bold' },
   createBtn: {
-    backgroundColor: '#2a1a3a',
+    backgroundColor: '#0a3a0a',
     borderWidth: 1,
-    borderColor: '#9966cc',
+    borderColor: '#0c0',
     borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  createBtnText: { color: '#cc99ff', fontSize: 12, fontFamily: 'monospace', fontWeight: 'bold' },
+  createBtnText: { color: '#0c0', fontSize: 12, fontFamily: 'monospace', fontWeight: 'bold' },
   btnDisabled: { backgroundColor: '#1a1a1a', borderColor: '#333' },
   listContent: { padding: 16 },
   emptyBox: { padding: 24, alignItems: 'center' },
@@ -347,7 +350,7 @@ const styles = StyleSheet.create({
   row: {
     backgroundColor: '#1a1a1a',
     borderWidth: 1,
-    borderColor: '#2a1a3a',
+    borderColor: '#0a3a0a',
     borderRadius: 8,
     marginBottom: 8,
     overflow: 'hidden',
@@ -358,7 +361,7 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   rowInfo: { flex: 1 },
-  varName: { color: '#cc99ff', fontSize: 14, fontWeight: 'bold', fontFamily: 'monospace' },
+  varName: { color: '#0c0', fontSize: 14, fontWeight: 'bold', fontFamily: 'monospace' },
   varValue: { color: '#ddd', fontSize: 13, fontFamily: 'monospace', marginTop: 4 },
   usageCount: { color: '#777', fontSize: 11, fontFamily: 'monospace', marginTop: 6 },
   deleteBtn: {
@@ -373,7 +376,7 @@ const styles = StyleSheet.create({
   usageList: {
     backgroundColor: '#0a0a0a',
     borderTopWidth: 1,
-    borderTopColor: '#2a1a3a',
+    borderTopColor: '#0a3a0a',
   },
   usageRow: {
     paddingVertical: 10,
@@ -393,12 +396,12 @@ const styles = StyleSheet.create({
   modalBox: {
     backgroundColor: '#1a1a1a',
     borderWidth: 1,
-    borderColor: '#9966cc',
+    borderColor: '#0c0',
     borderRadius: 10,
     padding: 20,
   },
   modalTitle: {
-    color: '#cc99ff',
+    color: '#0c0',
     fontSize: 17,
     fontWeight: 'bold',
     fontFamily: 'monospace',
@@ -426,6 +429,6 @@ const styles = StyleSheet.create({
   modalActions: { flexDirection: 'row', gap: 10 },
   modalBtn: { flex: 1, paddingVertical: 12, borderRadius: 6, alignItems: 'center' },
   modalBtnCancel: { backgroundColor: '#333' },
-  modalBtnConfirm: { backgroundColor: '#2a1a3a', borderWidth: 1, borderColor: '#9966cc' },
+  modalBtnConfirm: { backgroundColor: '#0a3a0a', borderWidth: 1, borderColor: '#0c0' },
   modalBtnText: { color: '#fff', fontSize: 14, fontFamily: 'monospace', fontWeight: 'bold' },
 });

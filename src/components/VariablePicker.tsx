@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { userVariablesService } from '../services/userVariablesService';
 
 interface Props {
@@ -19,11 +20,41 @@ interface Props {
 // new design enforces "create from Mis variables, then select here". If
 // the declared set is empty, shows an empty state and the cancel option.
 export function VariablePicker({ visible, selectedName, onPick, onCancel, title, emptyHint }: Props) {
+  const [tick, setTick] = useState(0);
   const declared = userVariablesService.getDeclared();
+  const insets = useSafeAreaInsets();
+
+  // Ensure the persisted list is loaded before rendering. If the picker
+  // opens before any other code has triggered the load, the list would
+  // appear empty until the next render. Forcing a re-render via `tick` once
+  // load completes avoids that flicker.
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    userVariablesService.ensureLoaded().then(() => {
+      if (!cancelled) setTick((n) => n + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onCancel}>
+      {/*
+        Overlay padding accounts for the system gesture/nav-bar inset so the
+        centered picker box never extends behind the bottom buttons. Static
+        24dp on top + 24dp + insets.bottom on the bottom gives a safe margin
+        on any phone (gesture indicator ~24dp, 3-button nav ~48dp).
+      */}
+      <TouchableOpacity
+        style={[
+          styles.overlay,
+          { paddingBottom: 24 + insets.bottom, paddingTop: 24 + insets.top },
+        ]}
+        activeOpacity={1}
+        onPress={onCancel}
+      >
         <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.box}>
           <Text style={styles.title}>{title || 'Elegir variable'}</Text>
 
@@ -68,18 +99,23 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center',
-    padding: 24,
+    paddingHorizontal: 24,
+    // paddingTop / paddingBottom set inline with safe-area insets above.
   },
   box: {
     backgroundColor: '#1a1a1a',
     borderWidth: 1,
-    borderColor: '#9966cc',
+    borderColor: '#0c0',
     borderRadius: 10,
     padding: 16,
-    maxHeight: '80%',
+    // Hard-cap height: keep the picker compact so it never reaches the
+    // bottom system-button area even when nested inside another Modal
+    // where safe-area insets don't propagate cleanly. 60% of viewport
+    // leaves 20% above and 20% below the centered box.
+    maxHeight: '60%',
   },
   title: {
-    color: '#cc99ff',
+    color: '#0c0',
     fontSize: 16,
     fontWeight: 'bold',
     fontFamily: 'monospace',
@@ -89,10 +125,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#2a1a3a',
+    borderBottomColor: '#0a3a0a',
   },
-  itemSelected: { backgroundColor: '#2a1a3a' },
-  itemName: { color: '#cc99ff', fontSize: 14, fontFamily: 'monospace', fontWeight: 'bold' },
+  itemSelected: { backgroundColor: '#0a3a0a' },
+  itemName: { color: '#0c0', fontSize: 14, fontFamily: 'monospace', fontWeight: 'bold' },
   itemValue: { color: '#888', fontSize: 11, fontFamily: 'monospace', marginTop: 2 },
   emptyBox: { padding: 16, alignItems: 'center' },
   emptyTitle: { color: '#888', fontSize: 14, fontFamily: 'monospace', marginBottom: 8 },
