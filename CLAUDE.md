@@ -1045,11 +1045,149 @@ Variables de "memoria" que el usuario puede crear desde acciones de trigger y re
 
 **No bundleado:** ningún pack seeded usa `set_var` por ahora — feature pura sin defaults ruidosos. El usuario explora cuando quiera.
 
-**PENDIENTE — Expansión de variables en botones del terminal**
+**Nota de superposición**: la primera versión de "Expansión de variables en botones del terminal" se anotó aquí como pendiente independiente; ahora forma parte de **Fase 6 — Expansión hacia suite blind** (sub-fase 6.2). Ver bloque dedicado abajo.
 
-Los botones del `ButtonGrid` mandan hoy un comando literal (`command: string`) tal cual al MUD. Para que el feature de user vars sea útil de verdad — p.ej. el caso "volver" con `${direccion_opuesta}` — hay que pasar el comando del botón por `expandTemplate` antes de enviarlo. Lugar concreto: en `TerminalScreen` el handler que dispara el botón llama `telnetRef.current?.send(button.command)`; sustituir por `telnetRef.current?.send(expandUserVars(button.command))` donde `expandUserVars` solo resuelve `${name}` desde `userVariablesService.get(name)` (no `$1`, no `$old/$new` — esos no aplican fuera de un trigger). Coste estimado: ~15 min. Lo mismo para el comando de auto-walk si se quiere por consistencia.
+#### Fase 6 — Expansión hacia suite blind (planificada 2026-04-29)
 
-Aplica también al `secondaryCommand` de los botones en blind mode. Ambos campos (`command` y `secondaryCommand`) viven en `LayoutButton` (`src/storage/layoutStorage.ts`) y se mandan literalmente.
+Conjunto de extensiones del motor que abren la puerta a un pack tipo "Suite Blind RdL" (estilo Rhomdur) cubriendo ~85% de su funcionalidad sin meter scripting Lua. Se pueden abordar de forma independiente — cada sub-fase es un cambio acotado. Orden sugerido por coste/beneficio (más barato y útil primero).
+
+**Doctrina general**:
+- Todo es opt-in. Nada cambia el comportamiento por defecto de packs existentes.
+- Filosofía "asistencia, no automatización": estas features mejoran feedback acústico/visual y reducen fricción de input, pero NO añaden auto-actions tipo auto-attack o auto-heal. La línea ToS de los MUDs se respeta — el usuario sigue tomando todas las decisiones. Ver "Validación pre-comando" más abajo: solo bloquea casos donde el cliente SABE que el comando va a fallar; no clasifica ni decide acciones.
+- Compatibilidad: los packs sin uso de estas features siguen funcionando idéntico.
+
+##### 6.1 — Múltiples paneles en blind mode (~3-4h)
+
+**Hoy**: blind mode tiene 2 paneles fijos (`Panel 1` / `Panel 2`) y un botón switch que alterna. `LayoutButton.blindPanel` es `1 | 2`.
+
+**Cambio**: paneles ilimitados con nombre. El switch cicla `1 → 2 → ... → N → 1`.
+
+Reemplaza el concepto de `ModoJ` (Combate / XP / Idle) de los scripts blind: en vez de un modo global invisible que cambia el comportamiento de cada tecla, tienes paneles distintos con botones-comando concretos por modo. Ventajas:
+- Estado visible (TalkBack anuncia "Modo Combate" al cambiar).
+- Cero lógica condicional en los comandos.
+- Más botones disponibles en total (paneles ilimitados, hoy tope = 2).
+- Fácil de descubrir.
+
+**Implementación**:
+- `LayoutButton.blindPanel`: pasar de `1 | 2` a `number` (entero positivo). Compatible hacia atrás — los 1/2 actuales siguen funcionando.
+- Nuevo storage: `aljhtar_blind_panels` (clave global, igual que el resto del layout blind) con array `{ id: number; name: string }[]`. Default `[{id:1, name:'Panel 1'}, {id:2, name:'Panel 2'}]`.
+- `BlindModePanelSwitch` botón actualiza para ciclar y para anunciar el nombre del panel destino con `AccessibilityInfo.announceForAccessibility(panel.name)`.
+- Settings → "Layout blind": pantalla nueva con lista de paneles, botones "+ Añadir panel", "✏ Renombrar", "✕ Borrar" (con warning si tiene botones), reordenar con flechas ▲/▼.
+- `ButtonEditModal` añade dropdown "Panel" con la lista actualizada.
+
+**Decisiones pendientes**:
+- Per-server vs global: hoy los botones blind son globales (todos los servers comparten layout). Los paneles podrían también ser globales o per-server. Recomendación: mantener global para coherencia. Si un usuario MUD-hops a otro juego, edita los nombres y comandos.
+- Default: ¿1 panel o 2? Mantener 2 para no sorprender a usuarios actuales.
+
+**Limitación**: solo cubre el caso "modo de botones" del `ModoJ` del CMUD. Los modos de output (`ModoE`, `ModoS`, `ModoMono`, `ModoAmbientacion`) no se modelan con paneles — son toggles globales aparte (varios ya existen).
+
+##### 6.2 — Expansión de `${var}` en comandos de botones (~30 min)
+
+**Hoy**: los botones del `ButtonGrid` mandan `button.command` literal vía `telnetRef.current.send(...)`.
+
+**Cambio**: pasar el comando por un `expandUserVars()` antes del send. Resuelve solo `${name}` desde `userVariablesService.get(name)` (no `$1`, no `$old/$new` — esos solo aplican en contexto de trigger).
+
+**Implementación**:
+- Nueva función `expandUserVars(template: string): string` en `src/utils/expandUserVars.ts` (o reutilizar la del engine si extraemos).
+- `TerminalScreen` ButtonGrid handler envuelve `send(button.command)` → `send(expandUserVars(button.command))`. Mismo para `secondaryCommand` en blind.
+- UI: el `ButtonEditModal` ya acepta cualquier string; el campo `command` puede contener `${nombre}` y se documenta en hint.
+
+**Caso de uso**:
+- Botón "Volver" con comando `${direccion_opuesta}`. Un trigger captura cada movimiento exitoso y mantiene `direccion_opuesta` actualizada. El botón reproduce la opuesta.
+- Botón "Atacar objetivo" con `atacar ${objetivo}`.
+- Botón "Curar a líder" con `curar ${grupo_lider}`.
+
+**Validación pre-comando opcional** (~15 min adicional, toggle en Settings):
+- Si `validateBeforeSend` está activo: tras expandir, si el resultado contiene una secuencia tipo `verbo $vacío` (variable resolvió a "") → no mandar, reproducir sonido de error.
+- Si el comando es una sola dirección (`n`, `s`, `e`, `o`, `ne`, etc.) y no está en `${salidas}` → no mandar, reproducir sonido de error.
+- Mantener el toggle por separado del feature básico de expansión. Empezar con expansión sola; añadir validación si se demanda.
+
+##### 6.3 — Pan estéreo en `play_sound` (~1-1.5h)
+
+**Hoy**: la acción `play_sound` reproduce centrado.
+
+**Cambio**: campo opcional `pan: number` (rango -1 a +1, donde -1 es izquierda total, +1 derecha total, 0 centro). En blind mode el paneo direccional es esencial — los scripts blind lo usan masivamente para indicar de dónde viene un ataque, dónde está un aliado/enemigo, etc.
+
+**Implementación**:
+- Tipo: `{ type: 'play_sound'; file: string; pan?: number }`.
+- `SoundContext.playSound` acepta segundo argumento `pan?: number`. Tras `sound.playAsync()`, si pan != 0, llamar `sound.setStatusAsync({ panValue: pan })` (expo-av API). Verificar que la versión actual de expo-av soporta panning — si no, usar sondeo nativo.
+- Engine `applyAction` para `play_sound` pasa el pan al `playSoundRef.current`.
+- UI en `TriggerEditModal`: dropdown bajo "Reproducir sonido" con opciones predefinidas (`Centro`, `Izquierda suave`, `Izquierda fuerte`, `Derecha suave`, `Derecha fuerte`) que mapean a -1, -0.5, 0, +0.5, +1. O slider numérico para usuarios avanzados.
+
+**Caso de uso**:
+- Trigger "alguien llega del este" → play_sound con pan +0.7. Suena a la derecha.
+- Trigger "vida del enemigo al 30%" → pan -0.5 (los enemigos a la izquierda por convención del sistema blind).
+
+**Limitación de RN/expo-av**: si la versión actual no soporta paneo, requiere upgrade de la librería. Verificar antes de empezar.
+
+##### 6.4 — Acción `delay` (timer programado) (~1-1.5h)
+
+**Hoy**: las acciones se ejecutan inmediatamente al disparar el trigger.
+
+**Cambio**: nueva acción `delay` que pospone otra acción N segundos. Modela los **bloqueos temporizados** del sistema blind (ej.: tras `saltoheroico`, alarma a los 25s con sonido "se libera el bloqueo"; tras `esgrimir`, 55s; etc.).
+
+**Implementación**:
+- Tipo: `{ type: 'delay'; seconds: number; then: TriggerAction[] }`. La acción anidada es lo que se ejecuta al expirar el temporizador.
+- Engine: nuevo Map `pendingTimers: Map<symbol, NodeJS.Timeout>` (o ref). Al disparar `delay`, `setTimeout(() => applyActions(action.then), seconds * 1000)`. Guardar el timer para poder cancelar en `clear()` o cambio de server.
+- UI en `TriggerEditModal`: nueva acción "Esperar y luego..." con campo numérico de segundos + sub-editor para una acción anidada.
+- Limitar la profundidad: solo un nivel de anidación (no permitir `delay` dentro de `delay` para evitar abuso). Los packs que necesiten más complejidad usan otro trigger.
+
+**Cleanup**:
+- Al desconectar / cambiar server / cargar nuevos triggers: cancelar todos los timers pendientes.
+- Considerar persistencia: ¿sobreviven los timers a una recarga de Metro? No — se pierden (memoria-only). Aceptable.
+
+**Caso de uso típico**:
+- Trigger detecta que ejecutas `saltoheroico` → acción `delay 25s` con sub-acción `floating "saltoheroico se libera"` + sonido.
+- Trigger detecta que se cumplió un buff → `delay 60s` para avisar de re-aplicar.
+
+##### 6.5 — Modo experto de sonidos / gag selectivo (~2-3h)
+
+**Hoy**: los triggers tienen `enabled: true/false` global, sin condicionalidad por modo del usuario.
+
+**Cambio**: añadir setting global `expertModeEnabled: boolean` (toggle en Settings) y campo opcional `activeMode?: 'all' | 'expert' | 'normal'` por trigger (default `'all'`). El motor evalúa solo triggers cuyo `activeMode` matchee el modo actual.
+
+**Implementación**:
+- `Trigger.activeMode?: 'all' | 'expert' | 'normal'` — opcional, default `'all'`.
+- `triggerEngine.setActiveTriggers` filtra al compilar: descarta los que no aplican al modo activo. Cambiar el toggle dispara `setActiveTriggers` again.
+- Settings añade toggle "Modo experto: anunciar solo lo esencial".
+- UI en `TriggerEditModal`: dropdown "Activo en: Siempre / Solo modo experto / Solo modo normal".
+
+**Caso de uso**:
+- Triggers de combate verboso (kills, esquivas, paradas) marcados "Solo modo normal". En experto se gaguean — el usuario asume que sabe lo que está pasando.
+- Triggers de eventos críticos (muerte propia, vida baja) marcados "Siempre".
+- Triggers experimentales del usuario marcados "Solo modo experto" — los activa cuando quiere ver verbose.
+
+**Decisión cerrada**: campo único `activeMode` con tres valores en vez de dos campos booleanos. Más simple para el wizard.
+
+**Coste**: el filtro en `setActiveTriggers` es trivial. La UI suma una línea en el editor. El "drama" es propagar el toggle global y forzar reload — usar el patrón de `settingsModalVisible` en TerminalScreen useEffect.
+
+##### Lo que TODAVÍA NO cubre Fase 6
+
+Para llegar al 100% del sistema blind necesitaríamos features que se han descartado conscientemente o son de alcance grande:
+
+- **Gag global de líneas no esenciales (whitelist en lugar de blacklist)**: el `ModoE` de Rhomdur gaguea TODO excepto los anuncios que el script verbaliza. TorchZhyla solo permite blacklist (gag explícito por trigger). Modelar whitelist requiere otro paradigma — un toggle "silenciar todo lo no marcado" + flag `silentDefault: true` por línea. Significativo refactor del pipeline. NO Fase 6.
+- **Sonidos en bucle con stop dinámico** (`#PlayLoop` + stop al cambiar estado): la alerta de vida al 30% que suena hasta recuperarte. Hoy `play_sound` es one-shot. Requiere acción `play_loop` + tracking de handles + acción `stop_sound`. Mid effort. Considerar para Fase 7 si surge.
+- **Math en `set_var`**: contadores tipo `set_var muertes = ${muertes} + 1` no se evalúan — quedan como string literal. Necesita evaluador básico de expresiones. Out of scope sin un mini-DSL.
+- **Listas dinámicas de strings** (NickX, RemitentesLista): user vars son strings simples. Para tener arrays hace falta tipo nuevo + acciones `push_to_list` / `clear_list` / `is_in_list`. Out of scope.
+- **Macros condicionales en `command`** (botón con if/else según modo o estado): requeriría DSL en el campo command. Los paneles de Fase 6.1 cubren el 80% del caso de uso.
+- **Auto-walks / paths**: secuencias temporizadas hardcoded por destino. Descartado por filosofía (cliente de accesibilidad, no de macroing).
+- **Sonidos de ambientación dinámicos por sala/momento del día**: requiere mapper sala → sonido + concepto de momento. Fuera de scope.
+- **Funciones reusables tipo correctores** (`FuncCorrectorPlayers`): cada trigger se escribe independiente. Sin sistema de funciones globales por filosofía declarativa.
+- **Aliases redefinidos** (los `n`/`s`/`e` redefinidos durante un walk): no hay concepto de alias dinámico.
+
+Si en el futuro se reactiva la pregunta "¿meter Lua/scripting?" estos serían los argumentos a favor. Por ahora la respuesta sigue siendo no.
+
+##### Plan de ataque sugerido
+
+Por orden de coste/beneficio. Cada sub-fase es independiente — se puede hacer la 6.2 sin la 6.1, etc.
+
+1. **6.2 (`${var}` en botones)** — ~30 min. Más barata, desbloquea el caso "volver" inmediatamente. Tirar primero como prueba de concepto del frente "comandos de botones más inteligentes".
+2. **6.1 (múltiples paneles)** — ~3-4h. Cambia el modelo mental del blind mode hacia algo más limpio. Bueno para hacer antes de meter más complejidad en triggers.
+3. **6.3 (pan estéreo)** — ~1-1.5h. Verificar primero si expo-av actual lo soporta. Si sí, gana mucha UX en blind.
+4. **6.4 (delay)** — ~1-1.5h. Habilita los bloqueos temporizados que son comunes en RdL.
+5. **6.5 (modo experto)** — ~2-3h. La más subjetiva — depende de si en uso real surge la necesidad.
+
+Total Fase 6 completa: ~8-12h de trabajo. Dependiendo de qué se aborde, el pack de "Suite Blind" puede tener diferentes niveles de cobertura.
 
 ### Decisiones pendientes
 
