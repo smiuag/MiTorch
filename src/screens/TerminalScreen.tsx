@@ -66,6 +66,29 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Terminal'>;
 const MAX_LINES = 2000;
 let lineIdCounter = 0;
 
+// Lista de "primeros tokens" que se consideran movimiento del usuario.
+// Si el jugador escribe uno de estos mientras está activo un auto-walk,
+// el walk se cancela porque el usuario está tomando control manual de
+// la dirección. Cualquier otro comando (chat, atacar, ojear, mirar...)
+// se envía al MUD pero NO interrumpe el walk en curso.
+//
+// Mantén la lista en lowercase y sin tildes — la comparación se hace
+// sobre `command.trim().toLowerCase().split()[0]`.
+const MOVEMENT_FIRST_WORDS = new Set<string>([
+  // Direcciones cortas
+  'n', 's', 'e', 'w', 'o',
+  'ne', 'nw', 'no', 'se', 'sw', 'so',
+  'ar', 'ab', 'de', 'fu',
+  // Direcciones largas
+  'norte', 'sur', 'este', 'oeste',
+  'noreste', 'noroeste', 'sudeste', 'sudoeste', 'sureste', 'suroeste',
+  'arriba', 'abajo', 'dentro', 'fuera',
+  // Direcciones de terreno especial (cuevas, grietas, huecos)
+  'hueco', 'grieta', 'cubil',
+  // Verbos de movimiento que toman una dirección como argumento
+  'sigilar', 'escabullir', 'correr', 'huir', 'saltar',
+]);
+
 export function TerminalScreen({ route, navigation }: Props) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -272,48 +295,61 @@ export function TerminalScreen({ route, navigation }: Props) {
     return () => sub.remove();
   }, []);
 
+  // Sincroniza el state/refs locales de Terminal con lo que hay en
+  // AsyncStorage. Se llama desde dos sitios:
+  //   1) useFocusEffect — cuando Terminal recupera el foco (tras volver
+  //      desde otra pantalla del Stack como ServerList).
+  //   2) Cuando se cierra el modal de Settings — el modal vive DENTRO de
+  //      Terminal, así que useFocusEffect NO se dispara al cerrarlo. Sin
+  //      esta sincronía explícita, los toggles tipo keepAwakeEnabled,
+  //      notificationsEnabled, gesturesEnabled, silentMode, ambient, etc.
+  //      se quedaban obsoletos en Terminal hasta que el usuario salía y
+  //      volvía a entrar — UX confusa: los toggles se veían ON pero no
+  //      tenían efecto.
+  const syncSettingsToLocal = useCallback(async () => {
+    const settings = await loadSettings();
+    if (settings.fontSize) {
+      setFontSize(settings.fontSize);
+      fontSizeRef.current = settings.fontSize;
+    }
+    if (settings.uiMode) {
+      setUiMode(settings.uiMode);
+    }
+    if (settings.encoding) {
+      setEncoding(settings.encoding);
+    }
+    if (settings.gesturesEnabled !== undefined) {
+      gesturesEnabledRef.current = settings.gesturesEnabled;
+    }
+    if (settings.keepAwakeEnabled !== undefined) {
+      setKeepAwakeEnabled(settings.keepAwakeEnabled);
+    }
+    if (settings.backgroundConnectionEnabled !== undefined) {
+      setBackgroundConnectionEnabled(settings.backgroundConnectionEnabled);
+    }
+    if (settings.gestures) {
+      gesturesRef.current = settings.gestures;
+    }
+    if (settings.notificationsEnabled !== undefined) {
+      notificationsEnabledRef.current = settings.notificationsEnabled;
+    }
+    if (settings.soundsEnabled !== undefined) {
+      // silent = !sounds. We track the inverse locally for the in-Terminal
+      // toggle UI (🔊/🔇), but the canonical state lives in settings.
+      setSilentModeEnabled(!settings.soundsEnabled);
+    }
+    if (settings.ambientEnabled !== undefined) {
+      setAmbientEnabled(settings.ambientEnabled);
+    }
+    logService.configure(
+      settings.logsEnabled ?? false,
+      settings.logsMaxLines ?? 20000
+    );
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      (async () => {
-        const settings = await loadSettings();
-        if (settings.fontSize) {
-          setFontSize(settings.fontSize);
-          fontSizeRef.current = settings.fontSize;
-        }
-        if (settings.uiMode) {
-          setUiMode(settings.uiMode);
-        }
-        if (settings.encoding) {
-          setEncoding(settings.encoding);
-        }
-        if (settings.gesturesEnabled !== undefined) {
-          gesturesEnabledRef.current = settings.gesturesEnabled;
-        }
-        if (settings.keepAwakeEnabled !== undefined) {
-          setKeepAwakeEnabled(settings.keepAwakeEnabled);
-        }
-        if (settings.backgroundConnectionEnabled !== undefined) {
-          setBackgroundConnectionEnabled(settings.backgroundConnectionEnabled);
-        }
-        if (settings.gestures) {
-          gesturesRef.current = settings.gestures;
-        }
-        if (settings.notificationsEnabled !== undefined) {
-          notificationsEnabledRef.current = settings.notificationsEnabled;
-        }
-        if (settings.soundsEnabled !== undefined) {
-          // silent = !sounds. We track the inverse locally for the in-Terminal
-          // toggle UI (🔊/🔇), but the canonical state lives in settings.
-          setSilentModeEnabled(!settings.soundsEnabled);
-        }
-        if (settings.ambientEnabled !== undefined) {
-          setAmbientEnabled(settings.ambientEnabled);
-        }
-        logService.configure(
-          settings.logsEnabled ?? false,
-          settings.logsMaxLines ?? 20000
-        );
-      })();
+      syncSettingsToLocal();
 
       // Reset blind mode service history periodically
       const historyResetInterval = setInterval(() => {
@@ -321,8 +357,20 @@ export function TerminalScreen({ route, navigation }: Props) {
       }, 60000); // Every minute
 
       return () => clearInterval(historyResetInterval);
-    }, [])
+    }, [syncSettingsToLocal])
   );
+
+  // Re-sync when the Settings modal closes. The modal lives inside this
+  // screen so useFocusEffect doesn't refire on close — without this hook,
+  // toggles changed inside the modal stay stale in Terminal's state/refs
+  // until the user navigates away and back.
+  const prevSettingsModalRef = useRef(settingsModalVisible);
+  useEffect(() => {
+    if (prevSettingsModalRef.current && !settingsModalVisible) {
+      syncSettingsToLocal();
+    }
+    prevSettingsModalRef.current = settingsModalVisible;
+  }, [settingsModalVisible, syncSettingsToLocal]);
 
   const confirmExit = useCallback(() => {
     if (exitToastTimeoutRef.current) {
@@ -1322,10 +1370,17 @@ export function TerminalScreen({ route, navigation }: Props) {
       if (!skipHistory) setCommandHistory([command, ...commandHistory]);
     }
 
-    // Cancel walk if any other command is sent
+    // Cancel walk SOLO si el usuario lanza un comando de movimiento manual.
+    // Comandos no-movimiento (chat, atacar, ojear, mirar...) dejan que el
+    // auto-walk siga su curso — el caso de uso típico es lanzar un ataque
+    // o hablar mientras te lleva irsala. Si el usuario quiere cortar
+    // explícitamente, hay `parar`/`stop` que ya están interceptados arriba.
     if (walking) {
-      stopWalk();
-      addLine('--- Movimiento cancelado ---');
+      const firstWord = command.trim().toLowerCase().split(/\s+/)[0];
+      if (MOVEMENT_FIRST_WORDS.has(firstWord)) {
+        stopWalk();
+        addLine('--- Movimiento cancelado ---');
+      }
     }
   }, [connected, commandHistory, walking, stopWalk, walkTo, handleLocate, addLine, uiMode, currentBlindPanel, currentCompletoPanel]);
 

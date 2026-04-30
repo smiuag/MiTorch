@@ -140,25 +140,49 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
   // Cost: ~5 MB of decoded wavs resident in memory after warmup. Acceptable
   // for a MUD client.
   useEffect(() => {
-    Audio.setAudioModeAsync({
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: false,
-      shouldDuckAndroid: false,
-      interruptionModeAndroid: 1,
-    }).catch((e) => console.warn(`[SoundContext] setAudioModeAsync failed: ${e}`));
+    // Inicialización secuencial: setAudioModeAsync DEBE terminar antes
+    // del warmup, si no las primeras play() pueden caer en
+    // AudioFocusNotAcquiredException porque expo-av todavía no sabe
+    // que aceptamos audio en background. La versión anterior corría
+    // los tres en paralelo (sin await) y el preload perdía la carrera
+    // en device lentos.
+    //
+    // Modo audio:
+    //   - interruptionModeAndroid=2 (DuckOthers): expo-av no pide focus
+    //     exclusivo, lo que permite a `react-native-sound` (la lib del
+    //     pan) coexistir sin AudioFocusNotAcquiredException entre ellas.
+    //   - staysActiveInBackground=true: el foreground service mantiene
+    //     el proceso vivo durante la sesión MUD, pero sin esta opción
+    //     expo-av rechaza el play cuando la activity no está visible
+    //     (típico al cambiar de app sin desconectar). Con true, los
+    //     triggers siguen sonando aunque el usuario tenga otra app
+    //     delante. El ambient lo gestionamos aparte vía AppState.
+    //   - shouldDuckAndroid=true: si Spotify/etc. está sonando, lo
+    //     atenuamos en vez de cortarlo cuando reproducimos.
+    (async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: true,
+          shouldDuckAndroid: true,
+          interruptionModeAndroid: 2,
+        });
+      } catch (e) {
+        console.warn(`[SoundContext] setAudioModeAsync failed: ${e}`);
+      }
 
-    prepareSounds().catch((e) => console.warn(`[SoundContext] prepareSounds failed: ${e}`));
+      prepareSounds().catch((e) => console.warn(`[SoundContext] prepareSounds failed: ${e}`));
 
-    // Seed effectsVolume from persisted settings. Subsequent changes from
-    // "Mis ambientes" call setEffectsVolume directly — this initial load
-    // keeps the volume coherent across app restarts.
-    loadSettings()
-      .then((s) => {
+      // Seed effectsVolume from persisted settings. Subsequent changes from
+      // "Mis ambientes" call setEffectsVolume directly — this initial load
+      // keeps the volume coherent across app restarts.
+      try {
+        const s = await loadSettings();
         if (typeof s.effectsVolume === 'number') {
           effectsVolumeRef.current = Math.max(0, Math.min(1, s.effectsVolume));
         }
-      })
-      .catch(() => {});
+      } catch {}
+    })();
   }, [prepareSounds]);
 
   const playSound = useCallback(async (soundKey: string, pan?: number) => {
@@ -192,25 +216,52 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
           // even though the wizard already restricts the value to [-1, 1].
           const path = uri.replace(/^file:\/\//, '');
           const clamped = Math.max(-1, Math.min(1, pan!));
-          const sound = new Sound(path, '', (err) => {
-            if (err) {
-              console.warn(
-                `[SoundContext.playSound] react-native-sound load failed (${filename}): ${err.message}. Falling back to centred expo-av play.`,
-              );
-              // Fallback: play centred via expo-av so the user still hears
-              // SOMETHING — losing direction is better than silence.
-              Audio.Sound.createAsync({ uri }, { volume: fxVol })
-                .then(({ sound: avSound }) => {
-                  avSound.playAsync();
-                  setTimeout(() => avSound.unloadAsync().catch(() => {}), 8000);
-                })
-                .catch(() => {});
-              return;
-            }
-            sound.setVolume(fxVol);
-            sound.setPan(clamped);
-            sound.play(() => sound.release());
-          });
+
+          // Single fallback path used by every error branch (load fail,
+          // sync constructor throw, play() throw): plays centred via
+          // expo-av. We accept losing the directional info to guarantee
+          // the user hears SOMETHING. AudioFocusNotAcquiredException is
+          // the most common cause on Android when another lib holds focus.
+          const fallbackToExpoAv = () => {
+            Audio.Sound.createAsync({ uri }, { volume: fxVol })
+              .then(({ sound: avSound }) => {
+                avSound.playAsync();
+                setTimeout(() => avSound.unloadAsync().catch(() => {}), 8000);
+              })
+              .catch((e) => console.warn(`[SoundContext] expo-av fallback failed: ${e}`));
+          };
+
+          try {
+            const sound = new Sound(path, '', (err) => {
+              if (err) {
+                console.warn(
+                  `[SoundContext.playSound] react-native-sound load failed (${filename}): ${err.message}. Falling back to centred expo-av play.`,
+                );
+                fallbackToExpoAv();
+                return;
+              }
+              try {
+                sound.setVolume(fxVol);
+                sound.setPan(clamped);
+                sound.play((success) => {
+                  if (!success) {
+                    console.warn(`[SoundContext.playSound] react-native-sound play returned !success for ${filename}, falling back.`);
+                    sound.release();
+                    fallbackToExpoAv();
+                    return;
+                  }
+                  sound.release();
+                });
+              } catch (playErr) {
+                console.warn(`[SoundContext.playSound] react-native-sound play threw: ${playErr}, falling back.`);
+                try { sound.release(); } catch {}
+                fallbackToExpoAv();
+              }
+            });
+          } catch (ctorErr) {
+            console.warn(`[SoundContext.playSound] new Sound() threw: ${ctorErr}, falling back.`);
+            fallbackToExpoAv();
+          }
           return;
         }
 

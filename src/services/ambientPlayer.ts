@@ -50,14 +50,21 @@ class AmbientPlayer {
     if (this.initialized) return;
     this.initialized = true;
     try {
-      // shouldDuckAndroid:false — el ambient NO debe atenuar otros sonidos
-      // de la app cuando llega un trigger. La mezcla la hace el SO sin
-      // bajar nuestro propio loop. Si en uso real molesta, fase opcional
-      // de ducking (descrita en CLAUDE.md como "fuera de scope").
+      // interruptionModeAndroid=2 (DuckOthers) + staysActiveInBackground=true
+      // — coherente con SoundContext. expo-av no pide focus exclusivo,
+      // react-native-sound puede coexistir cuando un trigger con pan se
+      // solapa con el loop del ambient. shouldDuckAndroid=true permite
+      // que apps externas atenúen el ambient en vez de cortarlo. El
+      // staysActiveInBackground=true es necesario para que el load del
+      // wav de ambient no falle con AudioFocusNotAcquiredException
+      // cuando se ejecuta tras un cambio de sala mientras la activity
+      // no está visible. La pausa real del ambient en background la
+      // hace el AppState handler de TerminalScreen, no este flag.
       await Audio.setAudioModeAsync({
         playsInSilentModeIOS: true,
-        interruptionModeAndroid: 1, // DoNotMix
-        shouldDuckAndroid: false,
+        staysActiveInBackground: true,
+        interruptionModeAndroid: 2,
+        shouldDuckAndroid: true,
       });
     } catch (e) {
       console.warn(`[AMBIENT] setAudioModeAsync failed: ${e}`);

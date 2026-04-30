@@ -495,82 +495,146 @@ export function ServerListScreen({ navigation }: Props) {
           <View style={styles.helpModalContent}>
             <Text style={styles.helpModalTitle}>Ayuda</Text>
             <ScrollView
+              style={styles.helpModalScroll}
+              contentContainerStyle={styles.helpModalScrollContent}
               showsVerticalScrollIndicator={true}
               scrollEnabled={true}
-              onStartShouldSetResponder={() => true}
-              onMoveShouldSetResponder={() => true}
             >
               <Text style={styles.helpModalSectionTitle}>Conectar a un personaje</Text>
               <Text style={styles.helpModalText}>
-                Pulsa el botón + para crear un nuevo personaje. Introduce el nombre del personaje, host y puerto. Luego pulsa en el personaje para conectar.
+                Pulsa el botón + para crear un nuevo personaje. Introduce nombre, host y puerto. Luego pulsa en el personaje para conectar.
               </Text>
               <Text style={styles.helpModalText}>
-                En la lista de personajes:
-                • ✎ (verde) - Editar los datos del personaje
-                • ⬚ (azul) - Duplicar el personaje
-                • ✕ (rojo) - Eliminar el personaje
+                En la lista de personajes:{'\n'}
+                • ✎ (verde) — Editar datos{'\n'}
+                • ⬚ (azul) — Duplicar{'\n'}
+                • ✕ (rojo) — Eliminar
               </Text>
 
               <Text style={styles.helpModalSectionTitle}>Durante la partida</Text>
               <Text style={styles.helpModalText}>
-                • Usa el input de comandos para enviar órdenes al MUD
-                • Los canales (chat, grupo, bando) agrupan mensajes por tipo
-                • La barra de vitalidad (HP y energía) se actualiza en tiempo real
-                • Usa el mapa para visualizar el mundo
+                • Input inferior para enviar órdenes al MUD.{'\n'}
+                • Botones del grid para comandos rápidos (edita con pulsación larga o con el botón ✎).{'\n'}
+                • Barra de vitales (HP / energía / acciones) se actualiza desde el prompt del MUD.{'\n'}
+                • Mini-mapa muestra tu sala y vecinas. Tap en una sala dispara auto-walk.{'\n'}
+                • Botón 🔊 / 🔇 silencia todos los sonidos de triggers (kill-switch global).{'\n'}
+                • Botón 🎵 activa/desactiva la música ambiente.
               </Text>
 
-              <Text style={styles.helpModalSectionTitle}>Configuración</Text>
+              <Text style={styles.helpModalSectionTitle}>Auto-walk</Text>
               <Text style={styles.helpModalText}>
-                • Ajusta el tamaño de fuente del terminal (se aplica automáticamente cuando vuelves al juego)
-                • El tamaño afecta tanto al terminal como a los canales de chat
-                • Activa los botones flotantes para una interfaz personalizable
-                • En el editor de pantalla flotante, organiza botones, vitales y chat a tu gusto
+                • `irsala &lt;nombre&gt;` busca una sala y te lleva andando paso a paso.{'\n'}
+                • `sigilarsala &lt;nombre&gt;` igual pero sigilando cada paso.{'\n'}
+                • `locate` te localiza tras una desincronización del mapa.{'\n'}
+                • Tap en una sala del mapa también dispara auto-walk.{'\n'}
+                • `parar` o `stop` cancelan en cualquier momento.{'\n'}
+                • Si tecleas un comando de movimiento manual (norte, sur, sigilar...) mientras camina, el auto-walk se cancela. Otros comandos (chat, atacar, ojear...) NO interrumpen.
+              </Text>
+
+              <Text style={styles.helpModalSectionTitle}>Plantillas de triggers</Text>
+              <Text style={styles.helpModalText}>
+                Settings → Triggers. Una plantilla agrupa N triggers que se asignan a uno o varios personajes.
+              </Text>
+              <Text style={styles.helpModalText}>
+                Cada trigger tiene un patrón (regex o cajas visuales) que dispara una o varias acciones cuando una línea del MUD lo matchea:{'\n'}
+                • gag — silencia la línea.{'\n'}
+                • color — pinta la línea.{'\n'}
+                • replace — sustituye texto.{'\n'}
+                • play_sound — reproduce un wav (con pan estéreo opcional).{'\n'}
+                • send — manda un comando al MUD.{'\n'}
+                • notify — notificación de Android.{'\n'}
+                • floating — mensaje flotante en pantalla.{'\n'}
+                • set_var — guarda en una variable de usuario.
+              </Text>
+              <Text style={styles.helpModalText}>
+                Orden importa: dentro de una plantilla, primero matchea el de arriba. Triggers "no bloqueantes" pueden encadenar varios efectos sobre la misma línea.
+              </Text>
+
+              <Text style={styles.helpModalSectionTitle}>Mis variables</Text>
+              <Text style={styles.helpModalText}>
+                Settings → Mis variables. Variables personalizadas que rellenas desde acciones `set_var` y consumes con `${'${nombre}'}` en otros triggers, en botones del grid, o en patrones (con `${'${nombre:raw}'}` para inyectar como regex). Útil para guardar último objetivo, última dirección, lista pipe-separated de enemigos (`nick_x`), etc.
+              </Text>
+
+              <Text style={styles.helpModalSectionTitle}>Mis sonidos</Text>
+              <Text style={styles.helpModalText}>
+                Settings → Mis sonidos. Sube wavs / mp3 / ogg desde el móvil. Disponibles en cualquier `play_sound` de trigger y en cualquier slot de Mis ambientes.
+              </Text>
+
+              <Text style={styles.helpModalSectionTitle}>Mis ambientes</Text>
+              <Text style={styles.helpModalText}>
+                Settings → Mis ambientes. Música de fondo en bucle que cambia con el tipo de sala (bosque, ciudad, subterráneo, mar, etc.). 18 categorías; asignas 1-4 sonidos a cada una. Al entrar en una sala se elige uno al azar y se hace crossfade desde el anterior. También controla volúmenes de música ambiente y de efectos (triggers).
+              </Text>
+
+              <Text style={styles.helpModalSectionTitle}>Importar / exportar configuración</Text>
+              <Text style={styles.helpModalText}>
+                Settings → Importar / exportar configuración. Genera un único ZIP que contiene plantillas de triggers, mappings de ambiente y los sonidos personalizados que usen. Útil para mover el setup a otro móvil o compartirlo. NO incluye servidores, layouts de botones ni settings de la app.
+              </Text>
+              <Text style={styles.helpModalText}>
+                El ZIP se importa por la misma pantalla. Las plantillas se añaden, los mappings de ambiente que vengan en el ZIP sustituyen los actuales (los demás se conservan).
+              </Text>
+
+              <Text style={styles.helpModalSectionTitle}>Pack Movimiento (con pan estéreo)</Text>
+              <Text style={styles.helpModalText}>
+                Si has importado el pack "Movimiento", para que distinga aliados de enemigos teclea en el MUD: `nick x nombre1 nombre2 ...` con los nombres a marcar como enemigos. La lista persiste server-side y los triggers la leen automáticamente. Sin nick x, todos suenan como aliados. Cada dirección suena con pan estéreo distinto (este → derecha, oeste → izquierda, etc.).
+              </Text>
+
+              <Text style={styles.helpModalSectionTitle}>Modo blind (accesibilidad)</Text>
+              <Text style={styles.helpModalText}>
+                Settings → "Modo de interfaz" → "Blind". Pensado para usar con TalkBack. La interfaz se simplifica a paneles de botones con acción primaria (doble tap) y secundaria (swipe up/down via TalkBack). Sin gestos visuales — TalkBack los consume.
+              </Text>
+              <Text style={styles.helpModalText}>
+                Cola de lectura propia que evita que TalkBack pise mensajes (ajustable en "Velocidad de lectura"). Canales se anuncian a una y se loguean al terminal para revisión posterior. Los modales y toggles tienen `accessibilityLabel` específicos.
+              </Text>
+
+              <Text style={styles.helpModalSectionTitle}>Logs para soporte</Text>
+              <Text style={styles.helpModalText}>
+                Settings → Logs. Captura toda la actividad del terminal a un archivo HTML que puedes compartir con soporte o subir a deathlogs.com (si juegas en Reinos de Leyenda). Off por defecto. Se borra inmediatamente al desactivar (privacidad). La contraseña del auto-login NUNCA se loguea; el resto sí (host, username, nicks de otros).
               </Text>
 
               <Text style={styles.helpModalSectionTitle}>Macros y atajos</Text>
               <Text style={styles.helpModalText}>
-                • Los botones F1-F10 permiten guardar comandos frecuentes
-                • Pulsa largo en un botón para editar su comando
-                • En modo flotante, crea botones personalizados con cualquier comando
+                • Botones del grid (Settings → Layout) ejecutan comandos al pulsar.{'\n'}
+                • Pulsación larga edita el botón.{'\n'}
+                • Cada botón puede ser tipo "Comando" (manda al MUD) o "Aviso" (muestra un mensaje flotante).{'\n'}
+                • Comandos y avisos admiten variables: `Vida: ${'${vida}'}/${'${vida_max}'}`.{'\n'}
+                • Separa varios comandos con `;;` para mandarlos en secuencia: `desenvainar espada ;; atacar goblin`.{'\n'}
+                • Modo blind: dos paneles separados con switch (acción primaria del botón switch).
               </Text>
 
               <Text style={styles.helpModalSectionTitle}>Canales</Text>
               <Text style={styles.helpModalText}>
-                • Cada canal agrupa mensajes de un tipo específico
-                • El canal "Todos" muestra mensajes de todos los canales
-                • Activa "Gestionar canales" en configuración para usar pestañas
-                • Pulsa largo en el nombre del canal para cambiar el alias que usas (ej: "ch" para "chat")
+                • Cada canal agrupa los mensajes de un tipo (chat, bando, grupo, etc.).{'\n'}
+                • El canal "Todos" los mezcla.{'\n'}
+                • Pulsación larga en el nombre del canal cambia el alias que usas para hablar (ej. "ch" para "chat").{'\n'}
+                • En blind mode los canales se loguean al terminal pero NO se anuncian (decisión de doctrina, anula ruido).
               </Text>
 
-              <Text style={styles.helpModalSectionTitle}>Características ocultas y trucos</Text>
+              <Text style={styles.helpModalSectionTitle}>Trucos</Text>
               <Text style={styles.helpModalText}>
-                • Escribe "irsala" para ir a la sala de espera (útil para resetear)
-                • En modo flotante, si pones "locate" en un botón, te localizará automáticamente en el mapa al pulsarlo
-                • Pulsa en tu posición en el mapa para ver información de la sala
-              </Text>
-
-              <Text style={styles.helpModalSectionTitle}>Optimizaciones para el gameplay</Text>
-              <Text style={styles.helpModalText}>
-                • Usa botones F con comandos frecuentes para jugar más rápido
-                • En modo flotante, crea botones para "ojear" y "irsala" para acceso rápido
-                • Los alias de canales (ch, g, b) ahorran caracteres al escribir
-                • Usa el input de comandos para cadenas largas, los botones para comandos cortos
+                • Botones "Aviso" con `${'${vida}'}/${'${vida_max}'}` reemplazan al viejo "consultar vida".{'\n'}
+                • `nick x` para fijar enemigos del pack Movimiento.{'\n'}
+                • Pulsa en una sala del mapa para auto-caminar.{'\n'}
+                • Triple tap o swipe (modo completo) — gestos configurables en Settings.{'\n'}
+                • Pulsa el botón ? de esta lista en cualquier momento para volver a esta ayuda.
               </Text>
 
               <Text style={styles.helpModalSectionTitle}>Solución de problemas</Text>
               <Text style={styles.helpModalText}>
-                • Si el mapa no aparece, estás conectado a un servidor diferente (solo funciona en Reinos de Leyenda)
-                • Si pierdes la conexión, reconecta desde la pantalla principal
-                • El tamaño de fuente se aplica al terminal y los canales
-                • Limpia la cache si hay problemas de visualización (desinstal y reinstala la app)
+                • Mapa no aparece: estás conectado a un MUD distinto de Reinos de Leyenda.{'\n'}
+                • Música ambiente no suena: comprueba que el botón 🎵 está ON, que tienes wavs asignados en Mis ambientes, y que el mini-mapa te localiza (sin sala, no hay categoría que reproducir).{'\n'}
+                • Triggers no disparan: asigna la plantilla a tu personaje en Settings → Triggers → entrar a la plantilla → "Personajes asignados".{'\n'}
+                • Toggle de Settings se ve ON pero no funciona: cierra y abre el modal — los settings se sincronizan al cerrarlo.{'\n'}
+                • Si pierdes conexión, reconecta desde la pantalla principal.
               </Text>
+            </ScrollView>
             <TouchableOpacity
               style={styles.helpModalCloseBtn}
               onPress={() => setHelpModalVisible(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar ayuda"
             >
               <Text style={styles.helpModalCloseBtnText}>Cerrar</Text>
             </TouchableOpacity>
-            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -821,15 +885,27 @@ const styles = StyleSheet.create({
   helpModalContent: {
     backgroundColor: '#1a1a1a',
     borderRadius: 12,
-    maxHeight: '80%',
+    maxHeight: '90%',
     width: '100%',
     maxWidth: 500,
     borderWidth: 1,
     borderColor: '#333',
     padding: 24,
+    // flexShrink permite que el modal respete el maxHeight cuando el
+    // contenido del ScrollView es muy largo. Sin esto el contenedor
+    // crece más allá del 90% y la última sección se pierde por debajo
+    // de la pantalla.
+    flexShrink: 1,
   },
   helpModalScroll: {
-    flex: 1,
+    // flexShrink/flexGrow:1 = ocupa todo el espacio disponible entre el
+    // título arriba y el botón Cerrar abajo, pero NO crece más que el
+    // contenedor. Es lo que activa el scroll real.
+    flexGrow: 1,
+    flexShrink: 1,
+  },
+  helpModalScrollContent: {
+    paddingBottom: 12,
   },
   helpModalTitle: {
     color: '#fff',
@@ -859,6 +935,10 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: '#0c0',
     alignSelf: 'flex-end',
+    // marginTop:12 lo separa visualmente del último ítem del ScrollView.
+    // Vive FUERA del ScrollView para que siempre esté visible al final
+    // del modal, no se vaya con el scroll.
+    marginTop: 12,
   },
   helpModalCloseBtnText: {
     color: '#000',
