@@ -53,7 +53,7 @@ export type TriggerType =
   | 'combo'
   | 'variable';
 
-export type FloatingMessageLevel = 'info' | 'success' | 'error';
+export type FloatingMessageLevel = 'info' | 'success' | 'warning' | 'error';
 
 // Action text fields support both compiled string (engine reads this)
 // and optional blocks[] (editor reads this in cajas mode).
@@ -64,7 +64,11 @@ export type TriggerAction =
   | { type: 'play_sound'; file: string }
   | { type: 'send'; command: string; commandBlocks?: ActionTextBlock[] }
   | { type: 'notify'; title?: string; titleBlocks?: ActionTextBlock[]; message: string; messageBlocks?: ActionTextBlock[] }
-  | { type: 'floating'; message: string; messageBlocks?: ActionTextBlock[]; level?: FloatingMessageLevel }
+  // `level` selects a preset palette. `fg`/`bg` (optional, hex strings) override
+  // letter color and background respectively — when absent each falls back to
+  // the preset for `level`. Setting one without the other works (e.g. custom
+  // background with the level's default text color).
+  | { type: 'floating'; message: string; messageBlocks?: ActionTextBlock[]; level?: FloatingMessageLevel; fg?: string; bg?: string }
   // User-defined variable: writes a templated value into the user-vars store.
   // varName must be a valid identifier ([a-z][a-z0-9_]*) and not collide with
   // a predefined variable name (vida, energia, ...). value template can use
@@ -119,6 +123,13 @@ export interface Trigger {
   enabled: boolean;
   source: TriggerSource;
   actions: TriggerAction[];
+  // When true (or undefined — default), first-match-wins: this trigger
+  // executes all its actions and stops the evaluation chain. When false,
+  // only side-effects fire (play_sound, send, notify, floating, set_var)
+  // and evaluation continues — gag/replace/color are skipped on
+  // non-blocking triggers because allowing several to compete on the same
+  // line leads to undefined display state.
+  blocking?: boolean;
 }
 
 export interface TriggerPack {
@@ -126,6 +137,12 @@ export interface TriggerPack {
   name: string;
   triggers: Trigger[];
   assignedServerIds: string[];
+  // When true, any newly-created character automatically gets this pack
+  // appended to its assigned list. Undefined is treated as true at read
+  // time (legacy packs default to "auto-assign on") and persisted on the
+  // first explicit edit. Existing assignedServerIds are never altered by
+  // this flag — only future characters pick it up.
+  autoAssignToNew?: boolean;
 }
 
 export type FloatingOrientation = 'portrait' | 'landscape';

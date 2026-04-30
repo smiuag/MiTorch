@@ -20,6 +20,7 @@ interface ButtonGridProps {
   buttons: LayoutButton[];
   onSendCommand: (command: string) => void;
   onAddTextButton: (command: string) => void;
+  onShowFloating?: (text: string) => void;
   onEditButton: (col: number, row: number) => void;
   moveMode?: boolean;
   sourceCol?: number;
@@ -43,6 +44,7 @@ function ButtonCell({
   uiMode,
   onSendCommand,
   onAddTextButton,
+  onShowFloating,
   onEditButton,
   onSwapButtons,
   onSecondaryCommand,
@@ -57,6 +59,7 @@ function ButtonCell({
   uiMode?: 'completo' | 'blind';
   onSendCommand: (command: string) => void;
   onAddTextButton: (command: string) => void;
+  onShowFloating?: (text: string) => void;
   onEditButton: () => void;
   onSwapButtons?: () => void;
   onSecondaryCommand: (command: string) => void;
@@ -131,7 +134,9 @@ function ButtonCell({
             } else if (button?.command) {
               // In blind mode: execute primary command directly (longpress for config)
               // In completo mode: execute primary command (drag handles secondary)
-              if (button.addText) {
+              if (button.kind === 'floating') {
+                onShowFloating?.(button.command);
+              } else if (button.addText) {
                 onAddTextButton(button.command);
               } else {
                 onSendCommand(button.command);
@@ -140,14 +145,16 @@ function ButtonCell({
           }
         },
       }),
-    [col, row, button, moveMode, horizontalMode, uiMode, onSendCommand, onAddTextButton, onEditButton, onSwapButtons, onSecondaryCommand]
+    [col, row, button, moveMode, horizontalMode, uiMode, onSendCommand, onAddTextButton, onShowFloating, onEditButton, onSwapButtons, onSecondaryCommand]
   );
 
   const handleAccessibilityAction = (event: AccessibilityActionEvent) => {
     if (!button || !button.command) return;
 
     // Execute primary command (same as tap)
-    if (button.addText) {
+    if (button.kind === 'floating') {
+      onShowFloating?.(button.command);
+    } else if (button.addText) {
       onAddTextButton(button.command);
     } else {
       onSendCommand(button.command);
@@ -160,6 +167,10 @@ function ButtonCell({
     // In blind mode: only announce the label
     if (uiMode === 'blind') {
       return button.label;
+    }
+
+    if (button.kind === 'floating') {
+      return `Aviso: ${button.command}`;
     }
 
     const allCommands = [
@@ -215,6 +226,7 @@ export function ButtonGrid({
   buttons,
   onSendCommand,
   onAddTextButton,
+  onShowFloating,
   onEditButton,
   moveMode,
   sourceCol,
@@ -342,6 +354,7 @@ export function ButtonGrid({
                 uiMode={uiMode}
                 onSendCommand={onSendCommand}
                 onAddTextButton={onAddTextButton}
+                onShowFloating={onShowFloating}
                 onEditButton={() => onEditButton(storage.col, storage.row)}
                 onSwapButtons={onSwapButtons ? () => onSwapButtons(storage.col, storage.row) : undefined}
                 onSecondaryCommand={handleSecondaryCommand}

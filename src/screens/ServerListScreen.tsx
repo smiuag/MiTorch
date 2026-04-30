@@ -17,6 +17,7 @@ import { RootStackParamList, ServerProfile } from '../types';
 import { loadServers, saveServers } from '../storage/serverStorage';
 import { loadSettings, saveSettings } from '../storage/settingsStorage';
 import { loadServerLayout, saveServerLayout } from '../storage/layoutStorage';
+import { autoAssignNewCharacterToPacks } from '../storage/triggerStorage';
 import { activeConnection } from '../services/activeConnection';
 import { CANONICAL_PROMPT } from '../services/promptParser';
 
@@ -96,6 +97,7 @@ export function ServerListScreen({ navigation }: Props) {
 
     const port = parseInt(formPort) || 5001;
     let updated: ServerProfile[];
+    let createdServerId: string | null = null;
 
     if (editingServer) {
       updated = servers.map(s =>
@@ -120,10 +122,18 @@ export function ServerListScreen({ navigation }: Props) {
         password: formPassword.trim() || undefined,
       };
       updated = [...servers, newServer];
+      createdServerId = newServer.id;
     }
 
     setServers(updated);
     await saveServers(updated);
+    if (createdServerId) {
+      try {
+        await autoAssignNewCharacterToPacks(createdServerId);
+      } catch (e) {
+        console.warn('[ServerList] autoAssignNewCharacterToPacks failed:', e);
+      }
+    }
     setModalVisible(false);
   };
 
@@ -174,6 +184,11 @@ export function ServerListScreen({ navigation }: Props) {
     const updated = [...servers, newServer];
     setServers(updated);
     await saveServers(updated);
+    try {
+      await autoAssignNewCharacterToPacks(newServer.id);
+    } catch (e) {
+      console.warn('[ServerList] autoAssignNewCharacterToPacks failed:', e);
+    }
   };
 
   const renderServer = ({ item }: { item: ServerProfile }) => {

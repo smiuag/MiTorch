@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { Audio } from 'expo-av';
-import { loadSettings } from '../storage/settingsStorage';
 import { getCustomSoundUri } from '../storage/customSoundsStorage';
 
 const CUSTOM_PREFIX = 'custom:';
@@ -22,6 +21,17 @@ const soundModules = {
   'combate/objetivo-perdido.wav': require('../../assets/sounds/combate/objetivo-perdido.wav'),
   'combate/interrumpido.wav': require('../../assets/sounds/combate/interrumpido.wav'),
   'combate/critico.wav': require('../../assets/sounds/combate/critico.wav'),
+  'combate/golpe-lanzas.wav': require('../../assets/sounds/combate/golpe-lanzas.wav'),
+  'combate/golpe-recibes.wav': require('../../assets/sounds/combate/golpe-recibes.wav'),
+  'combate/muerte-propia.wav': require('../../assets/sounds/combate/muerte-propia.wav'),
+  'combate/muerte-otro.wav': require('../../assets/sounds/combate/muerte-otro.wav'),
+  'combate/hemorragia.wav': require('../../assets/sounds/combate/hemorragia.wav'),
+  'combate/cicatrizar.wav': require('../../assets/sounds/combate/cicatrizar.wav'),
+  'combate/incapacitado.wav': require('../../assets/sounds/combate/incapacitado.wav'),
+  'combate/alerta.wav': require('../../assets/sounds/combate/alerta.wav'),
+  'combate/alerta-vida-50.wav': require('../../assets/sounds/combate/alerta-vida-50.wav'),
+  'combate/alerta-vida-30.wav': require('../../assets/sounds/combate/alerta-vida-30.wav'),
+  'combate/alerta-vida-10.wav': require('../../assets/sounds/combate/alerta-vida-10.wav'),
   'eventos/muerte.wav': require('../../assets/sounds/eventos/muerte.wav'),
   'eventos/victoria.wav': require('../../assets/sounds/eventos/victoria.wav'),
   'eventos/xp.wav': require('../../assets/sounds/eventos/xp.wav'),
@@ -48,18 +58,14 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
     if (isReadyRef.current || loadingRef.current) return;
     loadingRef.current = true;
     try {
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-        shouldDuckAndroid: false,
-        interruptionModeAndroid: 1,
-      });
-
       const cache = new Map<string, Audio.Sound>();
 
+      // Load each sound at volume 0 — keeps the warmup-play below silent
+      // without needing a separate setVolumeAsync call. Real plays restore
+      // volume in `playSound()` before triggering playAsync().
       for (const [soundPath, module] of Object.entries(soundModules)) {
         try {
-          const { sound } = await Audio.Sound.createAsync(module);
+          const { sound } = await Audio.Sound.createAsync(module, { volume: 0 });
           cache.set(soundPath, sound);
         } catch (e) {
           console.warn(`[SoundContext] Failed to preload ${soundPath}: ${e}`);
@@ -69,12 +75,16 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
       setSoundCache(cache);
       soundCacheRef.current = cache;
 
+      // Warmup: play each preloaded sound at volume 0 to prime Android's
+      // AudioTrack pipeline. The original code restored volume to 1 right
+      // after playAsync(), which caused the warmup to be audible — playAsync
+      // resolves when playback STARTS, not when it ends, so the volume jump
+      // happened mid-playback. Now we leave volume at 0 and rely on
+      // `playSound()` to restore it for real plays.
       for (const [soundPath, sound] of cache.entries()) {
         try {
-          await sound.setVolumeAsync(0);
           await sound.setPositionAsync(0);
           await sound.playAsync();
-          await sound.setVolumeAsync(1);
         } catch (e) {
           console.warn(`[SoundContext] Failed to warm up ${soundPath}: ${e}`);
         }
@@ -89,17 +99,26 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Audio mode + preload run UNCONDITIONALLY on mount, regardless of the
+  // `soundsEnabled` setting. Reasons:
+  //  - Custom sounds (Audio.Sound.createAsync({uri:...}) for each play) need
+  //    setAudioModeAsync to have run, otherwise the first playback after a
+  //    fresh install is silent on Android even though no error is thrown.
+  //  - The "Probar" buttons in Mis sonidos / TriggerEditModal don't check
+  //    the soundsEnabled toggle — users expect them to work. The toggle
+  //    only gates whether triggers fire automatically (handled in
+  //    TerminalScreen via silentModeEnabledRef).
+  // Cost: ~5 MB of decoded wavs resident in memory after warmup. Acceptable
+  // for a MUD client.
   useEffect(() => {
-    (async () => {
-      try {
-        const settings = await loadSettings();
-        if (settings.soundsEnabled) {
-          await prepareSounds();
-        }
-      } catch (e) {
-        console.warn(`[SoundContext] Failed to read settings on mount: ${e}`);
-      }
-    })();
+    Audio.setAudioModeAsync({
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: false,
+      interruptionModeAndroid: 1,
+    }).catch((e) => console.warn(`[SoundContext] setAudioModeAsync failed: ${e}`));
+
+    prepareSounds().catch((e) => console.warn(`[SoundContext] prepareSounds failed: ${e}`));
   }, [prepareSounds]);
 
   const playSound = useCallback(async (soundKey: string) => {
@@ -128,6 +147,10 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
       }
 
       const sound = soundCacheRef.current.get(path)!;
+      // Restore volume to 1 — the warmup left it at 0 to keep the priming
+      // play silent. setVolumeAsync awaits before playAsync runs so the new
+      // volume is in effect when playback (re)starts.
+      await sound.setVolumeAsync(1);
       await sound.setPositionAsync(0);
       await sound.playAsync();
     } catch (e) {

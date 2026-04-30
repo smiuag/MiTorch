@@ -1,29 +1,6 @@
-import { AccessibilityInfo } from 'react-native';
-import { Audio } from 'expo-av';
 import blindModeFiltersData from '../config/blindModeFilters.json';
 import { playerStatsService, PlayerVariables } from './playerStatsService';
-
-const soundModules = {
-  'bloqueos/bloqueo-termina.wav': require('../../assets/sounds/bloqueos/bloqueo-termina.wav'),
-  'combate/pierdes-concentracion.wav': require('../../assets/sounds/combate/pierdes-concentracion.wav'),
-  'hechizos/preparas.wav': require('../../assets/sounds/hechizos/preparas.wav'),
-  'hechizos/formulando.wav': require('../../assets/sounds/hechizos/formulando.wav'),
-  'hechizos/resiste.wav': require('../../assets/sounds/hechizos/resiste.wav'),
-  'hechizos/fuera-rango.wav': require('../../assets/sounds/hechizos/fuera-rango.wav'),
-  'hechizos/imagenes-off.wav': require('../../assets/sounds/hechizos/imagenes-off.wav'),
-  'hechizos/imagenes-up.wav': require('../../assets/sounds/hechizos/imagenes-up.wav'),
-  'hechizos/piel-piedra-on.wav': require('../../assets/sounds/hechizos/piel-piedra-on.wav'),
-  'combate/impacto.wav': require('../../assets/sounds/combate/impacto.wav'),
-  'combate/esquivado.wav': require('../../assets/sounds/combate/esquivado.wav'),
-  'combate/bloqueado.wav': require('../../assets/sounds/combate/bloqueado.wav'),
-  'combate/objetivo-perdido.wav': require('../../assets/sounds/combate/objetivo-perdido.wav'),
-  'combate/interrumpido.wav': require('../../assets/sounds/combate/interrumpido.wav'),
-  'combate/critico.wav': require('../../assets/sounds/combate/critico.wav'),
-  'eventos/muerte.wav': require('../../assets/sounds/eventos/muerte.wav'),
-  'eventos/victoria.wav': require('../../assets/sounds/eventos/victoria.wav'),
-  'eventos/xp.wav': require('../../assets/sounds/eventos/xp.wav'),
-  'eventos/curacion.wav': require('../../assets/sounds/eventos/curacion.wav'),
-} as const;
+import { speechQueue } from './speechQueueService';
 
 
 export interface FilterAction {
@@ -53,18 +30,11 @@ export interface FilterGroup {
   patterns: FilterPattern[];
 }
 
-export interface BlindModePlayerVariables extends PlayerVariables {
-  activeHpAlert: 'none' | 'low50' | 'low30' | 'critical10';
-}
-
 class BlindModeService {
   private filters: Record<string, FilterGroup>;
   private lineHistory: Map<string, number> = new Map();
   private lastAnnouncedTime: Record<string, number> = {};
-  private activeHpAlert: 'none' | 'low50' | 'low30' | 'critical10' = 'none';
   private activeFilters: Set<string>;
-  private hpAlertInterval: ReturnType<typeof setInterval> | null = null;
-  private lastHpPercent: number = 100;
 
   constructor() {
     this.filters = { ...blindModeFiltersData.filters } as Record<string, FilterGroup>;
@@ -88,68 +58,23 @@ class BlindModeService {
       this.updateActiveFiltersByClass(variables.playerClass);
     }
 
-    // Handle HP threshold alerts
-    if (variables.playerHP !== undefined && variables.playerMaxHP !== undefined) {
-      this.checkHpThresholds(oldHP, variables.playerHP, variables.playerMaxHP);
+    // Track HP delta history (last 10 changes) — used by Settings/UI to
+    // surface recent damage. Threshold sounds + announces live in the seeded
+    // "Combate completo" pack (variable triggers on `vida_pct`).
+    if (variables.playerHP !== undefined && variables.playerHP !== oldHP) {
+      this.recordHpDelta(oldHP, variables.playerHP);
     }
   }
 
-  /**
-   * Check HP thresholds and trigger alerts
-   */
-  private checkHpThresholds(prevHP: number, newHP: number, maxHP: number) {
-    // Record HP change in history
-    if (newHP !== prevHP) {
-      const delta = newHP - prevHP;
-      const label = delta > 0 ? `Vida ganada: ${delta}` : `Vida perdida: ${Math.abs(delta)}`;
-
-      const currentStats = playerStatsService.getPlayerVariables();
-      const updatedHistory = [...currentStats.hpHistory, { delta, label }];
-      if (updatedHistory.length > 10) {
-        updatedHistory.splice(0, updatedHistory.length - 10);
-      }
-
-      playerStatsService.updatePlayerVariables({ hpHistory: updatedHistory });
+  private recordHpDelta(prevHP: number, newHP: number) {
+    const delta = newHP - prevHP;
+    const label = delta > 0 ? `Vida ganada: ${delta}` : `Vida perdida: ${Math.abs(delta)}`;
+    const currentStats = playerStatsService.getPlayerVariables();
+    const updatedHistory = [...currentStats.hpHistory, { delta, label }];
+    if (updatedHistory.length > 10) {
+      updatedHistory.splice(0, updatedHistory.length - 10);
     }
-
-    const newPercent = maxHP > 0 ? (newHP / maxHP) * 100 : 0;
-
-    // Calculate previous percentage
-    const prevPercent = maxHP > 0 ? (prevHP / maxHP) * 100 : 0;
-
-    // Check thresholds and manage alerts
-    if (newPercent <= 10 && prevPercent > 10) {
-      // Entered critical zone (<=10%)
-      this.activeHpAlert = 'critical10';
-      this.playSoundLoop('alertas/hp-10.wav', 8000);
-      this.announceMessage('VIDA CRÍTICA', 'high');
-    } else if (newPercent <= 30 && prevPercent > 30) {
-      // Entered warning zone (<=30%)
-      this.activeHpAlert = 'low30';
-      this.playSound('alertas/hp-30.wav');
-      this.announceMessage('Vida peligrosa', 'normal');
-    } else if (newPercent <= 50 && prevPercent > 50) {
-      // Entered caution zone (<=50%)
-      this.activeHpAlert = 'low50';
-      this.playSound('alertas/hp-50.wav');
-      this.announceMessage('Vida baja', 'normal');
-    } else if (newPercent > 50 && prevPercent <= 50) {
-      // Recovered above 50%
-      this.stopSoundLoop();
-      this.activeHpAlert = 'none';
-      this.announceMessage('Recuperándose', 'low');
-    } else if (newPercent > 30 && prevPercent <= 30) {
-      // Recovered above 30%
-      this.stopSoundLoop();
-      this.activeHpAlert = 'low50';
-    } else if (newPercent > 10 && prevPercent <= 10) {
-      // Recovered above 10%
-      this.stopSoundLoop();
-      this.activeHpAlert = 'none';
-      this.announceMessage('Vida recuperada', 'low');
-    }
-
-    this.lastHpPercent = newPercent;
+    playerStatsService.updatePlayerVariables({ hpHistory: updatedHistory });
   }
 
   /**
@@ -288,63 +213,7 @@ class BlindModeService {
     }
 
     this.lastAnnouncedTime[message] = now;
-    await AccessibilityInfo.announceForAccessibility(message);
-  }
-
-  /**
-   * Play a sound file from the assets directory
-   */
-  async playSound(soundPath: string) {
-    try {
-      if (!soundPath) {
-        return;
-      }
-
-      if (!(soundPath in soundModules)) {
-        return;
-      }
-
-      // Set audio mode for playback - compatible with both iOS and Android
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-        shouldDuckAndroid: false, // Don't lower volume when other audio is playing
-        interruptionModeAndroid: 1, // INTERRUPTION_MODE_DO_NOT_MIX - don't mix with other audio
-      });
-
-      const module = soundModules[soundPath as keyof typeof soundModules];
-
-      const { sound } = await Audio.Sound.createAsync(module);
-      await sound.playAsync();
-
-      // Unload after playback completes
-      setTimeout(() => {
-        sound.unloadAsync().catch(() => {});
-      }, 5000);
-    } catch (e) {
-      console.error(`[SOUND] ✗ Error: ${e}`);
-    }
-  }
-
-  /**
-   * Play a sound in loop at regular intervals
-   */
-  playSoundLoop(soundPath: string, intervalMs: number = 8000) {
-    this.stopSoundLoop();
-    this.playSound(soundPath);
-    this.hpAlertInterval = setInterval(() => {
-      this.playSound(soundPath);
-    }, intervalMs);
-  }
-
-  /**
-   * Stop the looping sound
-   */
-  stopSoundLoop() {
-    if (this.hpAlertInterval) {
-      clearInterval(this.hpAlertInterval);
-      this.hpAlertInterval = null;
-    }
+    speechQueue.enqueue(message);
   }
 
   /**
@@ -352,17 +221,6 @@ class BlindModeService {
    */
   getActiveFilters(): string[] {
     return Array.from(this.activeFilters);
-  }
-
-  /**
-   * Get current player variables with blind-mode-specific alert status
-   */
-  getPlayerVariables(): BlindModePlayerVariables {
-    const baseStats = playerStatsService.getPlayerVariables();
-    return {
-      ...baseStats,
-      activeHpAlert: this.activeHpAlert,
-    };
   }
 
   /**

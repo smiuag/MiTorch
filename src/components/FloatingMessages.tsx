@@ -58,25 +58,32 @@ function FloatingItem({ message }: { message: FloatingMessage }) {
     }
   }, [message.leaving, opacity]);
 
-  const palette =
+  const levelPalette =
     message.level === 'success'
       ? { bg: '#0c0', text: '#000' }
+      : message.level === 'warning'
+      ? { bg: '#cc8800', text: '#000' }
       : message.level === 'error'
       ? { bg: '#c00', text: '#fff' }
       : { bg: '#223366', text: '#cce5ff' };
+
+  // Per-message overrides win when set; otherwise fall back to the level's
+  // preset. Setting only one (e.g. just `bg`) keeps the level's other half.
+  const bg = message.bg ?? levelPalette.bg;
+  const text = message.fg ?? levelPalette.text;
 
   return (
     <Animated.View
       style={[
         styles.item,
-        { backgroundColor: palette.bg, opacity, transform: [{ translateY }] },
+        { backgroundColor: bg, opacity, transform: [{ translateY }] },
       ]}
       accessible
       accessibilityRole="alert"
       accessibilityLiveRegion="polite"
       accessibilityLabel={message.text}
     >
-      <Text style={[styles.text, { color: palette.text }]}>{message.text}</Text>
+      <Text style={[styles.text, { color: text }]}>{message.text}</Text>
     </Animated.View>
   );
 }

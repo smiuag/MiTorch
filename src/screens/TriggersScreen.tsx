@@ -15,7 +15,8 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { RootStackParamList, TriggerPack } from '../types';
-import { loadPacks, savePacks, newPackId, deletePack as removePack, duplicatePack } from '../storage/triggerStorage';
+import { loadPacks, savePacks, newPackId, deletePack as removePack, duplicatePack, assignAllCharactersToPacks } from '../storage/triggerStorage';
+import { loadServers } from '../storage/serverStorage';
 import { exportPackToZip, exportAllPacksToZip, importFromZip } from '../services/triggerPackExport';
 import { userVariablesService } from '../services/userVariablesService';
 import { collectVarsReferencedByPack, collectVarsReferencedByPacks } from '../utils/userVariablesUsage';
@@ -143,7 +144,26 @@ export function TriggersScreen({ navigation }: Props) {
       if (importedSoundCount > 0) parts.push(`${importedSoundCount} sonido${importedSoundCount === 1 ? '' : 's'} añadido${importedSoundCount === 1 ? '' : 's'}`);
       if (missingSoundCount > 0) parts.push(`⚠ ${missingSoundCount} sonido${missingSoundCount === 1 ? '' : 's'} no se pudieron extraer (las acciones quedan marcadas como "(falta)")`);
       if (newlyAdded.length > 0) parts.push(`${newlyAdded.length} variable${newlyAdded.length === 1 ? '' : 's'} de usuario declarada${newlyAdded.length === 1 ? '' : 's'} (${newlyAdded.join(', ')})`);
-      Alert.alert('Importación completa', parts.join('. ') + '.');
+
+      const servers = await loadServers();
+      if (servers.length === 0) {
+        Alert.alert('Importación completa', parts.join('. ') + '.');
+        return;
+      }
+      Alert.alert(
+        'Importación completa',
+        `${parts.join('. ')}.\n\n¿Asignar a tus ${servers.length} personaje${servers.length === 1 ? '' : 's'}?`,
+        [
+          { text: 'No', style: 'cancel' },
+          {
+            text: 'Sí, asignar',
+            onPress: async () => {
+              const updated = await assignAllCharactersToPacks([toSave.id]);
+              setPacks(updated);
+            },
+          },
+        ],
+      );
     };
 
     if (!collision) {
@@ -200,8 +220,27 @@ export function TriggersScreen({ navigation }: Props) {
       if (importedSoundCount > 0) parts.push(`${importedSoundCount} sonido${importedSoundCount === 1 ? '' : 's'} añadido${importedSoundCount === 1 ? '' : 's'}`);
       if (missingSoundCount > 0) parts.push(`⚠ ${missingSoundCount} sonido${missingSoundCount === 1 ? '' : 's'} no se pudieron extraer`);
       if (newlyAdded.length > 0) parts.push(`${newlyAdded.length} variable${newlyAdded.length === 1 ? '' : 's'} de usuario declarada${newlyAdded.length === 1 ? '' : 's'}`);
-      parts.push('Las plantillas se importan sin asignación a servidores — reasígnalas en el editor');
-      Alert.alert('Importación completa', parts.join('. ') + '.');
+
+      const servers = await loadServers();
+      if (servers.length === 0 || toAdd.length === 0) {
+        Alert.alert('Importación completa', parts.join('. ') + '.');
+        return;
+      }
+      const addedIds = toAdd.map((p) => p.id);
+      Alert.alert(
+        'Importación completa',
+        `${parts.join('. ')}.\n\n¿Asignar ${toAdd.length === 1 ? 'la plantilla importada' : 'las plantillas importadas'} a tus ${servers.length} personaje${servers.length === 1 ? '' : 's'}?`,
+        [
+          { text: 'No', style: 'cancel' },
+          {
+            text: 'Sí, asignar',
+            onPress: async () => {
+              const updated = await assignAllCharactersToPacks(addedIds);
+              setPacks(updated);
+            },
+          },
+        ],
+      );
     };
 
     if (collisions.length === 0) {
@@ -295,7 +334,7 @@ export function TriggersScreen({ navigation }: Props) {
           <View style={styles.emptyBox}>
             <Text style={styles.emptyTitle}>No hay plantillas todavía</Text>
             <Text style={styles.emptyText}>
-              Una plantilla es un grupo de triggers que puedes asignar a uno o varios servidores.
+              Una plantilla es un grupo de triggers que puedes asignar a uno o varios personajes.
               Crea la primera con el botón de abajo.
             </Text>
           </View>
@@ -307,14 +346,14 @@ export function TriggersScreen({ navigation }: Props) {
             onLongPress={() => navigation.navigate('TriggerEditor', { packId: item.id })}
             accessible={true}
             accessibilityLabel={`Plantilla ${item.name}`}
-            accessibilityHint={`Tap para editar. ${item.triggers.length} triggers, ${item.assignedServerIds.length} servidores asignados.`}
+            accessibilityHint={`Tap para editar. ${item.triggers.length} triggers, ${item.assignedServerIds.length} personajes asignados.`}
           >
             <View style={styles.packInfo}>
               <Text style={styles.packName}>{item.name}</Text>
               <Text style={styles.packMeta}>
                 {item.triggers.length} trigger{item.triggers.length === 1 ? '' : 's'} ·{' '}
-                {item.assignedServerIds.length} servidor
-                {item.assignedServerIds.length === 1 ? '' : 'es'}
+                {item.assignedServerIds.length} personaje
+                {item.assignedServerIds.length === 1 ? '' : 's'}
               </Text>
             </View>
             <View style={styles.packActions}>

@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, GestureConfig } from '../types';
 import { loadSettings, saveSettings, AppSettings, rebuildGestures } from '../storage/settingsStorage';
-import { enableSoundsPackForBlindMode } from '../storage/triggerStorage';
+import { enableSoundsPackForBlindMode, enableCombatePackForBlindMode } from '../storage/triggerStorage';
 import { DEFAULT_SETTINGS } from '../storage/settingsStorage';
 import { blindModeService } from '../services/blindModeService';
 import { logService, ExportRange, slugifyServerName } from '../services/logService';
@@ -14,6 +14,11 @@ import { LogsMaxLines } from '../storage/settingsStorage';
 import { useSounds } from '../contexts/SoundContext';
 import { activeConnection } from '../services/activeConnection';
 import { CANONICAL_PROMPT } from '../services/promptParser';
+import { speechQueue } from '../services/speechQueueService';
+
+const SPEECH_CHAR_DURATION_MIN = 5;
+const SPEECH_CHAR_DURATION_MAX = 150;
+const SPEECH_CHAR_DURATION_STEP = 5;
 
 type Props = {
   navigation: NativeStackScreenProps<RootStackParamList, 'Settings'>['navigation'];
@@ -43,16 +48,24 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
     if (key === 'uiMode') {
       updated = rebuildGestures(updated);
       // When switching to blind mode, auto-enable the seeded MUD sounds pack
-      // and assign it to every saved server (replicates legacy behavior).
+      // and the combat pack, and assign them to every saved server (replicates
+      // legacy behavior — blind users expect feedback sounds out of the box).
       if (value === 'blind') {
         enableSoundsPackForBlindMode().catch((e) =>
           console.warn('[Settings] enableSoundsPackForBlindMode failed:', e),
+        );
+        enableCombatePackForBlindMode().catch((e) =>
+          console.warn('[Settings] enableCombatePackForBlindMode failed:', e),
         );
       }
     }
 
     setSettings(updated);
     saveSettings(updated);
+
+    if (key === 'speechCharDurationMs') {
+      speechQueue.setCharDurationMs(value as number);
+    }
 
     // Trigger callbacks for immediate changes in terminal mode
     if (sourceLocation === 'terminal') {
@@ -367,7 +380,7 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Mantener pantalla encendida</Text>
             <Text style={styles.rowDesc}>
-              Evita que el teléfono se bloquee por inactividad mientras estás conectado al servidor.
+              Evita que el teléfono se bloquee por inactividad mientras estás conectado a un personaje.
             </Text>
           </View>
           <Switch
@@ -376,6 +389,105 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             trackColor={{ false: '#333', true: '#0c0' }}
             thumbColor={settings.keepAwakeEnabled ? '#000' : '#666'}
           />
+        </View>
+
+        {/* Velocidad de lectura */}
+        <View style={styles.row}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Velocidad de lectura</Text>
+            <Text style={styles.rowDesc}>
+              Tiempo estimado por carácter al encolar mensajes para el lector de pantalla. Más bajo = los avisos siguientes empiezan antes (lector rápido). Más alto = más espacio entre avisos (lector lento). Sin efecto si el lector está apagado.
+            </Text>
+          </View>
+          <View style={styles.fontSizeControls}>
+            <TouchableOpacity
+              style={[
+                styles.fontBtn,
+                settings.speechCharDurationMs <= SPEECH_CHAR_DURATION_MIN && styles.fontBtnDisabled,
+              ]}
+              onPress={() => {
+                if (settings.speechCharDurationMs > SPEECH_CHAR_DURATION_MIN) {
+                  updateSetting(
+                    'speechCharDurationMs',
+                    Math.max(SPEECH_CHAR_DURATION_MIN, settings.speechCharDurationMs - SPEECH_CHAR_DURATION_STEP),
+                  );
+                }
+              }}
+              accessible={true}
+              accessibilityLabel="Decrease speech duration"
+              accessibilityRole="button"
+              accessibilityState={{ disabled: settings.speechCharDurationMs <= SPEECH_CHAR_DURATION_MIN }}
+              accessibilityHint={`Current: ${settings.speechCharDurationMs} ms per character. Tap to decrease.`}
+              accessibilityActions={settings.uiMode === 'blind' ? [{ name: 'decrement' }] : undefined}
+              onAccessibilityAction={(event) => {
+                if (
+                  event.nativeEvent.actionName === 'decrement' &&
+                  settings.speechCharDurationMs > SPEECH_CHAR_DURATION_MIN
+                ) {
+                  updateSetting(
+                    'speechCharDurationMs',
+                    Math.max(SPEECH_CHAR_DURATION_MIN, settings.speechCharDurationMs - SPEECH_CHAR_DURATION_STEP),
+                  );
+                }
+              }}
+            >
+              <Text
+                style={[
+                  styles.fontBtnText,
+                  settings.speechCharDurationMs <= SPEECH_CHAR_DURATION_MIN && styles.fontBtnTextDisabled,
+                ]}
+              >
+                −
+              </Text>
+            </TouchableOpacity>
+            <Text
+              style={styles.fontSizeValue}
+              accessible={true}
+              accessibilityLabel={`Speech duration: ${settings.speechCharDurationMs} milliseconds per character`}
+            >
+              {settings.speechCharDurationMs}
+            </Text>
+            <TouchableOpacity
+              style={[
+                styles.fontBtn,
+                settings.speechCharDurationMs >= SPEECH_CHAR_DURATION_MAX && styles.fontBtnDisabled,
+              ]}
+              onPress={() => {
+                if (settings.speechCharDurationMs < SPEECH_CHAR_DURATION_MAX) {
+                  updateSetting(
+                    'speechCharDurationMs',
+                    Math.min(SPEECH_CHAR_DURATION_MAX, settings.speechCharDurationMs + SPEECH_CHAR_DURATION_STEP),
+                  );
+                }
+              }}
+              accessible={true}
+              accessibilityLabel="Increase speech duration"
+              accessibilityRole="button"
+              accessibilityState={{ disabled: settings.speechCharDurationMs >= SPEECH_CHAR_DURATION_MAX }}
+              accessibilityHint={`Current: ${settings.speechCharDurationMs} ms per character. Tap to increase.`}
+              accessibilityActions={settings.uiMode === 'blind' ? [{ name: 'increment' }] : undefined}
+              onAccessibilityAction={(event) => {
+                if (
+                  event.nativeEvent.actionName === 'increment' &&
+                  settings.speechCharDurationMs < SPEECH_CHAR_DURATION_MAX
+                ) {
+                  updateSetting(
+                    'speechCharDurationMs',
+                    Math.min(SPEECH_CHAR_DURATION_MAX, settings.speechCharDurationMs + SPEECH_CHAR_DURATION_STEP),
+                  );
+                }
+              }}
+            >
+              <Text
+                style={[
+                  styles.fontBtnText,
+                  settings.speechCharDurationMs >= SPEECH_CHAR_DURATION_MAX && styles.fontBtnTextDisabled,
+                ]}
+              >
+                +
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Notifications Section */}
@@ -547,7 +659,7 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Plantillas de triggers</Text>
             <Text style={styles.rowDesc}>
-              Configura reglas que reaccionan a líneas del MUD: silenciar, recolorear, sonidos, comandos o notificaciones. Las plantillas se asignan a uno o varios servidores.
+              Configura reglas que reaccionan a líneas del MUD: silenciar, recolorear, sonidos, comandos o notificaciones. Las plantillas se asignan a uno o varios personajes.
             </Text>
           </View>
           <TouchableOpacity
@@ -583,7 +695,7 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Mis variables</Text>
             <Text style={styles.rowDesc}>
-              Variables de usuario que se rellenan desde acciones "Guardar en variable" en triggers. Memoria-only — se borran al cambiar de servidor o reiniciar la app.
+              Variables de usuario que se rellenan desde acciones "Guardar en variable" en triggers. Memoria-only — se borran al cambiar de personaje o reiniciar la app.
             </Text>
           </View>
           <TouchableOpacity

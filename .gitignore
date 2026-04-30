@@ -49,6 +49,10 @@ sentry.properties
 # typescript
 *.tsbuildinfo
 
+# Personal off-store tooling — scripts that bundle copyrighted assets for
+# personal use. Not part of the publishable code.
+/tools/
+
 # Native folders
 # We work in "bare workflow": android/ IS committed to git.
 # NEVER run `expo prebuild` or `expo eject` — would overwrite manual customizations

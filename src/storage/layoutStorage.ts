@@ -15,6 +15,10 @@ export interface LayoutButton {
   fixed?: boolean;
   blindPanel?: 1 | 2; // Panel 1 or 2 for blind mode buttons
   completoPanel?: 1 | 2; // Panel 1 or 2 for completo mode buttons
+  // 'command' (default, unset) sends the payload to the MUD; 'floating'
+  // shows the payload as an in-app floating message (also announced via
+  // TalkBack). Both expand ${var} via expandVars().
+  kind?: 'command' | 'floating';
 }
 
 export interface ButtonLayout {
@@ -84,12 +88,12 @@ export function createDefaultLayout(): ButtonLayout {
 export function createBlindModeLayout(): ButtonLayout {
   // Panel 1: Core controls + directions
   const panel1: LayoutButton[] = [
-    // Row 0: IR, VID, GPS, XP, Salidas
+    // Row 0: IR, VID, ENE, XP, Salidas (las 4 últimas son avisos floating con variables)
     { id: genId(), col: 0, row: 0, label: 'IR', command: 'irsala', color: '#662266', textColor: '#fff', blindPanel: 1, fixed: true },
-    { id: genId(), col: 1, row: 0, label: 'VID', command: 'consultar vida', color: '#336633', textColor: '#fff', blindPanel: 1 },
-    { id: genId(), col: 2, row: 0, label: 'GPS', command: 'consultar energia', color: '#336633', textColor: '#fff', blindPanel: 1 },
-    { id: genId(), col: 3, row: 0, label: 'XP', command: 'xp', color: '#336633', textColor: '#fff', blindPanel: 1 },
-    { id: genId(), col: 4, row: 0, label: 'Salidas', command: 'consultar salidas', color: '#336633', textColor: '#fff', blindPanel: 1 },
+    { id: genId(), col: 1, row: 0, label: 'VID', command: 'Vida: ${vida}/${vida_max}', color: '#336633', textColor: '#fff', blindPanel: 1, kind: 'floating' },
+    { id: genId(), col: 2, row: 0, label: 'ENE', command: 'Energía: ${energia}/${energia_max}', color: '#336633', textColor: '#fff', blindPanel: 1, kind: 'floating' },
+    { id: genId(), col: 3, row: 0, label: 'XP', command: 'XP: ${xp}', color: '#336633', textColor: '#fff', blindPanel: 1, kind: 'floating' },
+    { id: genId(), col: 4, row: 0, label: 'Salidas', command: 'Salidas: ${salidas}', color: '#336633', textColor: '#fff', blindPanel: 1, kind: 'floating' },
     // Row 1: NO, N, NE, AR
     { id: genId(), col: 0, row: 1, label: 'NO', command: 'noroeste', color: '#662222', textColor: '#fff', blindPanel: 1 },
     { id: genId(), col: 1, row: 1, label: 'N', command: 'norte', color: '#662222', textColor: '#fff', blindPanel: 1 },
@@ -106,9 +110,6 @@ export function createBlindModeLayout(): ButtonLayout {
     { id: genId(), col: 2, row: 3, label: 'SE', command: 'sudeste', color: '#662222', textColor: '#fff', blindPanel: 1 },
     { id: genId(), col: 3, row: 3, label: 'DE', command: 'dentro', color: '#663322', textColor: '#fff', blindPanel: 1 },
     { id: genId(), col: 4, row: 3, label: 'FU', command: 'fuera', color: '#663322', textColor: '#fff', blindPanel: 1 },
-    // Enemigo (row 1, col 4) and Daño (row 2, col 4) - below Salidas
-    { id: genId(), col: 4, row: 1, label: 'Enemigo', command: 'enemigos', color: '#336633', textColor: '#fff', blindPanel: 1 },
-    { id: genId(), col: 4, row: 2, label: 'Daño', command: 'ultimo daño', color: '#336633', textColor: '#fff', blindPanel: 1 },
   ];
 
   // Panel 2: Stealth directions with empty customizable buttons

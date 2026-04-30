@@ -169,7 +169,7 @@ export function UserVariablesScreen({ navigation }: Props) {
           </View>
         </View>
         <Text style={styles.subtitle}>
-          Variables del servidor activo. Las declaraciones persisten; los valores son memoria-only.
+          Variables del personaje activo. Las declaraciones persisten; los valores son memoria-only.
         </Text>
       </View>
 

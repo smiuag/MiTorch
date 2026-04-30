@@ -48,9 +48,11 @@ export function ButtonEditModal({
   const [color, setColor] = useState('#662222');
   const [addText, setAddText] = useState(false);
   const [textColor, setTextColor] = useState('#ffffff');
+  const [kind, setKind] = useState<'command' | 'floating'>('command');
 
   // In blind mode: 1 command (simple config), in completo mode: 2 commands
-  const maxCommands = uiMode === 'blind' ? 1 : 2;
+  // Floating buttons only need 1 payload regardless of mode.
+  const maxCommands = kind === 'floating' ? 1 : (uiMode === 'blind' ? 1 : 2);
 
   useEffect(() => {
     if (button) {
@@ -64,12 +66,14 @@ export function ButtonEditModal({
       setColor(button.color);
       setTextColor(button.textColor ?? '#ffffff');
       setAddText(button.addText ?? false);
+      setKind(button.kind ?? 'command');
     } else {
       setLabel('');
       setCommands(Array(maxCommands).fill(''));
       setColor('#662222');
       setTextColor('#ffffff');
       setAddText(false);
+      setKind('command');
     }
   }, [button, visible, uiMode, maxCommands]);
 
@@ -85,8 +89,12 @@ export function ButtonEditModal({
       command: nonEmptyCommands[0] || '',
       color,
       textColor,
-      addText,
-      alternativeCommands: nonEmptyCommands.length > 1 ? nonEmptyCommands.slice(1) : undefined,
+      // Floating buttons never inject text into the input or carry alternatives.
+      addText: kind === 'floating' ? false : addText,
+      alternativeCommands: kind === 'floating' || nonEmptyCommands.length <= 1
+        ? undefined
+        : nonEmptyCommands.slice(1),
+      kind,
       // Preserve fixed and locked flags from original button
       fixed: button?.fixed,
       locked: button?.locked,
@@ -115,10 +123,38 @@ export function ButtonEditModal({
               accessibilityHint="Texto corto que se muestra en el botón"
             />
 
-            <Text style={styles.label}>Comando</Text>
-            <Text style={styles.hint}>{uiMode === 'blind'
-              ? 'Comando que se ejecuta al pulsar el botón'
-              : 'El primero se ejecuta al pulsar. El segundo aparece como alternativa.'
+            <Text style={styles.label}>Tipo</Text>
+            <View style={styles.kindRow}>
+              <TouchableOpacity
+                style={[styles.kindOption, kind === 'command' && styles.kindOptionActive]}
+                onPress={() => setKind('command')}
+                accessible={true}
+                accessibilityRole="radio"
+                accessibilityLabel="Comando"
+                accessibilityHint="El botón envía el comando al MUD"
+                accessibilityState={{ selected: kind === 'command' }}
+              >
+                <Text style={[styles.kindOptionText, kind === 'command' && styles.kindOptionTextActive]}>Comando</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.kindOption, kind === 'floating' && styles.kindOptionActive]}
+                onPress={() => setKind('floating')}
+                accessible={true}
+                accessibilityRole="radio"
+                accessibilityLabel="Aviso"
+                accessibilityHint="El botón muestra un mensaje flotante en pantalla"
+                accessibilityState={{ selected: kind === 'floating' }}
+              >
+                <Text style={[styles.kindOptionText, kind === 'floating' && styles.kindOptionTextActive]}>Aviso</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.label}>{kind === 'floating' ? 'Mensaje' : 'Comando'}</Text>
+            <Text style={styles.hint}>{kind === 'floating'
+              ? 'Texto que se muestra al pulsar. Puedes usar variables: ${vida}, ${energia}, ${xp}, ${salidas}…'
+              : (uiMode === 'blind'
+                ? 'Comando que se ejecuta al pulsar. Variables disponibles: ${vida}, ${energia}…'
+                : 'El primero se ejecuta al pulsar. El segundo aparece como alternativa. Variables disponibles: ${vida}, ${energia}…')
             }</Text>
 
             {commands.map((cmd, idx) => (
@@ -166,7 +202,7 @@ export function ButtonEditModal({
               ))}
             </View>
 
-            {uiMode !== 'blind' && (
+            {uiMode !== 'blind' && kind === 'command' && (
               <TouchableOpacity
                 style={styles.checkboxRow}
                 onPress={() => setAddText(!addText)}
@@ -323,6 +359,32 @@ const styles = StyleSheet.create({
     color: '#888',
     fontStyle: 'italic',
     marginBottom: 10,
+  },
+  kindRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 4,
+  },
+  kindOption: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 6,
+    backgroundColor: '#0f0f0f',
+    borderWidth: 2,
+    borderColor: '#333',
+    alignItems: 'center',
+  },
+  kindOptionActive: {
+    backgroundColor: '#3399cc',
+    borderColor: '#55bbff',
+  },
+  kindOptionText: {
+    color: '#888',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  kindOptionTextActive: {
+    color: '#fff',
   },
   colorGrid: {
     flexDirection: 'row',

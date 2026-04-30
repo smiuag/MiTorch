@@ -1,4 +1,7 @@
 export interface PlayerVariables {
+  // Static per-character: pulled from ServerProfile.username at session start.
+  // Does not change at runtime; useful for ${personaje} mention triggers.
+  playerName: string;
   playerClass: string;
   playerLevel: number;
   playerHP: number;
@@ -26,6 +29,7 @@ export interface PlayerVariables {
 }
 
 const DEFAULTS: PlayerVariables = {
+  playerName: '',
   playerClass: '',
   playerLevel: 0,
   playerHP: 0,
@@ -104,6 +108,11 @@ class PlayerStatsService {
   reset() {
     this.playerVariables = { ...DEFAULTS };
     this.prevValues = { ...DEFAULTS };
+  }
+
+  setPlayerName(name: string) {
+    this.playerVariables = { ...this.playerVariables, playerName: name };
+    this.prevValues = { ...this.prevValues, playerName: name };
   }
 }
 

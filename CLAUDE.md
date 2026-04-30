@@ -637,6 +637,8 @@ HECHO (Fase 2): subir sonidos custom desde el móvil para usar en `play_sound`. 
 
 HECHO (post-Fase 2): migración de los sonidos auto-detectados a la infraestructura de triggers. Plantilla seeded "Sonidos del MUD" con id estable `pack_seeded_sounds` (`src/storage/triggerStorage.ts:createSoundsPack`) — 24 triggers en cajas (cero modo experto). Sembrada con un `SOUNDS_SEEDED_KEY` separado del seed key del pack original, por lo que usuarios existentes la reciben en la próxima ejecución sin perder sus packs propios. Decisiones cerradas: (1) toggle global "Usar sonidos" se mantiene como kill-switch — el side-effect `play_sound` se gatea en `!silentModeEnabledRef.current` (que está enlazado al setting); (2) auto-enable en blind mode se replica con `enableSoundsPackForBlindMode()` que se llama desde `SettingsScreen.updateSetting` cuando `uiMode → 'blind'` — encuentra el pack por id estable, fuerza `enabled=true` en todos sus triggers y añade todos los servidores guardados a `assignedServerIds`; (3) preview ya cayó como parte de Fase 2 (▶ en el picker). Cambio técnico hecho: `triggerEngine.process()` ahora corre ANTES del early-return de blind mode en `TerminalScreen.processingAndAddLine`, y los side-effects (sound/send/notify/floating) se disparan incondicionalmente — solo `gag` corta todo. Eliminados: `src/config/soundPatterns.json`, `src/services/soundService.ts`, `src/services/soundConfigService.ts`, `SoundContext.detectSound`, `SoundContext.patterns`, `AppSettings.enabledSounds`, `rebuildSounds()`. Settings UI ya no tiene el modal de sonidos individuales — apunta al usuario a Triggers → "Sonidos del MUD". `AVAILABLE_SOUNDS` se mantiene en `settingsStorage.ts` como única fuente de verdad para el picker built-in del editor de triggers. Notas conocidas: si una plantilla del usuario tenía `play_sound` con bare path (formato pre-Fase 2), sigue funcionando (el `playSound` lo trata como builtin); las nuevas guardan con prefijo `builtin:`.
 
+HECHO (2026-04-29): plantilla seeded **"Combate completo"** con id estable `pack_seeded_combate` (`src/storage/triggerStorage.ts:createCombatePack`) — 84 triggers en modo experto (regex raw) traducidos del addon CMUD `blind/Combate.set` de Rhomdur. Sembrada con `COMBATE_SEEDED_KEY` separado para que usuarios existentes la reciban en próxima ejecución sin tocar sus packs. Decisiones cerradas con el usuario: (1) **abreviar sonidos al máximo** — los ~50 sonidos distintos del addon original (uno por tipo de daño, uno por ciudad, etc.) se colapsan a 9 categorías reusables: `golpe-lanzas`/`golpe-recibes` (catchall por lado, marcador `[#]`/`[*]`), `muerte-propia`/`muerte-otro`, `hemorragia`/`cicatrizar`, `incapacitado` (stun + dormir + miedo huir), `alerta` (genérico de eventos importantes — ataques a 13 ciudades distintas todas mapeadas al mismo, peleas iniciar/parar, persecución, miedo resistir, etc.) y el `critico` ya existente del pack "Sonidos del MUD". (2) **Conservar todos los textos** — incluso colapsando a sonidos comunes, cada `#GTrigger` del Combate.set se preserva como entrada explícita en la plantilla, para que el usuario vea/edite/desactive triggers individuales. (3) **Variantes `*4`** del CMUD (random de 4 wav) descartadas — la engine no soporta random; usamos siempre la variante 1. (4) **Lógica `FuncComprobarSujeto`** (aliado vs enemigo) descartada — un solo sonido por evento, sin distinguir. (5) **Auto-enable en blind mode** vía `enableCombatePackForBlindMode()` (helper paralelo a `enableSoundsPackForBlindMode`, comparten implementación interna `enablePackForBlindMode(packId)`). Llamado desde `SettingsScreen.updateSetting` junto con el helper de Sonidos cuando `uiMode → 'blind'`. (6) **Order matters** dentro del pack — first-match-wins: triggers específicos primero (muerte/heridas/armadura/proteger/ciudades/etc.), luego el trigger de crítico anclado a `^(?:\] |> )?[*#] .*críticamente`, luego los catchalls `^(?:\] |> )?[*#] ` con prefijo de prompt opcional. Así "Propinas el golpe mortal" suena como muerte-otro y no como golpe-lanzas, y un kill crítico suena como crítico y no como golpe genérico. Archivos tocados: `src/storage/triggerStorage.ts` (helper `buildRawSoundTrigger` + `createCombatePack` + `enableCombatePackForBlindMode`), `src/storage/settingsStorage.ts` (8 entradas nuevas en `AVAILABLE_SOUNDS`), `src/contexts/SoundContext.tsx` (8 `require()` en `soundModules`), `assets/sounds/combate/` (8 wav nuevos copiados de `C:/proyectos/Claude/VipZhyla/Scripts/sounds/RL/Combate/`), `src/screens/SettingsScreen.tsx` (segunda llamada al cambiar a blind).
+
 DECIDIDO: el tipo `[número]` de las cajas se queda como `(\d+)` — solo dígitos, sin decimales ni separador de miles. Razón: en RdL todos los números del MUD son enteros (vida, energía, oro, XP, nivel). Si surge un MUD que use decimales o comas, se evaluará entonces añadir tipos nuevos `[número decimal]` o `[número con miles]` en lugar de generalizar `[número]` (que perdería predictibilidad).
 
 HECHO (Fase 3): variables del sistema. Implementado el 2026-04-28 siguiendo el plan cerrado en esa misma fecha. Detalle:
@@ -1083,6 +1085,8 @@ Reemplaza el concepto de `ModoJ` (Combate / XP / Idle) de los scripts blind: en 
 
 ##### 6.2 — Expansión de `${var}` en comandos de botones (~30 min)
 
+> **2026-04-29:** ampliado a "tipos de botón + variables" (Comando / Aviso con dropdown). Plan ejecutable detallado en el bloque "Plan en preparación — Tipos de botón + variables (sub-fase 6.2)" abajo. La descripción que sigue se mantiene como referencia del scope original mínimo.
+
 **Hoy**: los botones del `ButtonGrid` mandan `button.command` literal vía `telnetRef.current.send(...)`.
 
 **Cambio**: pasar el comando por un `expandUserVars()` antes del send. Resuelve solo `${name}` desde `userVariablesService.get(name)` (no `$1`, no `$old/$new` — esos solo aplican en contexto de trigger).
@@ -1189,6 +1193,208 @@ Por orden de coste/beneficio. Cada sub-fase es independiente — se puede hacer 
 
 Total Fase 6 completa: ~8-12h de trabajo. Dependiendo de qué se aborde, el pack de "Suite Blind" puede tener diferentes niveles de cobertura.
 
+#### Plan en preparación — Tipos de botón + variables (sub-fase 6.2)
+
+Decidido 2026-04-29 abordar **antes** del resto de Fase 6 y **antes** del plan "Combate básico Panel 2" (que depende de esto). Sustituye al scope original de la sub-fase 6.2 (que era solo expansión `${var}` en `command`) y descarta la convención `>>` para acciones locales en favor de un dropdown explícito en el editor del botón.
+
+**Decisiones cerradas (2026-04-29):**
+- Dos tipos de botón: `'command'` (default — manda al MUD como hoy) y `'floating'` (muestra mensaje flotante local; `pushFloating` ya hace `announceForAccessibility` si TalkBack está activo). Sin `'set_var'` por ahora — se añade si surge caso real (modo combate, marcar objetivo).
+- Dropdown "Tipo: Comando / Aviso" en `ButtonEditModal`, encima del campo principal. El label del input cambia ("Comando" ↔ "Mensaje") según el tipo.
+- Reutilizar el campo `command` existente como **payload** — guarda el comando si `kind === 'command'` o el texto del aviso si `kind === 'floating'`. Sin campos `message`/`payload` nuevos (opción A del 2026-04-29).
+- Soporte de `${variable}` en el payload de **ambos** tipos. Resuelve contra:
+  - System vars (`VARIABLE_SPECS` en `src/utils/variableMap.ts` — `vida`, `vida_max`, `vida_pct`, `energia`, `energia_max`, `energia_pct`, `xp`, `salidas`, `enemigos`, `aliados`, `combatientes`, `en_combate`, etc.).
+  - User vars (`userVariablesService.get(name)`).
+  - Variable no encontrada / sin valor → `""`. Sin sintaxis de default — el usuario escribe el fallback en el texto si lo quiere.
+- Migración trivial: botones existentes sin `kind` se asumen `'command'` en runtime. NO se reescribe el storage al migrar.
+- Eliminamos del seed default de `createBlindModeLayout`: **Daño** (`ultimo daño`) y **Enemigo** (`enemigos`). Los layouts ya guardados de los usuarios NO se tocan — si quieren se los borran a mano desde el editor.
+- Migramos en el seed default a `kind: 'floating'`:
+  - **VID** → `command: 'Vida: ${vida}/${vida_max}'`
+  - **GPS** → relabel a **ENE**, `command: 'Energía: ${energia}/${energia_max}'` (el label "GPS" no representa el contenido)
+  - **XP** → `command: 'XP: ${xp}'`
+  - **Salidas** → `command: 'Salidas: ${salidas}'`
+- Borramos los 6 intercepts hardcoded en `sendCommand` (`TerminalScreen.tsx:1155-1201`): `consultar vida`, `consultar energia`, `consultar salidas`, `xp`, `ultimo daño`, `enemigos`. Los 4 botones que sobreviven (VID/ENE/XP/Salidas) ya no necesitan intercepción especial — son entradas normales del layout.
+
+**Implementación:**
+
+1. **`src/utils/expandVars.ts` (NUEVO)** — `expandVars(template: string): string`. Para cada `${name}`:
+   - Si `name ∈ VARIABLE_SPECS`: resuelve contra `playerStatsService.getCurrentVariables()` (con derivadas `vida_pct`, `energia_pct`, `en_combate` computadas con la lógica de `variableMap.ts`).
+   - Si no: lee `userVariablesService.get(name)`.
+   - No encontrado → `""`.
+   - Plantear extraer y reusar desde `triggerEngine.expandTemplate` (que hoy hace lo mismo para user vars + capturas + `$old`/`$new`); por ahora código separado, refactor diferido si vuelve a duplicarse.
+
+2. **`src/storage/layoutStorage.ts`**:
+   - `LayoutButton` añade `kind?: 'command' | 'floating'` (opcional, default implícito `'command'`).
+   - `createBlindModeLayout()`: aplica los cambios de seed listados arriba (VID/ENE/XP/Salidas como floating, eliminar Daño y Enemigo).
+   - `migrateLayout`: NO toca `kind` — undefined se interpreta en runtime como `'command'`.
+
+3. **`src/components/ButtonGrid.tsx`**:
+   - Nuevo prop `onShowFloating?: (text: string) => void`.
+   - En el `onPress`: si `button.kind === 'floating'` → `onShowFloating?.(button.command)` y return. Si no → flujo actual (`onAddTextButton` o `onSendCommand`).
+   - Mismo dispatch para `accessibilityActions` cuando aplique (botones blind con secondary).
+   - `accessibilityLabel`/`accessibilityHint` mencionan que es aviso para `kind === 'floating'`.
+
+4. **`src/screens/TerminalScreen.tsx`**:
+   - Nueva callback `handleShowFloating(text: string)`: `pushFloating(expandVars(text), 'info', 2000)`.
+   - Pasarla a los dos `<ButtonGrid>` (líneas 1965 y 2283).
+   - En `sendCommand` (línea 1081): tras manejar `__SWITCH_PANEL__` y antes de los intercepts (`irsala`, `locate`, etc.), expandir `command = expandVars(command)`. Permite que `irsala ${objetivo}` y similares funcionen.
+   - Borrar los 6 bloques de intercept en líneas 1155-1201. NOTA: si el usuario teclea `xp` por consola, debe llegar al MUD (era solo el botón XP el que lo interceptaba — ahora el botón muestra floating sin pasar por sendCommand).
+
+5. **`src/components/ButtonEditModal.tsx`**:
+   - Estado nuevo `kind: 'command' | 'floating'` inicializado desde `button.kind ?? 'command'`.
+   - Dropdown / segmented "Tipo: Comando / Aviso" en la cabecera del formulario.
+   - Label del input principal cambia: `"Comando"` si `command`, `"Mensaje"` si `floating`.
+   - Hint debajo: `"Puedes usar variables como \${vida}, \${energia}, \${xp}, \${salidas}..."` (no exhaustivo).
+   - `handleSave` incluye `kind` en el `LayoutButton` que persiste.
+   - En modo `'floating'`: ocultar `addText` y campos secundarios (`alternativeCommands`) — no aplican.
+
+**Casos de prueba mentales:**
+- Botón legacy sin `kind` `{ command: 'norte' }` → ejecuta como comando, manda "norte". ✅
+- Botón nuevo `{ kind: 'command', command: 'atacar ${objetivo}' }` con user var `objetivo='goblin'` → manda "atacar goblin". ✅
+- Botón nuevo `{ kind: 'floating', command: 'Vida: ${vida}/${vida_max}' }` con HP 100/100 → muestra "Vida: 100/100" + announceForAccessibility. ✅
+- Variable no declarada `{ kind: 'floating', command: 'Test ${nope}' }` → muestra "Test ". ✅
+- Comando interceptado mantiene comportamiento: `irsala ${ultimo_destino}` → expande primero, luego entra en el intercept de irsala. ✅
+- Usuario sin prompt canónico aplicado: `${vida}` expande a "0", el botón VID muestra "Vida: 0/0". Comportamiento idéntico al actual.
+
+**Coste estimado:** 1.5-2 h.
+
+**Componentes que se desbloquean tras esto:**
+- "Combate básico Panel 2" (ver plan abajo) — depende de tener tipos de botón y `${var}` en `command` para sus botones de combate.
+- `set_var` como tercer tipo — añadible incrementalmente con un valor más en el dropdown si surge caso real.
+
+#### Plan en preparación — Combate básico Panel 2 (blind mode)
+
+Decidido 2026-04-29 abordar **antes que el resto de Fase 6**: rellenar el Panel 2 del blind mode con un set mínimo viable de botones de combate genérico (sin habilidades de clase). Mantiene el Panel 1 actual (direcciones) intacto.
+
+Este plan se rellena con preguntas/respuestas durante la fase de diseño antes de implementar. Al final servirá como spec ejecutable.
+
+**Componentes del entregable**:
+- Sub-fase **6.2 implementada** vía el plan independiente "Tipos de botón + variables" (ver bloque dedicado arriba) — incluye expansión de `${var}` y dropdown Comando/Aviso. La convención `>>` queda **descartada** en favor del dropdown explícito.
+- Trigger pack seeded "Combate genérico" con captura de heridas y último remitente.
+- User vars auto-declaradas: `objetivo`, `heridas`, `ultimo_remitente` (nombres a confirmar).
+- Botones predefinidos en el Panel 2 del layout blind (`createBlindModeLayout` en `layoutStorage.ts`).
+
+**Preguntas y decisiones cerradas (se rellena conforme avanzamos)**:
+
+_Pendiente de empezar el cuestionario._
+
+**Implementación final (a escribir cuando se ataque)**:
+
+_Por escribir tras cerrar las preguntas._
+
+### HECHO — Sesión 2026-04-30: Distribución por ZIP, ${personaje}, bloqueante, cola de lectura, captura canales, naming personaje, auto-asignación, pack Comunicaciones
+
+Cambios mayúsculos cerrados en una sola sesión, todos productivos. Resumen rápido y luego detalle por bloque.
+
+**Política de distribución de plantillas y sonidos** (regla nueva, aplica de aquí en adelante):
+
+- La APK se distribuye **limpia de plantillas y sonidos por defecto** — ningún `play_sound` apuntando a `builtin:...` que dependa de un wav con derechos de terceros, ningún pack semilla con triggers de un addon ajeno.
+- Las plantillas por defecto (Sonidos del MUD, Combate completo, Comunicaciones, …) viven en un **archivo ZIP separado** (`torchzhyla-defaults.zip` en la raíz del repo de TorchZhyla, fuera de `aljhtar-store/`) que el usuario importa con el botón "Importar" de Triggers. El ZIP usa el formato `torchzhyla-trigger-backup` que ya conoce `importBackupFromZip` (cada sonido referenciado por `custom:<uuid>.<ext>`, con el wav real en `sounds/<uuid>.<ext>`).
+- Razón: derechos. Los wavs originales son de Rhomdur (addon CMUD blind/RL); no podemos redistribuirlos dentro de la APK. El ZIP lo distribuimos aparte (Drive, USB, share por chat) y el usuario decide si lo importa.
+- **Deuda técnica reconocida**: la APK actual TODAVÍA contiene `createSoundsPack()` y `createCombatePack()` en `src/storage/triggerStorage.ts` (que seedan los packs "Sonidos del MUD" y "Combate completo" en primera ejecución) y los wavs `assets/sounds/{combate,eventos,hechizos,bloqueos}/`. Los usuarios actuales que ya tienen los packs seedados los conservan; nuevos paquetes deben ir solo al ZIP. Limpieza pendiente como tarea futura — no urgente porque no rompe nada y los wavs presentes ya están en uso por packs vivos. Cuando se haga, mantener compatibilidad: usuarios con `Comm.MensajeCanal` en sus packs personales que apunten a `builtin:combate/...` perderían sonido (tendrán que reasignar).
+
+**Bloques de cambios:**
+
+1. **Variable `${personaje}`** (sistema, nivel 2)
+   - `PlayerVariables.playerName: string` añadido (default `''`). Se rellena desde `ServerProfile.username` en `TerminalScreen.useEffect [server.id, server.username]` vía `playerStatsService.setPlayerName(server.username ?? '')`.
+   - Registrada como variable del sistema en `VARIABLE_SPECS` (nombre `personaje`, kind `string`, mapped a `playerName`).
+   - **Expansión en templates** (`expandVars`): ya funciona porque pasa por `playerStatsService.getPlayerVariables()` para todas las VARIABLE_SPECS. Botones, action text de `floating`/`notify`/`send`/`replace`/`set_var`.
+   - **Expansión en patrones regex** (nuevo, "nivel 2"): `triggerEngine.setActiveTriggers` hace un pre-procesado del pattern antes de compilar. Si encuentra el literal `${personaje}` en el regex, lo sustituye por el nombre regex-escapado. Si el campo "Personaje" del perfil está vacío, sustituye por `(?!)` (jamás matchea). Esto desbloquea triggers tipo "menciónan tu nombre": pattern `\b\${personaje}\b` compila a `\bManolo\b` para Manolo y nunca dispara para personajes sin nick.
+   - El recompile sucede al cambiar de server (que es cuando playerName puede cambiar) — el `useEffect` de TerminalScreen ya recarga triggers.
+
+2. **Triggers no bloqueantes** (`Trigger.blocking?: boolean`, default `true`)
+   - Nuevo campo opcional. Undefined ≡ true ≡ comportamiento previo (first-match-wins, cadena cortada).
+   - Cuando `blocking === false`: el trigger matchea, dispara solo sus side-effects (`play_sound`, `send`, `notify`, `floating`, `set_var`) y **el bucle de evaluación CONTINÚA**. Las acciones de mutación (`gag`, `replace`, `color`) se ignoran en triggers no bloqueantes — permitir que varias compitan por mutar la misma línea lleva a estado de display indefinido.
+   - El primer trigger bloqueante que matchee aplica TODAS sus acciones (incluyendo mutaciones) y rompe el bucle.
+   - Side-effects se acumulan: con `[Bando]` matcheado por mención (no bloqueante) + Canal Bando (bloqueante), `TerminalScreen` recibe 2 entradas en `sideEffects` y dispara los 2 sonidos. Como `playSound` arranca cada wav en su propia instancia de `Audio.Sound`, los sonidos se **superponen** (no se encadenan en el tiempo).
+   - UI: Switch nuevo "Bloqueante" en `TriggerEditModal` con default ON, hint explicando la cadena.
+   - El bucle del motor reescrito en `triggerEngine.process` para acumular `sideEffects`/`mutatedSpans`/`gagged` a través de iteraciones, en lugar del retorno temprano por match.
+
+3. **Cola de lectura para TalkBack** (`speechQueueService`)
+   - Antes: cada `AccessibilityInfo.announceForAccessibility(text)` interrumpía el anterior — TalkBack no encola, atropella.
+   - Ahora: singleton `src/services/speechQueueService.ts` con cola FIFO + timer estimado. `enqueue(text)` mete en cola; el primer mensaje suena, el siguiente espera `Math.max(800, len * charDurationMs)` ms y suena después. Cap 10 mensajes (los más antiguos se descartan en ráfagas). `clear()` al desconectarse el screen reader.
+   - Setting nuevo `AppSettings.speechCharDurationMs` (default 20). Configurable en Settings → "Velocidad de lectura" con +/- (botones accesibles, no slider). Rango 5–150 ms/char, paso 5.
+   - 8 sitios reemplazados (`TerminalScreen.tsx`, `blindModeService.ts`, `FloatingMessagesContext.tsx`). La única `announceForAccessibility` real que queda es la del propio servicio.
+   - Floor 800 ms para que mensajes muy cortos como "Panel 2" se escuchen antes del siguiente. Si el screen reader está apagado, `enqueue` es no-op.
+
+4. **Captura de canales por texto plano** (estado: implementado, pendiente verificar en uso real)
+   - Problema: con la opción del MUD `consentir accesibilidad on`, RdL silencia los pushes de `Comm.MensajeCanal` y `Comm.Canales` por GMCP. El modal de canales queda vacío y no recibe la lista de canales activos.
+   - Fallback en `TerminalScreen`: máquina de estados que se arma cuando el usuario teclea `canales`. Estados `idle → waiting_for_header → capturing → idle`. Detecta header `^Tus canales son:?$`, parsea cada línea siguiente con regex `^\s+(\S+)(?:\s+\[[^\]]+\])?[\s\.]+(On|Off)\s*$`, acumula los canales con `On`, finaliza con `setChannels(...)` cuando llega una línea no-canal. Timeout de 5 s para abortar si nunca llega el header.
+   - Hooks: arm en `sendCommand` cuando `command.trim().toLowerCase() === 'canales'`. Procesa en `processingAndAddLine` justo después de `stripAnsi(text)`, sin gaguear (el usuario ve la respuesta normal en terminal).
+   - **Sigue habiendo logs `[CH_CAP]` temporales en producción** — diagnóstico para detectar fallos de captura. Si el feature funciona estable, quitarlos.
+   - **NO captura mensajes de canal** (los mensajes en tiempo real siguen llegando solo por GMCP). Solo recupera el listado estático para que el modal sepa qué pestañas mostrar.
+
+5. **Auto-asignación de plantillas a personajes nuevos** (`autoAssignToNew?: boolean`)
+   - Nuevo campo opcional en `TriggerPack`. Undefined ≡ true (default ON, packs nuevos auto-asignan).
+   - Helpers nuevos en `triggerStorage.ts`: `autoAssignNewCharacterToPacks(serverId)`, `assignServerToPacks`, `assignAllCharactersToPacks`.
+   - Hook al crear/duplicar personaje en `ServerListScreen.handleSave`/`handleDuplicate`: llama `autoAssignNewCharacterToPacks(newServerId)` que añade el id a `assignedServerIds` de cada pack con `autoAssignToNew !== false`.
+   - Toggle en `TriggerEditorScreen` modal "Asignar a personajes" — Switch "Auto-asignar a nuevos personajes" con default ON. Solo afecta a futuros personajes; las asignaciones actuales no se tocan al cambiarlo.
+   - Diálogo en import (`TriggersScreen`): tras importar 1 o varios packs, si hay personajes guardados, alert "Importación completa" combinado con pregunta "¿Asignar a tus N personajes?" (Sí/No). "Sí" llama `assignAllCharactersToPacks([packIds])` para los packs recién añadidos/sustituidos. "Saltado" no se asigna.
+   - Migración: packs ya guardados sin el campo se interpretan como `autoAssignToNew=true`; sus `assignedServerIds` no se tocan hasta que el usuario edite el pack y guarde.
+
+6. **Naming "personaje" en UI** (rename UI-only)
+   - "Servidor" → "Personaje" en strings visibles del usuario:
+     - `ServerListScreen`: "Servidores" → "Personajes" (header, botón añadir, vacío, hints, accessibility).
+     - `TriggersScreen`: "X servidores asignados" → "X personajes asignados".
+     - `TriggerEditorScreen`: "Servidores asignados" → "Personajes asignados".
+     - `TriggerEditModal`: errores de variable triggers → "este personaje".
+     - `SettingsScreen`: keep awake desc, descripciones de plantillas/variables.
+     - `UserVariablesScreen`: "se borran al cambiar de servidor" → "personaje".
+   - Mantenidos como técnicos:
+     - "Host del servidor", "Puerto del servidor" (host/port son técnicos del TCP).
+     - "Error de conexión al servidor", "Conectando al servidor" (mensajes de conectividad TCP).
+     - Dropdown de logs HTML "Todos los servidores" (filtro técnico por server-key).
+     - Identificadores en código: `ServerProfile`, `serverId`, `loadServers`, etc. (NO se renombran).
+     - Logs `[server-key]` en `logService` (compat con backups previos).
+   - CLAUDE.md sigue usando "server" en docs internas — solo es UI-facing.
+
+7. **Pack "Comunicaciones"** (añadido al ZIP, NO al APK)
+   - 39 triggers cubriendo telepatías, sala, gritar, canales (bando/interbando/ciudadanía/chat/gremio/familia/rol/varios/especiales/grupo/omiq/info/diplomacia/emoción), activación/desactivación de canales, mail, noticias, infiel.
+   - 30 wavs nuevos (de `C:/proyectos/Claude/VipZhyla/Scripts/sounds/RL/Comunicaciones/`) empaquetados en `sounds/<uuid>.wav` dentro del ZIP.
+   - Trigger "Mención por nombre" en posición 0 con pattern `\b\${personaje}\b` y `blocking: false`. Marcado como no bloqueante intencionalmente para que cuando el nick del jugador aparezca en cualquier canal se oiga `mencion.wav` ENCIMA del sonido del canal correspondiente.
+   - Trigger "Canal Avatar" también `blocking: false` (más bien como prueba de fuego del feature; en práctica ningún otro trigger del pack matchea `[Avatar]` así que no hay efecto observable).
+   - 4 triggers de telepatía entrante (`^(.+?) te dice/exclama/pregunta: ` y variante histórica) capturan al remitente en grupo `$1` y guardan en `set_var ultimo_remitente = $1` para botones tipo `t ${ultimo_remitente} ...`.
+   - Pack tiene `autoAssignToNew: true` para que se asigne a personajes nuevos al crearse.
+   - Generador del ZIP: scripts ad-hoc en `C:/Users/diego/AppData/Local/Temp/` usando `jszip` (misma lib que la app). El ZIP final queda en `C:/proyectos/Claude/TorchZhyla/torchzhyla-defaults.zip`.
+
+**Schema final agregado** (`src/types/index.ts`):
+```typescript
+interface Trigger {
+  // ... campos existentes ...
+  blocking?: boolean;  // undefined ≡ true ≡ first-match-wins clásico
+}
+interface TriggerPack {
+  // ... campos existentes ...
+  autoAssignToNew?: boolean;  // undefined ≡ true ≡ aplica a personajes nuevos
+}
+interface PlayerVariables {
+  playerName: string;  // del ServerProfile.username, usado por ${personaje}
+  // ...
+}
+interface AppSettings {
+  // ...
+  speechCharDurationMs: number;  // default 20
+}
+```
+
+**Archivos nuevos**:
+- `src/services/speechQueueService.ts` — cola para TalkBack.
+- `src/utils/expandVars.ts` — extracción del helper `${var}` para reutilizar fuera del engine.
+
+**Archivos significativamente modificados**:
+- `src/services/triggerEngine.ts` — pre-proceso de `${personaje}` + reescritura del bucle process para soportar `blocking`.
+- `src/storage/triggerStorage.ts` — helpers `autoAssignNewCharacterToPacks` / `assignServerToPacks` / `assignAllCharactersToPacks`.
+- `src/screens/ServerListScreen.tsx` — hook auto-asignación + naming personaje + autoAssignNew en duplicar.
+- `src/screens/TriggersScreen.tsx` — diálogo "asignar a todos" en imports.
+- `src/screens/TriggerEditorScreen.tsx` — toggle autoAssignToNew + rename a personajes.
+- `src/screens/TerminalScreen.tsx` — channel capture state machine + setPlayerName + speechQueue + naming.
+- `src/components/TriggerEditModal.tsx` — switch Bloqueante + naming.
+
+**Distribución del ZIP**:
+- Path canónico: `C:\proyectos\Claude\TorchZhyla\torchzhyla-defaults.zip` (raíz del repo de TorchZhyla, NO dentro de `aljhtar-store/`).
+- Push al móvil para pruebas: `adb push <path> /sdcard/Download/torchzhyla-defaults.zip`.
+- Importable con Triggers → Importar → seleccionar el archivo. Formato `torchzhyla-trigger-backup` v1.
+- Cuando se modifica el contenido del ZIP, regenerarlo con un script Node ad-hoc usando `jszip`. PowerShell `Compress-Archive` NO sirve — escribe paths con `\` que rompen el importador (jszip valida `/`).
+
 ### Decisiones pendientes
 
 - **Orden entre plantillas** cuando un server tiene varias asignadas. Default actual: alfabético por nombre de plantilla. Reordenación manual entre plantillas se difiere a Fase 4 si hace falta. (La reordenación **dentro** de una plantilla ya está implementada con flechas ▲/▼.)
@@ -1199,6 +1405,13 @@ Total Fase 6 completa: ~8-12h de trabajo. Dependiendo de qué se aborde, el pack
 
 - **Revisar botones de modo blind de consultar vida, energía...**
 - **Backup completo de la app** — exportar/importar TODA la configuración del usuario (servers, layouts de botones, plantillas de triggers, settings, sonidos personalizados) en un único archivo, para cambio de móvil o backup defensivo. Es un feature distinto del export/import de triggers (Fase 4 del sistema de triggers, que es solo para plantillas). Requiere decidir formato (zip con manifest JSON + carpetas de assets, probablemente), versionado del schema, política de merge vs reemplazo en el import, y qué pasa con archivos custom (sonidos) si el zip los trae.
+- **Ambientación por zona del mapa** (~5 h con modo categoría regex incluido). Loop de música de fondo que cambia con la zona en la que está el personaje. Diseño cerrado:
+  - **Datos**: el mapa (`src/assets/map-reinos.json`) tiene 28.816 salas en 1.517 zonas distintas (zona = prefijo antes de `:` en el nombre de la sala — `Bosque de Urlom:`, `Tundra:`, `Anduar:`, etc.). 49 zonas grandes (≥100 salas) cubren el 80% del tiempo de juego; el resto son edificios sueltos o áreas pequeñas.
+  - **Estrategia "modo categoría"**: 6-8 categorías temáticas (`bosque`, `desierto`, `subterraneo`, `frio`, `ciudad`, `pantano`, `volcan`, `mar`) con reglas regex que matchean nombres de zona (`bosque|selva|arboleda` → `bosque`, `cueva|gruta|mina|galería|alcantarilla|cloaca|caverna` → `subterraneo`, etc.). Cubre ~80% del mapa con 8 wavs en lugar de 1.517. Override per-zona disponible para casos sueltos.
+  - **Implementación**: `AmbientPlayer` service (singleton, una `Audio.Sound` global con `setIsLoopingAsync(true)` y crossfade manual a 200 ms vía `setVolumeAsync` escalonado). Hook al cambio de `currentRoom` en `MapService` con debounce 500 ms. Settings → "Ambientación": toggle global, slider de volumen (default 0.4), lista de zonas detectadas + lista de reglas regex, picker de sonido custom por entrada (reusa el de "Mis sonidos"). Persistencia en `aljhtar_ambient_mappings`. Stop al desconectar / perder localización.
+  - **Wavs**: el usuario los aporta — Pixabay (licencia royalty-free sin atribución), OpenGameArt (CC0 / CC-BY) y Kevin MacLeod (CC-BY) tienen catálogos suficientes para 6-8 loops temáticos de calidad. ~15-20 MB total. **Cero copyrighted en el repo** — siguen el mismo flow opt-in que los wavs de combate via "Mis sonidos" o ZIP personal de defaults.
+  - **Fuera de scope inicial**: reproducción en background con pantalla bloqueada (+1.5-2 h, requiere `staysActiveInBackground: true` y resolver conflicto con `interruptionModeAndroid: 1`), ducking automático del ambiente cuando suena un trigger (+1 h), gapless loop con crossfade interno al final del wav (+1 h, mejor solucionar dándole al usuario loops bien preparados).
+  - **Decisión pospuesta**: si el ambient tiene que sonar dentro del MUD aunque la app esté en segundo plano. La filosofía actual de la app permite uso en background pero el ambient añade fricción (notificaciones que paran el audio, batería, etc.). Decidir cuando se aborde.
 
 ## Desarrollos por ahora no necesarios
 

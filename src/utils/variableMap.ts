@@ -42,6 +42,7 @@ export const VARIABLE_SPECS: VariableSpec[] = [
   { name: 'carga', kind: 'number', field: 'carry', description: 'Carga actual' },
 
   // Texto
+  { name: 'personaje', kind: 'string', field: 'playerName', description: 'Nombre del personaje activo (campo "Personaje" del perfil)' },
   { name: 'salidas', kind: 'string', field: 'roomExits', description: 'Salidas visibles desde la sala' },
   { name: 'enemigos', kind: 'string', field: 'roomEnemies', description: 'Enemigos en la sala (los que puedes matar)' },
   { name: 'aliados', kind: 'string', field: 'roomAllies', description: 'Aliados en la sala (PK colaboradores)' },

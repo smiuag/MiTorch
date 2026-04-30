@@ -133,6 +133,11 @@ export function TriggerEditorScreen({ route, navigation }: Props) {
     persist({ ...pack, assignedServerIds: next });
   };
 
+  const handleToggleAutoAssign = (value: boolean) => {
+    if (!pack) return;
+    persist({ ...pack, autoAssignToNew: value });
+  };
+
   if (!pack) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
@@ -156,7 +161,7 @@ export function TriggerEditorScreen({ route, navigation }: Props) {
         />
         <TouchableOpacity style={styles.assignBtn} onPress={() => setAssignVisible(true)}>
           <Text style={styles.assignBtnText}>
-            Servidores ({pack.assignedServerIds.length})
+            Personajes ({pack.assignedServerIds.length})
           </Text>
         </TouchableOpacity>
       </View>
@@ -287,12 +292,26 @@ export function TriggerEditorScreen({ route, navigation }: Props) {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Asignar a servidores</Text>
+            <Text style={styles.modalTitle}>Asignar a personajes</Text>
             <Text style={styles.modalSubtitle}>
-              Esta plantilla se aplicará a los servidores marcados.
+              Esta plantilla se aplicará a los personajes marcados.
             </Text>
+            <View style={styles.autoAssignRow}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={styles.autoAssignLabel}>Auto-asignar a nuevos personajes</Text>
+                <Text style={styles.autoAssignHint}>
+                  Si está activo, cualquier personaje que crees a partir de ahora recibirá esta plantilla automáticamente. No afecta a los actuales.
+                </Text>
+              </View>
+              <Switch
+                value={pack.autoAssignToNew !== false}
+                onValueChange={handleToggleAutoAssign}
+                trackColor={{ false: '#333', true: '#0c0' }}
+                thumbColor={pack.autoAssignToNew !== false ? '#000' : '#666'}
+              />
+            </View>
             {servers.length === 0 ? (
-              <Text style={styles.emptyText}>No tienes servidores guardados.</Text>
+              <Text style={styles.emptyText}>No tienes personajes guardados.</Text>
             ) : (
               <FlatList
                 data={servers}
@@ -508,6 +527,30 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#2a2a2a',
+  },
+  autoAssignRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0a2a0a',
+    borderWidth: 1,
+    borderColor: '#1a4a1a',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  autoAssignLabel: {
+    color: '#0c0',
+    fontSize: 13,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+    marginBottom: 4,
+  },
+  autoAssignHint: {
+    color: '#888',
+    fontSize: 11,
+    fontFamily: 'monospace',
+    lineHeight: 14,
   },
   checkbox: {
     width: 22,

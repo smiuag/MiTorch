@@ -18,6 +18,7 @@ export interface AppSettings {
   notificationsEnabled: boolean;
   logsEnabled: boolean;
   logsMaxLines: LogsMaxLines;
+  speechCharDurationMs: number;
 }
 
 export const AVAILABLE_SOUNDS = {
@@ -36,6 +37,17 @@ export const AVAILABLE_SOUNDS = {
   'combate/objetivo-perdido.wav': 'Objetivo perdido',
   'combate/interrumpido.wav': 'Interrumpido',
   'combate/critico.wav': 'Crítico',
+  'combate/golpe-lanzas.wav': 'Golpe que lanzas',
+  'combate/golpe-recibes.wav': 'Golpe que recibes',
+  'combate/muerte-propia.wav': 'Muerte propia',
+  'combate/muerte-otro.wav': 'Muerte de otro',
+  'combate/hemorragia.wav': 'Hemorragia',
+  'combate/cicatrizar.wav': 'Cicatrizar',
+  'combate/incapacitado.wav': 'Incapacitado',
+  'combate/alerta.wav': 'Alerta',
+  'combate/alerta-vida-50.wav': 'Alerta vida 50%',
+  'combate/alerta-vida-30.wav': 'Alerta vida 30%',
+  'combate/alerta-vida-10.wav': 'Alerta vida 10%',
   'eventos/muerte.wav': 'Muerte',
   'eventos/victoria.wav': 'Victoria',
   'eventos/xp.wav': 'XP',
@@ -54,6 +66,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: false,
   logsEnabled: false,
   logsMaxLines: 20000,
+  speechCharDurationMs: 20,
   gestures: [
     { type: 'doubletap', enabled: true, command: 'responder ', opensKeyboard: true },
     { type: 'swipe_up', enabled: true, command: 'norte', opensKeyboard: false },

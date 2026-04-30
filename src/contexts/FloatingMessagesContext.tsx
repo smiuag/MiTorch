@@ -1,17 +1,27 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo } from 'react-native';
 import { FloatingMessageLevel } from '../types';
+import { speechQueue } from '../services/speechQueueService';
 
 export interface FloatingMessage {
   id: number;
   text: string;
   level: FloatingMessageLevel;
   leaving: boolean;
+  // Optional per-message overrides — when set, take precedence over the
+  // level palette in the renderer. Either or both may be present.
+  fg?: string;
+  bg?: string;
+}
+
+export interface FloatingColors {
+  fg?: string;
+  bg?: string;
 }
 
 interface ContextValue {
   messages: FloatingMessage[];
-  push: (text: string, level?: FloatingMessageLevel, durationMs?: number) => void;
+  push: (text: string, level?: FloatingMessageLevel, durationMs?: number, colors?: FloatingColors) => void;
 }
 
 const Ctx = createContext<ContextValue | null>(null);
@@ -40,13 +50,13 @@ export function FloatingMessagesProvider({ children }: { children: React.ReactNo
   }, []);
 
   const push = useCallback(
-    (text: string, level: FloatingMessageLevel = 'info', durationMs: number = DEFAULT_DURATION_MS) => {
+    (text: string, level: FloatingMessageLevel = 'info', durationMs: number = DEFAULT_DURATION_MS, colors?: FloatingColors) => {
       const trimmed = text?.trim();
       if (!trimmed) return;
       const id = nextId++;
-      setMessages((prev) => [...prev, { id, text: trimmed, level, leaving: false }]);
+      setMessages((prev) => [...prev, { id, text: trimmed, level, leaving: false, fg: colors?.fg, bg: colors?.bg }]);
       if (screenReaderEnabledRef.current) {
-        AccessibilityInfo.announceForAccessibility(trimmed);
+        speechQueue.enqueue(trimmed);
       }
 
       // Two-phase removal: flag `leaving` first so FloatingItem can fade out,

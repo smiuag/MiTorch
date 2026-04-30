@@ -71,15 +71,27 @@ const VARIABLE_EVENTS: Array<{ key: VariableEvent; label: string; needsValue: bo
   { key: 'crosses_above', label: 'sube de', needsValue: true, numericOnly: true, hint: 'Estaba ≤N, ahora >N (solo números)' },
 ];
 
-const FLOATING_LEVELS: Array<{ key: 'info' | 'success' | 'error'; label: string; color: string }> = [
+const FLOATING_LEVELS: Array<{ key: 'info' | 'success' | 'warning' | 'error'; label: string; color: string }> = [
   { key: 'info', label: 'Info (azul)', color: '#223366' },
   { key: 'success', label: 'Éxito (verde)', color: '#0c0' },
+  { key: 'warning', label: 'Aviso (ámbar)', color: '#cc8800' },
   { key: 'error', label: 'Error (rojo)', color: '#c00' },
 ];
 
 const COLOR_PRESETS = [
   '#ff5555', '#ff9955', '#ffff55', '#55ff55', '#55ffff', '#5599ff', '#dd55dd',
   '#ffffff', '#aaaaaa', '#666666',
+];
+
+// Wider palette used by the per-floating fg/bg pickers. Includes both light
+// and dark options so the user can hit good contrast pairs without picking
+// from an unbounded color wheel. Hex strings are matched case-insensitively
+// when comparing the current selection.
+const FLOATING_COLOR_PRESETS = [
+  '#000000', '#222222', '#444444', '#888888', '#cccccc', '#ffffff',
+  '#cc0000', '#ff5555', '#cc8800', '#ffaa33', '#ffff55', '#ddcc55',
+  '#00aa00', '#55cc55', '#00aaaa', '#55cccc', '#223366', '#3366cc',
+  '#5599ff', '#aa55cc', '#dd55dd', '#cc5588',
 ];
 
 interface Props {
@@ -170,6 +182,7 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
   const [varEvent, setVarEvent] = useState<VariableEvent>(getInitialVarEvent(initialTrigger));
   const [varValue, setVarValue] = useState<string>(getInitialVarValue(initialTrigger));
   const [varPickerVisible, setVarPickerVisible] = useState(false);
+  const [blocking, setBlocking] = useState<boolean>(initialTrigger.blocking !== false);
   const [actions, setActions] = useState<TriggerAction[]>(initialTrigger.actions);
   const [testInput, setTestInput] = useState('');
   const [actionPickerVisible, setActionPickerVisible] = useState(false);
@@ -210,6 +223,7 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
       setVarName(getInitialVarName(initialTrigger));
       setVarEvent(getInitialVarEvent(initialTrigger));
       setVarValue(getInitialVarValue(initialTrigger));
+      setBlocking(initialTrigger.blocking !== false);
       setActions(initialTrigger.actions);
       setTestInput('');
       refreshCustomSounds();
@@ -451,6 +465,7 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
         type: 'variable',
         source: finalSource,
         actions,
+        blocking,
       });
       return;
     }
@@ -481,6 +496,7 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
       type: inferType(finalActions),
       source: finalSource,
       actions: finalActions,
+      blocking,
     });
   };
 
@@ -507,7 +523,7 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
       if (!userVariablesService.isDeclared(a.varName)) {
         Alert.alert(
           'Variable no declarada',
-          `La variable "${a.varName}" no está declarada en este servidor. Créala desde Settings → Mis variables y selecciónala aquí.`,
+          `La variable "${a.varName}" no está declarada en este personaje. Créala desde Settings → Mis variables y selecciónala aquí.`,
         );
         return;
       }
@@ -580,13 +596,25 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
       */}
       <SafeAreaView key={layoutNonce} style={styles.container} edges={['top', 'left', 'right']}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={handleCancel} style={styles.headerBtn}>
+          <TouchableOpacity
+            onPress={handleCancel}
+            style={styles.headerBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Cancelar"
+            accessibilityHint="Cierra el editor sin guardar los cambios"
+          >
             <Text style={styles.headerBtnText}>Cancelar</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>
             Editar trigger
           </Text>
-          <TouchableOpacity onPress={handleSave} style={styles.headerBtn}>
+          <TouchableOpacity
+            onPress={handleSave}
+            style={styles.headerBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Guardar"
+            accessibilityHint="Guarda el trigger y cierra el editor"
+          >
             <Text style={[styles.headerBtnText, styles.headerBtnSave]}>Guardar</Text>
           </TouchableOpacity>
         </View>
@@ -620,6 +648,8 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
               style={[styles.kindToggleBtn, kind === 'regex' && styles.kindToggleBtnActive]}
               onPress={() => setKind('regex')}
               accessibilityRole="button"
+              accessibilityLabel="Línea de texto"
+              accessibilityHint="Reacciona a una línea del MUD"
               accessibilityState={{ selected: kind === 'regex' }}
             >
               <Text style={[styles.kindToggleText, kind === 'regex' && styles.kindToggleTextActive]}>
@@ -631,6 +661,8 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
               style={[styles.kindToggleBtn, kind === 'variable' && styles.kindToggleBtnActive]}
               onPress={() => setKind('variable')}
               accessibilityRole="button"
+              accessibilityLabel="Alarma de variable"
+              accessibilityHint="Reacciona a vida, energía, salidas y otras variables"
               accessibilityState={{ selected: kind === 'variable' }}
             >
               <Text style={[styles.kindToggleText, kind === 'variable' && styles.kindToggleTextActive]}>
@@ -640,11 +672,35 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
             </TouchableOpacity>
           </View>
 
+          <View style={styles.blockingRow}>
+            <View style={{ flex: 1, marginRight: 12 }}>
+              <Text style={styles.blockingLabel}>Bloqueante</Text>
+              <Text style={styles.blockingHint}>
+                Si está ON (default), al matchear este trigger se aplican TODAS sus acciones y los siguientes triggers no se evalúan. Si está OFF, solo dispara sus side-effects (sonido, comando, aviso, set_var) y deja que la línea siga evaluándose con los siguientes triggers.
+              </Text>
+            </View>
+            <Switch
+              value={blocking}
+              onValueChange={setBlocking}
+              trackColor={{ false: '#333', true: '#0c0' }}
+              thumbColor={blocking ? '#000' : '#666'}
+              accessibilityLabel="Bloqueante"
+              accessibilityHint="Si está activo, este trigger detiene la cadena al matchear"
+            />
+          </View>
+
           {kind === 'regex' ? (
             <>
               <View style={[styles.switchRow, { marginTop: 12 }]}>
                 <Text style={styles.label}>Cuándo se activa</Text>
-                <TouchableOpacity style={styles.expertToggle} onPress={handleToggleExpert}>
+                <TouchableOpacity
+                  style={styles.expertToggle}
+                  onPress={handleToggleExpert}
+                  accessibilityRole="switch"
+                  accessibilityLabel="Modo experto"
+                  accessibilityHint="Cambia entre el editor de cajas y el editor de regex"
+                  accessibilityState={{ checked: expertMode }}
+                >
                   <Text style={styles.expertToggleText}>
                     {expertMode ? '◀ Modo cajas' : 'Modo experto ▶'}
                   </Text>
@@ -1302,6 +1358,18 @@ function ActionEditor({ action, expertMode, patternBlocks, customSounds, onChang
               );
             })}
           </View>
+
+          <FloatingColorPicker
+            label="Color de letra (custom)"
+            current={action.fg}
+            onChange={(fg) => onChange({ ...action, fg })}
+          />
+          <FloatingColorPicker
+            label="Color de fondo (custom)"
+            current={action.bg}
+            onChange={(bg) => onChange({ ...action, bg })}
+          />
+
           <Text style={styles.actionHint}>
             Se muestra arriba en pantalla unos segundos. Siempre se anuncia por TalkBack para usuarios con lector de pantalla.
           </Text>
@@ -1398,6 +1466,58 @@ function SetVarActionEditor({
         onCancel={() => setPickerVisible(false)}
       />
     </>
+  );
+}
+
+// Color picker for the optional fg/bg overrides on a 'floating' action.
+// `current` is the current hex (or undefined when no override is set). The
+// reset button passes `undefined` to clear the override, falling back to the
+// level palette in the renderer. Hex comparison is case-insensitive so both
+// '#FFAA33' and '#ffaa33' read as the same selection.
+function FloatingColorPicker({
+  label,
+  current,
+  onChange,
+}: {
+  label: string;
+  current: string | undefined;
+  onChange: (color: string | undefined) => void;
+}) {
+  const norm = current?.toLowerCase();
+  return (
+    <View style={styles.floatingColorBlock}>
+      <View style={styles.floatingColorHeader}>
+        <Text style={styles.smallLabel}>{label}</Text>
+        <TouchableOpacity
+          onPress={() => onChange(undefined)}
+          disabled={!current}
+          accessibilityRole="button"
+          accessibilityLabel="Quitar color personalizado"
+          style={[styles.floatingColorReset, !current && styles.floatingColorResetDisabled]}
+        >
+          <Text style={styles.floatingColorResetText}>↺ usar nivel</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={styles.floatingColorGrid}>
+        {FLOATING_COLOR_PRESETS.map((c) => {
+          const selected = norm === c.toLowerCase();
+          return (
+            <TouchableOpacity
+              key={c}
+              style={[
+                styles.floatingColorSwatch,
+                { backgroundColor: c },
+                selected && styles.floatingColorSwatchSelected,
+              ]}
+              onPress={() => onChange(c)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected }}
+              accessibilityLabel={`Color ${c}`}
+            />
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -1785,6 +1905,30 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 4,
   },
+  blockingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0a1a2a',
+    borderWidth: 1,
+    borderColor: '#1a3a5a',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 12,
+  },
+  blockingLabel: {
+    color: '#88c0ff',
+    fontSize: 13,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+    marginBottom: 4,
+  },
+  blockingHint: {
+    color: '#888',
+    fontSize: 11,
+    fontFamily: 'monospace',
+    lineHeight: 14,
+  },
   kindToggleBtn: {
     flex: 1,
     backgroundColor: '#141414',
@@ -1899,5 +2043,45 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
     fontFamily: 'monospace',
+  },
+  floatingColorBlock: {
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  floatingColorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  floatingColorReset: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#555',
+  },
+  floatingColorResetDisabled: {
+    opacity: 0.35,
+  },
+  floatingColorResetText: {
+    color: '#bbb',
+    fontSize: 11,
+    fontFamily: 'monospace',
+  },
+  floatingColorGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 4,
+  },
+  floatingColorSwatch: {
+    width: 26,
+    height: 26,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#222',
+  },
+  floatingColorSwatchSelected: {
+    borderColor: '#fff',
   },
 });

@@ -9,7 +9,6 @@ import {
   useWindowDimensions,
   Modal,
   Alert,
-  AccessibilityInfo,
   PanResponder,
   Dimensions,
   AppState,
@@ -48,6 +47,8 @@ import { logService } from '../services/logService';
 import { playerStatsService } from '../services/playerStatsService';
 import { promptParser } from '../services/promptParser';
 import { userVariablesService } from '../services/userVariablesService';
+import { speechQueue } from '../services/speechQueueService';
+import { expandVars } from '../utils/expandVars';
 import { activeConnection } from '../services/activeConnection';
 import { useSounds } from '../contexts/SoundContext';
 import { useFloatingMessages } from '../contexts/FloatingMessagesContext';
@@ -152,6 +153,13 @@ export function TerminalScreen({ route, navigation }: Props) {
   const autoLoginRef = useRef<AutoLoginState>('pending');
   const textInputRef = useRef<TextInput>(null);
   const lastSentChannelTime = useRef(0);
+  // Channel list capture (text-based fallback for when GMCP doesn't push
+  // Comm.Canales — e.g. "consentir accesibilidad on"). Armed when the user
+  // types `canales`; consumes lines until the list ends.
+  type ChannelsCaptureState = 'idle' | 'waiting_for_header' | 'capturing';
+  const channelsCaptureStateRef = useRef<ChannelsCaptureState>('idle');
+  const channelsCaptureTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const channelsCaptureAccumRef = useRef<string[]>([]);
   const silentModeEnabledRef = useRef(false);
   const gesturesEnabledRef = useRef(false);
   const gesturesRef = useRef<GestureConfig[]>([]);
@@ -332,7 +340,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         exitPendingRef.current = true;
         if (uiMode === 'blind') {
           setExitConfirmVisible(true);
-          AccessibilityInfo.announceForAccessibility(
+          speechQueue.enqueue(
             '¿Salir y desconectar? Pulsa atrás de nuevo para confirmar.'
           );
         } else {
@@ -444,6 +452,26 @@ export function TerminalScreen({ route, navigation }: Props) {
     });
   };
 
+  const resetChannelsCapture = () => {
+    channelsCaptureStateRef.current = 'idle';
+    if (channelsCaptureTimeoutRef.current) {
+      clearTimeout(channelsCaptureTimeoutRef.current);
+      channelsCaptureTimeoutRef.current = null;
+    }
+    channelsCaptureAccumRef.current = [];
+  };
+
+  const finalizeChannelsCapture = () => {
+    const captured = [...channelsCaptureAccumRef.current];
+    resetChannelsCapture();
+    setChannels(captured);
+  };
+
+  // Matches lines like "  malo [bando] ...........On" or
+  // "  malvados ...............On" or "  sombras_del_baltia [gremio] On".
+  const CHANNEL_LINE_RE = /^\s+(\S+)(?:\s+\[[^\]]+\])?[\s\.]+(On|Off)\s*$/;
+  const CHANNELS_HEADER_RE = /^Tus canales son:?\s*$/;
+
   const processingAndAddLine = (text: string, isChannelMessage: boolean = false, deferSetState: boolean = false) => {
     // Auto-login: Try to log in with saved credentials if available and not yet attempted.
     // Gating on the explicit 'pending' state stops the regex from running on every
@@ -501,6 +529,32 @@ export function TerminalScreen({ route, navigation }: Props) {
 
     const stripped = stripAnsi(text);
 
+    // Channel list capture state machine. Runs before any gag so the
+    // capture sees every relevant line, but never modifies the line itself —
+    // the user still sees the response in the terminal as normal.
+    if (channelsCaptureStateRef.current !== 'idle') {
+      const trimmed = stripped.trim();
+      console.log('[CH_CAP]', channelsCaptureStateRef.current, JSON.stringify(stripped));
+      if (channelsCaptureStateRef.current === 'waiting_for_header') {
+        if (CHANNELS_HEADER_RE.test(trimmed)) {
+          console.log('[CH_CAP] header MATCHED');
+          channelsCaptureStateRef.current = 'capturing';
+          channelsCaptureAccumRef.current = [];
+        }
+      } else if (channelsCaptureStateRef.current === 'capturing') {
+        if (trimmed.length > 0) {
+          const m = stripped.match(CHANNEL_LINE_RE);
+          if (m) {
+            console.log('[CH_CAP] line MATCH:', m[1], m[2]);
+            if (m[2] === 'On') channelsCaptureAccumRef.current.push(m[1]);
+          } else {
+            console.log('[CH_CAP] line NOMATCH → finalize, accum=', channelsCaptureAccumRef.current);
+            finalizeChannelsCapture();
+          }
+        }
+      }
+    }
+
     // Prompt parser runs before regex triggers and before blind mode. If the
     // line looks like part of the MUD prompt (Pv:, Pe:, SL:, ...), gag it in
     // BOTH modes (blind & normal). Regex triggers are NOT evaluated on
@@ -533,7 +587,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 fireNotification(fx.title || 'TorchZhyla', fx.message);
               }
             } else if (fx.type === 'floating') {
-              pushFloating(fx.message, fx.level);
+              pushFloating(fx.message, fx.level, undefined, { fg: fx.fg, bg: fx.bg });
             }
           }
         }
@@ -565,7 +619,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           fireNotification(fx.title || 'TorchZhyla', fx.message);
         }
       } else if (fx.type === 'floating') {
-        pushFloating(fx.message, fx.level);
+        pushFloating(fx.message, fx.level, undefined, { fg: fx.fg, bg: fx.bg });
       }
     }
 
@@ -717,6 +771,11 @@ export function TerminalScreen({ route, navigation }: Props) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // Static per-character variable: feeds ${personaje} expansion in
+      // templates and in regex patterns (e.g. mention triggers). Empty
+      // string when the user didn't fill the "Personaje" field — in that
+      // case ${personaje} substitutions become inert.
+      playerStatsService.setPlayerName(server.username ?? '');
       // Variables are GLOBAL (declarations persist app-wide), so no
       // per-server "active server" call is needed. ensureLoaded reads the
       // persisted declared list once; subsequent calls are no-ops.
@@ -733,7 +792,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [server.id, settingsModalVisible]);
+  }, [server.id, server.username, settingsModalVisible]);
 
   useEffect(() => {
     const handler: TelnetEventHandler = {
@@ -788,7 +847,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                       // Blind mode: announce location
                       if (uiMode === 'blind') {
                         const exits = Object.keys(room.e || {}).sort().join(', ');
-                        AccessibilityInfo.announceForAccessibility(
+                        speechQueue.enqueue(
                           `${room.n}. Salidas: ${exits || 'ninguna'}`
                         );
                       }
@@ -797,7 +856,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
                       // Blind mode: announce failure
                       if (uiMode === 'blind') {
-                        AccessibilityInfo.announceForAccessibility('No localizado');
+                        speechQueue.enqueue('No localizado');
                       }
                     }
                     // Deactivate locate after attempting (success or failure)
@@ -820,7 +879,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           logService.markLoginComplete();
         }
         if (uiMode === 'blind') {
-          AccessibilityInfo.announceForAccessibility('Conectado');
+          speechQueue.enqueue('Conectado');
         }
       },
       onClose: () => {
@@ -830,14 +889,14 @@ export function TerminalScreen({ route, navigation }: Props) {
         setLoginFailed(false);
         logService.logDisconnect();
         if (uiMode === 'blind') {
-          AccessibilityInfo.announceForAccessibility('Desconectado');
+          speechQueue.enqueue('Desconectado');
         }
       },
       onError: (err: string) => {
         setConnecting(false);
         Alert.alert('Error de conexión', err);
         if (uiMode === 'blind') {
-          AccessibilityInfo.announceForAccessibility(`Error: ${err}`);
+          speechQueue.enqueue(`Error: ${err}`);
         }
       },
       onGMCP: (module: string, data: any) => {
@@ -864,7 +923,7 @@ export function TerminalScreen({ route, navigation }: Props) {
             // Blind mode: announce room change
             if (uiMode === 'blind') {
               const exits = Object.keys(room.e || {}).sort().join(', ');
-              AccessibilityInfo.announceForAccessibility(
+              speechQueue.enqueue(
                 `${room.n}. ${exits || 'ninguna'}`
               );
             }
@@ -1064,7 +1123,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, [currentRoom]);
 
   const handleAddTextButton = useCallback((command: string) => {
-    const nextText = command + ' ';
+    const nextText = expandVars(command) + ' ';
     setInputText(nextText);
     setInputSelection({ start: nextText.length, end: nextText.length });
     // blur+focus reliably pops the soft keyboard on Android — calling
@@ -1078,7 +1137,16 @@ export function TerminalScreen({ route, navigation }: Props) {
     pendingTimeoutsRef.current.add(id);
   }, []);
 
+  const handleShowFloating = useCallback((text: string) => {
+    pushFloating(expandVars(text), 'info', 2000);
+  }, [pushFloating]);
+
   const sendCommand = useCallback((command: string, skipHistory?: boolean) => {
+    // Expand ${var} (system + user vars) before any intercept logic so
+    // intercepts can match against the resolved string. No-op when the
+    // command has no ${ placeholders. expandVars never resolves $1/$old/$new.
+    command = expandVars(command);
+
     // ";;" acts as a command separator: split and dispatch each piece in order.
     // Guarded by skipHistory so recursive calls don't re-split or duplicate history.
     if (!skipHistory && command.includes(';;')) {
@@ -1152,65 +1220,38 @@ export function TerminalScreen({ route, navigation }: Props) {
       return;
     }
 
-    // Intercept stat consultation commands
-    const cmdLower = command.toLowerCase();
-
-    if (cmdLower === 'consultar vida') {
-      pushFloating(`Vida: ${hp}/${hpMax}`, 'info', 2000);
-      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
-      return;
-    }
-
-    if (cmdLower === 'consultar energia') {
-      pushFloating(`Energía: ${energy}/${energyMax}`, 'info', 2000);
-      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
-      return;
-    }
-
-    if (cmdLower === 'consultar salidas') {
-      const playerVars = blindModeService.getPlayerVariables();
-      const exits = playerVars.roomExits || 'ninguna';
-      pushFloating(`Salidas: ${exits}`, 'info', 2000);
-      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
-      return;
-    }
-
-    if (cmdLower === 'xp') {
-      const playerVars = blindModeService.getPlayerVariables();
-      pushFloating(`XP: ${playerVars.playerXP}`, 'info', 2000);
-      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
-      return;
-    }
-
-    if (cmdLower === 'ultimo daño') {
-      const playerVars = blindModeService.getPlayerVariables();
-      const damageMessage = playerVars.hpHistory.length > 0
-        ? playerVars.hpHistory[playerVars.hpHistory.length - 1].label
-        : 'Sin registro';
-      pushFloating(damageMessage, 'info', 2000);
-      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
-      return;
-    }
-
-    if (cmdLower === 'enemigos') {
-      const playerVars = blindModeService.getPlayerVariables();
-      const enemiesMessage = playerVars.roomEnemies || 'ninguno';
-      pushFloating(`Enemigos: ${enemiesMessage}`, 'info', 2000);
-      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
-      return;
-    }
-
     // Handle panel switch (blind or completo)
     if (command === '__SWITCH_PANEL__') {
       if (uiMode === 'blind') {
         const nextPanel = currentBlindPanel === 1 ? 2 : 1;
         setCurrentBlindPanel(nextPanel);
-        AccessibilityInfo.announceForAccessibility(`Panel ${nextPanel}`);
+        speechQueue.enqueue(`Panel ${nextPanel}`);
       } else {
         const nextPanel = currentCompletoPanel === 1 ? 2 : 1;
         setCurrentCompletoPanel(nextPanel);
       }
       return;
+    }
+
+    // Arm the channel-list capture when the user runs `canales`. The command
+    // itself flows through to the MUD as usual; the parser in
+    // processingAndAddLine watches incoming lines for the header and the
+    // entries, then commits to setChannels.
+    if (command.trim().toLowerCase() === 'canales') {
+      console.log('[CH_CAP] ARMED on canales command');
+      resetChannelsCapture();
+      channelsCaptureStateRef.current = 'waiting_for_header';
+      channelsCaptureTimeoutRef.current = setTimeout(() => {
+        // If the header never arrives, abort silently — likely the MUD
+        // didn't echo `canales` (e.g. user is mid-roleplay command).
+        if (channelsCaptureStateRef.current === 'waiting_for_header') {
+          resetChannelsCapture();
+        } else if (channelsCaptureStateRef.current === 'capturing') {
+          // Header arrived but list never ended cleanly (no follow-up
+          // line) — commit what we have.
+          finalizeChannelsCapture();
+        }
+      }, 5000);
     }
 
     if (connected) {
@@ -1223,7 +1264,7 @@ export function TerminalScreen({ route, navigation }: Props) {
       stopWalk();
       addLine('--- Movimiento cancelado ---');
     }
-  }, [connected, commandHistory, walking, stopWalk, walkTo, handleLocate, addLine, hp, hpMax, energy, energyMax, uiMode, currentBlindPanel, currentCompletoPanel]);
+  }, [connected, commandHistory, walking, stopWalk, walkTo, handleLocate, addLine, uiMode, currentBlindPanel, currentCompletoPanel]);
 
   const handleSendInput = () => {
     if (inputText.trim()) {
@@ -1964,6 +2005,7 @@ export function TerminalScreen({ route, navigation }: Props) {
               buttons={filteredButtons}
               onSendCommand={sendCommand}
               onAddTextButton={handleAddTextButton}
+              onShowFloating={handleShowFloating}
               onEditButton={handleEditButton}
               moveMode={moveMode}
               sourceCol={sourceCol}
@@ -2282,6 +2324,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 buttons={filteredButtons}
                 onSendCommand={sendCommand}
                 onAddTextButton={handleAddTextButton}
+                onShowFloating={handleShowFloating}
                 onEditButton={handleEditButton}
                 moveMode={moveMode}
                 sourceCol={sourceCol}

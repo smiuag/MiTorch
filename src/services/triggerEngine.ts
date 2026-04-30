@@ -1,5 +1,5 @@
 import { AnsiSpan, FloatingMessageLevel, PatternBlock, Trigger, TriggerAction, VariableCondition } from '../types';
-import { PlayerVariables } from './playerStatsService';
+import { PlayerVariables, playerStatsService } from './playerStatsService';
 import { userVariablesService } from './userVariablesService';
 import { getVariableDependencies, isPredefinedVariable, readVariable } from '../utils/variableMap';
 
@@ -7,7 +7,7 @@ export type TriggerSideEffect =
   | { type: 'play_sound'; file: string }
   | { type: 'send'; command: string }
   | { type: 'notify'; title?: string; message: string }
-  | { type: 'floating'; message: string; level: FloatingMessageLevel };
+  | { type: 'floating'; message: string; level: FloatingMessageLevel; fg?: string; bg?: string };
 
 export interface ProcessResult {
   gagged: boolean;
@@ -73,13 +73,22 @@ class TriggerEngine {
     const promptVarCompiled: CompiledPromptVarTrigger[] = [];
     const userVarCompiled: CompiledUserVarTrigger[] = [];
 
+    // Resolve ${personaje} (the only static system var supported in regex
+    // patterns) once per recompile. Empty when the user didn't fill the
+    // "Personaje" field — substitution becomes (?!), which never matches.
+    const playerName = playerStatsService.getPlayerVariables().playerName ?? '';
+    const escapedPersonaje = playerName
+      ? playerName.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')
+      : '(?!)';
+
     for (const t of triggers) {
       if (t.source.kind === 'regex') {
+        const pattern = t.source.pattern.replace(/\$\{personaje\}/g, escapedPersonaje);
         let re: RegExp | null = null;
         try {
-          re = new RegExp(t.source.pattern, t.source.flags || '');
+          re = new RegExp(pattern, t.source.flags || '');
         } catch (e) {
-          console.warn(`[triggerEngine] invalid regex in trigger "${t.name}": ${t.source.pattern}`);
+          console.warn(`[triggerEngine] invalid regex in trigger "${t.name}": ${pattern}`);
         }
         const caseInsensitive = (t.source.flags || '').includes('i');
         const rawDiscriminator = extractDiscriminator(t.source.blocks);
@@ -145,6 +154,14 @@ class TriggerEngine {
     // case-insensitive trigger with a discriminator needs it.
     let lowerText: string | null = null;
 
+    // Accumulators across the trigger chain. Non-blocking triggers contribute
+    // side-effects but no mutations; the first blocking match takes its
+    // mutations and breaks. Default behavior (no `blocking` flag set) is
+    // first-match-wins, identical to the pre-blocking-flag engine.
+    let mutatedSpans = spans;
+    let gagged = false;
+    const sideEffects: TriggerSideEffect[] = [];
+
     for (const c of this.compiled) {
       if (!c.re) continue;
       if (c.discriminator) {
@@ -157,11 +174,16 @@ class TriggerEngine {
       const match = c.re.exec(plainText);
       if (!match) continue;
 
-      const sideEffects: TriggerSideEffect[] = [];
-      let mutatedSpans = spans;
-      let gagged = false;
+      const blocking = c.trigger.blocking !== false;
 
       for (const action of c.trigger.actions) {
+        // Mutations (gag/replace/color) are skipped on non-blocking triggers
+        // — letting several non-blocking triggers compete to mutate the same
+        // line leads to undefined display state. Side-effects (sound, send,
+        // notify, floating, set_var) are always applied.
+        if (!blocking && (action.type === 'gag' || action.type === 'replace' || action.type === 'color')) {
+          continue;
+        }
         const result = this.applyAction(action, match, mutatedSpans, sideEffects);
         // gag suppresses display, but does NOT short-circuit subsequent
         // actions in the same trigger — users want patterns like
@@ -171,10 +193,10 @@ class TriggerEngine {
         if (result.spans) mutatedSpans = result.spans;
       }
 
-      return { gagged, spans: mutatedSpans, sideEffects };
+      if (blocking) break;
     }
 
-    return { gagged: false, spans, sideEffects: [] };
+    return { gagged, spans: mutatedSpans, sideEffects };
   }
 
   // Evaluate prompt variable triggers after a snapshot update. `changedKeys`
@@ -318,6 +340,8 @@ class TriggerEngine {
           type: 'floating',
           message: expandTemplate(action.message, match, null, null),
           level: action.level || 'info',
+          fg: action.fg,
+          bg: action.bg,
         });
         return {};
 
@@ -369,6 +393,8 @@ class TriggerEngine {
           type: 'floating',
           message: expandTemplate(action.message, null, oldVal, newVal),
           level: action.level || 'info',
+          fg: action.fg,
+          bg: action.bg,
         });
         return;
 
