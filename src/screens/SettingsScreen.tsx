@@ -709,6 +709,42 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
           </TouchableOpacity>
         </View>
 
+        <View style={styles.row}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Mis ambientes</Text>
+            <Text style={styles.rowDesc}>
+              Música de fondo que cambia con el tipo de sala (bosque, ciudad, subterráneo…). Asigna 1-4 sonidos por categoría y se elige uno al azar al entrar.
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.encodingBtn}
+            onPress={() => navigation.navigate('MyAmbients')}
+            accessible={true}
+            accessibilityLabel="Abrir mis ambientes"
+            accessibilityRole="button"
+          >
+            <Text style={styles.encodingBtnText}>Abrir</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Importar / exportar configuración</Text>
+            <Text style={styles.rowDesc}>
+              Empaqueta plantillas de triggers, mappings de ambiente y sus sonidos personalizados en un único ZIP. Útil para mover tu setup entre móviles o compartirlo.
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.encodingBtn}
+            onPress={() => navigation.navigate('ConfigBackup')}
+            accessible={true}
+            accessibilityLabel="Abrir importar exportar configuración"
+            accessibilityRole="button"
+          >
+            <Text style={styles.encodingBtnText}>Abrir</Text>
+          </TouchableOpacity>
+        </View>
+
         {sourceLocation === 'terminal' && (
           <View style={styles.row}>
             <View style={styles.rowInfo}>

@@ -12,6 +12,8 @@ import { SettingsScreen } from './src/screens/SettingsScreen';
 import { TriggersScreen } from './src/screens/TriggersScreen';
 import { TriggerEditorScreen } from './src/screens/TriggerEditorScreen';
 import { MySoundsScreen } from './src/screens/MySoundsScreen';
+import { MyAmbientsScreen } from './src/screens/MyAmbientsScreen';
+import { ConfigBackupScreen } from './src/screens/ConfigBackupScreen';
 import { UserVariablesScreen } from './src/screens/UserVariablesScreen';
 import { SoundProvider } from './src/contexts/SoundContext';
 import { FloatingMessagesProvider } from './src/contexts/FloatingMessagesContext';
@@ -92,6 +94,16 @@ function App() {
             name="UserVariables"
             component={UserVariablesScreen}
             options={{ headerShown: false, title: 'Mis variables' }}
+          />
+          <Stack.Screen
+            name="MyAmbients"
+            component={MyAmbientsScreen}
+            options={{ headerShown: false, title: 'Mis ambientes' }}
+          />
+          <Stack.Screen
+            name="ConfigBackup"
+            component={ConfigBackupScreen}
+            options={{ headerShown: false, title: 'Importar / exportar configuración' }}
           />
         </Stack.Navigator>
       </NavigationContainer>

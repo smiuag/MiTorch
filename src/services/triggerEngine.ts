@@ -4,7 +4,7 @@ import { userVariablesService } from './userVariablesService';
 import { getVariableDependencies, isPredefinedVariable, readVariable } from '../utils/variableMap';
 
 export type TriggerSideEffect =
-  | { type: 'play_sound'; file: string }
+  | { type: 'play_sound'; file: string; pan?: number }
   | { type: 'send'; command: string }
   | { type: 'notify'; title?: string; message: string }
   | { type: 'floating'; message: string; level: FloatingMessageLevel; fg?: string; bg?: string };
@@ -62,28 +62,74 @@ export function extractDiscriminator(blocks: PatternBlock[] | undefined): string
   return best;
 }
 
+// Matches ${name} or ${name:raw} placeholders inside a regex pattern.
+// `name` follows the same rules as user variables: starts with lowercase
+// letter, then lowercase/digit/underscore. The optional `:raw` modifier
+// asks for the value to be injected without regex-escaping (useful when
+// the user var contains a pre-built alternation like "A|B|C").
+const PATTERN_VAR_RE = /\$\{([a-z][a-z0-9_]*)(?::(raw))?\}/g;
+
+const REGEX_META_RE = /[\\^$.*+?()[\]{}|]/g;
+
 class TriggerEngine {
+  private activeTriggers: Trigger[] = [];
   private compiled: CompiledTrigger[] = [];
   private compiledPromptVars: CompiledPromptVarTrigger[] = [];
   private compiledUserVars: CompiledUserVarTrigger[] = [];
+  // User-var names referenced anywhere in any regex pattern (in either
+  // ${name} or ${name:raw} form). When a set_var action changes one of
+  // these, we mark the engine for recompile so the next process() call
+  // rebuilds the patterns with the fresh value. System-var refs (vida,
+  // personaje, etc.) are NOT tracked here — they get a snapshot at
+  // setActiveTriggers time and only refresh when something else triggers
+  // a recompile (e.g. server change re-runs the useEffect in TerminalScreen).
+  private patternUserVarRefs: Set<string> = new Set();
+  private needsRecompile = false;
   private userVarDepth = 0;
 
   setActiveTriggers(triggers: Trigger[]): void {
+    this.activeTriggers = triggers;
+    this.needsRecompile = false;
+
     const regexCompiled: CompiledTrigger[] = [];
     const promptVarCompiled: CompiledPromptVarTrigger[] = [];
     const userVarCompiled: CompiledUserVarTrigger[] = [];
+    const userVarRefs = new Set<string>();
 
-    // Resolve ${personaje} (the only static system var supported in regex
-    // patterns) once per recompile. Empty when the user didn't fill the
-    // "Personaje" field — substitution becomes (?!), which never matches.
-    const playerName = playerStatsService.getPlayerVariables().playerName ?? '';
-    const escapedPersonaje = playerName
-      ? playerName.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')
-      : '(?!)';
+    // Snapshot the variable values used to substitute ${name} / ${name:raw}
+    // placeholders in regex patterns. Read once per recompile so all
+    // patterns see a consistent view.
+    const sysSnapshot = playerStatsService.getPlayerVariables();
+    const userSnapshot = userVariablesService.getAllValues();
+
+    const resolveVar = (name: string, raw: boolean): string => {
+      let value: number | string | boolean | undefined;
+      if (isPredefinedVariable(name)) {
+        value = readVariable(name, sysSnapshot);
+      } else {
+        // Track user-var refs so a later set_var on this name forces a
+        // recompile. Tracked even when the current value is empty — the
+        // var might be populated by a trigger later in the session.
+        userVarRefs.add(name);
+        value = userSnapshot[name];
+      }
+      // Empty/undefined values become (?!), an inert assertion that never
+      // matches — the same fail-safe behaviour the previous ${personaje}
+      // substitution had. This keeps "enemy" patterns inert when the user
+      // hasn't populated their nick list yet.
+      if (value === undefined || value === '' || value === 0 || value === false) {
+        return '(?!)';
+      }
+      const str = String(value);
+      return raw ? str : str.replace(REGEX_META_RE, '\\$&');
+    };
 
     for (const t of triggers) {
       if (t.source.kind === 'regex') {
-        const pattern = t.source.pattern.replace(/\$\{personaje\}/g, escapedPersonaje);
+        const pattern = t.source.pattern.replace(
+          PATTERN_VAR_RE,
+          (_full, name, modifier) => resolveVar(name, modifier === 'raw'),
+        );
         let re: RegExp | null = null;
         try {
           re = new RegExp(pattern, t.source.flags || '');
@@ -128,12 +174,16 @@ class TriggerEngine {
     this.compiled = regexCompiled;
     this.compiledPromptVars = promptVarCompiled;
     this.compiledUserVars = userVarCompiled;
+    this.patternUserVarRefs = userVarRefs;
   }
 
   clear(): void {
+    this.activeTriggers = [];
     this.compiled = [];
     this.compiledPromptVars = [];
     this.compiledUserVars = [];
+    this.patternUserVarRefs = new Set();
+    this.needsRecompile = false;
     this.userVarDepth = 0;
   }
 
@@ -146,6 +196,14 @@ class TriggerEngine {
   }
 
   process(plainText: string, spans: AnsiSpan[]): ProcessResult {
+    // Apply pending recompile triggered by a set_var that changed a user
+    // variable referenced in some pattern. Done at the start of the next
+    // line to avoid invalidating `this.compiled` mid-iteration of the
+    // current line.
+    if (this.needsRecompile) {
+      this.needsRecompile = false;
+      this.setActiveTriggers(this.activeTriggers);
+    }
     if (this.compiled.length === 0) {
       return { gagged: false, spans, sideEffects: [] };
     }
@@ -317,7 +375,7 @@ class TriggerEngine {
         };
 
       case 'play_sound':
-        if (action.file) sideEffectsOut.push({ type: 'play_sound', file: action.file });
+        if (action.file) sideEffectsOut.push({ type: 'play_sound', file: action.file, pan: action.pan });
         return {};
 
       case 'send':
@@ -347,10 +405,16 @@ class TriggerEngine {
 
       case 'set_var': {
         if (!action.varName) return {};
-        const value = expandTemplate(action.value, match, null, null);
+        const value = applyReplacements(
+          expandTemplate(action.value, match, null, null),
+          action.replacements,
+        );
         const prevVal = userVariablesService.get(action.varName);
         const changed = userVariablesService.set(action.varName, value);
         if (changed) {
+          if (this.patternUserVarRefs.has(action.varName)) {
+            this.needsRecompile = true;
+          }
           this.evaluateUserVarTriggersInto(action.varName, prevVal, value, sideEffectsOut);
         }
         return {};
@@ -370,7 +434,7 @@ class TriggerEngine {
   ): void {
     switch (action.type) {
       case 'play_sound':
-        if (action.file) sideEffectsOut.push({ type: 'play_sound', file: action.file });
+        if (action.file) sideEffectsOut.push({ type: 'play_sound', file: action.file, pan: action.pan });
         return;
 
       case 'send':
@@ -400,10 +464,16 @@ class TriggerEngine {
 
       case 'set_var': {
         if (!action.varName) return;
-        const value = expandTemplate(action.value, null, oldVal, newVal);
+        const value = applyReplacements(
+          expandTemplate(action.value, null, oldVal, newVal),
+          action.replacements,
+        );
         const prevVal = userVariablesService.get(action.varName);
         const changed = userVariablesService.set(action.varName, value);
         if (changed) {
+          if (this.patternUserVarRefs.has(action.varName)) {
+            this.needsRecompile = true;
+          }
           this.evaluateUserVarTriggersInto(action.varName, prevVal, value, sideEffectsOut);
         }
         return;
@@ -434,6 +504,24 @@ function expandTemplate(
     .replace(/\$old\b/g, oldVal != null ? String(oldVal) : '')
     .replace(/\$new\b/g, newVal != null ? String(newVal) : '')
     .replace(/\$\{([a-z][a-z0-9_]*)\}/g, (_, name) => userVariablesService.get(name));
+}
+
+// Apply ordered literal string replacements after template expansion. Used
+// by set_var to turn captured CSV ("A, B, C") into pipe-separated lists
+// ("A|B|C") that can be injected into regex patterns via ${name:raw}.
+// Empty `from` is silently skipped to avoid pathological behaviour
+// (split('') would inject `to` between every character).
+function applyReplacements(
+  value: string,
+  replacements: { from: string; to: string }[] | undefined,
+): string {
+  if (!replacements || replacements.length === 0) return value;
+  let out = value;
+  for (const r of replacements) {
+    if (!r.from) continue;
+    out = out.split(r.from).join(r.to);
+  }
+  return out;
 }
 
 function checkVariableCondition(

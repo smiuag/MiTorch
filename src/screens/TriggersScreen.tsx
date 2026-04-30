@@ -196,11 +196,19 @@ export function TriggersScreen({ navigation }: Props) {
   };
 
   const handleBackupImport = async (
-    result: { packs: TriggerPack[]; importedSoundCount: number; missingSoundCount: number },
+    result: { packs: TriggerPack[]; importedSoundCount: number; missingSoundCount: number; ambientCategoriesApplied?: number },
   ) => {
-    const { packs: imported, importedSoundCount, missingSoundCount } = result;
+    const { packs: imported, importedSoundCount, missingSoundCount, ambientCategoriesApplied = 0 } = result;
+    if (imported.length === 0 && ambientCategoriesApplied === 0) {
+      Alert.alert('Backup vacío', 'El archivo no contiene plantillas ni ambientes.');
+      return;
+    }
+    // ZIP "solo ambientes" sin plantillas: el merge de mappings ya se
+    // aplicó en `importBackupFromZip`, solo informamos al usuario.
     if (imported.length === 0) {
-      Alert.alert('Backup vacío', 'El archivo no contiene plantillas.');
+      const parts = [`${ambientCategoriesApplied} categoría${ambientCategoriesApplied === 1 ? '' : 's'} de ambiente actualizada${ambientCategoriesApplied === 1 ? '' : 's'}`];
+      if (importedSoundCount > 0) parts.push(`${importedSoundCount} sonido${importedSoundCount === 1 ? '' : 's'} añadido${importedSoundCount === 1 ? '' : 's'}`);
+      Alert.alert('Importación completa', parts.join('. ') + '.');
       return;
     }
     const existing = await loadPacks();
@@ -219,6 +227,7 @@ export function TriggersScreen({ navigation }: Props) {
       const parts = [`${toAdd.length} plantilla${toAdd.length === 1 ? '' : 's'} importada${toAdd.length === 1 ? '' : 's'}`];
       if (importedSoundCount > 0) parts.push(`${importedSoundCount} sonido${importedSoundCount === 1 ? '' : 's'} añadido${importedSoundCount === 1 ? '' : 's'}`);
       if (missingSoundCount > 0) parts.push(`⚠ ${missingSoundCount} sonido${missingSoundCount === 1 ? '' : 's'} no se pudieron extraer`);
+      if (ambientCategoriesApplied > 0) parts.push(`${ambientCategoriesApplied} categoría${ambientCategoriesApplied === 1 ? '' : 's'} de ambiente actualizada${ambientCategoriesApplied === 1 ? '' : 's'}`);
       if (newlyAdded.length > 0) parts.push(`${newlyAdded.length} variable${newlyAdded.length === 1 ? '' : 's'} de usuario declarada${newlyAdded.length === 1 ? '' : 's'}`);
 
       const servers = await loadServers();

@@ -48,6 +48,8 @@ import { playerStatsService } from '../services/playerStatsService';
 import { promptParser } from '../services/promptParser';
 import { userVariablesService } from '../services/userVariablesService';
 import { speechQueue } from '../services/speechQueueService';
+import { ambientPlayer } from '../services/ambientPlayer';
+import { categorizeRoom } from '../services/roomCategorizer';
 import { expandVars } from '../utils/expandVars';
 import { activeConnection } from '../services/activeConnection';
 import { useSounds } from '../contexts/SoundContext';
@@ -105,6 +107,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [silentModeEnabled, setSilentModeEnabled] = useState(false);
+  const [ambientEnabled, setAmbientEnabled] = useState(true);
   const [loginFailed, setLoginFailed] = useState(false);
   const [channels, setChannels] = useState<string[]>([]);
   const [channelMessages, setChannelMessages] = useState<ChannelMessage[]>([]);
@@ -197,7 +200,24 @@ export function TerminalScreen({ route, navigation }: Props) {
   // Track app foreground/background state so notifications only fire when not active
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
+      const prev = appStateRef.current;
       appStateRef.current = state;
+      // Pause/resume del ambient con la app en background. Doctrina:
+      // ambient NO suena con pantalla bloqueada (descartado por fricción
+      // con notificaciones). En `active` reanudamos con la categoría
+      // actual del mapa, no la hardcodeamos — si el usuario está fuera
+      // de cobertura o desconectado, `currentCategory` ya es null y se
+      // queda en silencio.
+      if (state !== 'active' && prev === 'active') {
+        ambientPlayer.setEnabled(false);
+      } else if (state === 'active' && prev !== 'active') {
+        // Solo reactiva si el usuario tiene el toggle ON. La consulta a
+        // settings es async pero no bloqueante: setEnabled(false) es
+        // idempotente, así que rebote de estado no rompe nada.
+        loadSettings().then((s) => {
+          if (s.ambientEnabled) ambientPlayer.setEnabled(true);
+        }).catch(() => {});
+      }
     });
     return () => sub.remove();
   }, []);
@@ -285,6 +305,9 @@ export function TerminalScreen({ route, navigation }: Props) {
           // silent = !sounds. We track the inverse locally for the in-Terminal
           // toggle UI (🔊/🔇), but the canonical state lives in settings.
           setSilentModeEnabled(!settings.soundsEnabled);
+        }
+        if (settings.ambientEnabled !== undefined) {
+          setAmbientEnabled(settings.ambientEnabled);
         }
         logService.configure(
           settings.logsEnabled ?? false,
@@ -579,7 +602,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           );
           for (const fx of variableEffects) {
             if (fx.type === 'play_sound') {
-              if (fx.file && !silentModeEnabledRef.current) playSoundRef.current(fx.file);
+              if (fx.file && !silentModeEnabledRef.current) playSoundRef.current(fx.file, fx.pan);
             } else if (fx.type === 'send') {
               if (fx.command) telnetRef.current?.send(fx.command);
             } else if (fx.type === 'notify') {
@@ -606,7 +629,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     // floating message) and even when blind mode silences the line.
     for (const fx of triggerResult.sideEffects) {
       if (fx.type === 'play_sound') {
-        if (fx.file && !silentModeEnabledRef.current) playSoundRef.current(fx.file);
+        if (fx.file && !silentModeEnabledRef.current) playSoundRef.current(fx.file, fx.pan);
       } else if (fx.type === 'send') {
         if (fx.command) telnetRef.current?.send(fx.command);
       } else if (fx.type === 'notify') {
@@ -726,9 +749,26 @@ export function TerminalScreen({ route, navigation }: Props) {
   const miniMapRef = useRef<MiniMapHandle | null>(null);
 
   useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
     (async () => {
       await mapServiceRef.current.load();
+      // Inicializa el ambient antes de suscribirse — `init` carga settings
+      // y mappings persistidos. Si el toggle está OFF, el subscribe sigue
+      // notificando cambios de sala pero `setCategory` se descarta dentro.
+      await ambientPlayer.init();
+      unsubscribe = mapServiceRef.current.subscribeRoomChange((room) => {
+        if (silentModeEnabledRef.current) return; // kill-switch global
+        if (!room) {
+          ambientPlayer.setCategory(null);
+          return;
+        }
+        ambientPlayer.setCategory(categorizeRoom(room.n, room.c));
+      });
     })();
+    return () => {
+      if (unsubscribe) unsubscribe();
+      ambientPlayer.stop();
+    };
   }, []);
 
   // Warm the nick cache so the autocomplete bar is responsive on first keypress.
@@ -745,6 +785,25 @@ export function TerminalScreen({ route, navigation }: Props) {
   // the change survives across sessions and stays in sync with the Settings
   // screen toggle. Both UI toggles (🔊/🔇 in Terminal and "Usar sonidos" in
   // Settings) end up writing to the same field.
+  // Toggle música ambiental. Persiste en settings.ambientEnabled y avisa al
+  // AmbientPlayer para que arranque/pare con fade. El kill-switch global
+  // de sonidos (silentModeEnabled) sigue ganando: si está silenciado, el
+  // ambient tampoco suena aunque ambientEnabled sea true.
+  const toggleAmbient = useCallback(async () => {
+    const next = !ambientEnabled;
+    setAmbientEnabled(next);
+    ambientPlayer.setEnabled(next);
+    try {
+      const current = await loadSettings();
+      await saveSettings({ ...current, ambientEnabled: next });
+    } catch (e) {
+      console.warn('[TerminalScreen] persist ambientEnabled failed:', e);
+    }
+    if (uiMode === 'blind') {
+      speechQueue.enqueue(`Música ambiente ${next ? 'activada' : 'desactivada'}`);
+    }
+  }, [ambientEnabled, uiMode]);
+
   const toggleSilentMode = useCallback(async () => {
     const next = !silentModeEnabled;
     setSilentModeEnabled(next);
@@ -998,12 +1057,16 @@ export function TerminalScreen({ route, navigation }: Props) {
     return () => {
       activeConnection.clear(server.id);
       telnet.disconnect();
+      // Pierde localización al desconectar — el subscribe del ambient
+      // recibe `null` y para el loop con fade-out.
+      mapServiceRef.current.clearCurrentRoom();
     };
   }, [server, uiMode, encoding]);
 
   const handleReconnect = useCallback(() => {
     if (connecting) return;
     telnetRef.current?.disconnect();
+    mapServiceRef.current.clearCurrentRoom();
     setConnecting(true);
     telnetRef.current?.connect();
   }, [connecting]);
@@ -1961,6 +2024,16 @@ export function TerminalScreen({ route, navigation }: Props) {
                     accessibilityHint="Activa/desactiva los sonidos de eventos"
                   >
                     <Text style={styles.compactButtonText}>{silentModeEnabled ? '🔇' : '🔊'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.compactButton, { backgroundColor: ambientEnabled ? '#3a5a3a' : '#666666' }]}
+                    onPress={toggleAmbient}
+                    accessible={true}
+                    accessibilityLabel={`Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`}
+                    accessibilityRole="button"
+                    accessibilityHint="Activa/desactiva la música de fondo según tipo de sala"
+                  >
+                    <Text style={styles.compactButtonText}>🎵</Text>
                   </TouchableOpacity>
                 </>
               )}

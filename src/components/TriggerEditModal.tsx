@@ -1255,6 +1255,12 @@ function ActionEditor({ action, expertMode, patternBlocks, customSounds, onChang
               {action.file ? getSoundLabel(action.file, customSounds) : 'Elegir sonido…'}
             </Text>
           </TouchableOpacity>
+          <PanPicker
+            value={action.pan ?? 0}
+            onChange={(pan) =>
+              onChange({ ...action, pan: pan === 0 ? undefined : pan })
+            }
+          />
         </>
       )}
 
@@ -1454,6 +1460,65 @@ function SetVarActionEditor({
         o vigilar sus cambios con "Alarma de variable".
       </Text>
 
+      <Text style={styles.smallLabel}>Transformaciones (opcional)</Text>
+      {(action.replacements || []).map((rep, idx) => (
+        <View key={`rep-${idx}`} style={styles.replacementRow}>
+          <TextInput
+            style={[styles.input, styles.replacementInput]}
+            value={rep.from}
+            onChangeText={(t) => {
+              const next = [...(action.replacements || [])];
+              next[idx] = { ...next[idx], from: t };
+              onChange({ ...action, replacements: next });
+            }}
+            placeholder="de"
+            placeholderTextColor="#555"
+            accessibilityLabel={`Texto de origen para transformación ${idx + 1}`}
+          />
+          <Text style={styles.replacementArrow}>→</Text>
+          <TextInput
+            style={[styles.input, styles.replacementInput]}
+            value={rep.to}
+            onChangeText={(t) => {
+              const next = [...(action.replacements || [])];
+              next[idx] = { ...next[idx], to: t };
+              onChange({ ...action, replacements: next });
+            }}
+            placeholder="a"
+            placeholderTextColor="#555"
+            accessibilityLabel={`Texto de destino para transformación ${idx + 1}`}
+          />
+          <TouchableOpacity
+            onPress={() => {
+              const next = (action.replacements || []).filter((_, i) => i !== idx);
+              onChange({ ...action, replacements: next.length === 0 ? undefined : next });
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`Quitar transformación ${idx + 1}`}
+          >
+            <Text style={styles.replacementDelete}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      ))}
+      <TouchableOpacity
+        onPress={() =>
+          onChange({
+            ...action,
+            replacements: [...(action.replacements || []), { from: '', to: '' }],
+          })
+        }
+        accessibilityRole="button"
+        accessibilityLabel="Añadir transformación"
+        style={styles.replacementAddBtn}
+      >
+        <Text style={styles.replacementAddBtnText}>+ Añadir transformación</Text>
+      </TouchableOpacity>
+      <Text style={styles.actionHint}>
+        Después de expandir el valor, sustituye literalmente cada "de" por "a" en orden. Útil para
+        convertir `, ` en `|` y obtener una lista pipe-separada usable en patrones con
+        ${'${nombre:raw}'}.
+      </Text>
+
       <VariablePicker
         visible={pickerVisible}
         selectedName={action.varName || null}
@@ -1518,6 +1583,45 @@ function FloatingColorPicker({
         })}
       </View>
     </View>
+  );
+}
+
+// 5-step preset selector for the stereo balance of a play_sound action.
+// Stays out of the way (single row of small buttons) until D-4 wires
+// react-native-sound to actually honour the value. Granularity matches the
+// CMUD blind-mode addon convention (-1, -0.5, 0, +0.5, +1).
+const PAN_PRESETS: { value: number; label: string; accLabel: string }[] = [
+  { value: -1,   label: '◀◀',   accLabel: 'Izquierda fuerte' },
+  { value: -0.5, label: '◀',    accLabel: 'Izquierda suave' },
+  { value: 0,    label: '●',    accLabel: 'Centro' },
+  { value: 0.5,  label: '▶',    accLabel: 'Derecha suave' },
+  { value: 1,    label: '▶▶',   accLabel: 'Derecha fuerte' },
+];
+
+function PanPicker({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  return (
+    <>
+      <Text style={styles.smallLabel}>Pan estéreo</Text>
+      <View style={styles.panRow}>
+        {PAN_PRESETS.map((p) => {
+          const selected = Math.abs(value - p.value) < 0.01;
+          return (
+            <TouchableOpacity
+              key={p.value}
+              style={[styles.panBtn, selected && styles.panBtnSelected]}
+              onPress={() => onChange(p.value)}
+              accessibilityRole="button"
+              accessibilityLabel={p.accLabel}
+              accessibilityState={{ selected }}
+            >
+              <Text style={[styles.panBtnText, selected && styles.panBtnTextSelected]}>
+                {p.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </>
   );
 }
 
@@ -1742,6 +1846,54 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
   },
   actionHint: { color: '#888', fontSize: 11, fontFamily: 'monospace', marginTop: 4 },
+  replacementRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+    gap: 6,
+  },
+  replacementInput: {
+    flex: 1,
+    marginBottom: 0,
+  },
+  replacementArrow: { color: '#888', fontFamily: 'monospace', fontSize: 14 },
+  replacementDelete: {
+    color: '#dd5555',
+    fontFamily: 'monospace',
+    fontSize: 16,
+    paddingHorizontal: 6,
+  },
+  replacementAddBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#1a2a1a',
+    borderWidth: 1,
+    borderColor: '#446644',
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+    marginTop: 2,
+  },
+  replacementAddBtnText: { color: '#88aa88', fontSize: 12, fontFamily: 'monospace' },
+  panRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 4,
+  },
+  panBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    backgroundColor: '#1a1a1a',
+    borderWidth: 1,
+    borderColor: '#444',
+    borderRadius: 4,
+    alignItems: 'center',
+  },
+  panBtnSelected: {
+    backgroundColor: '#2a3a4a',
+    borderColor: '#5a8aaa',
+  },
+  panBtnText: { color: '#888', fontSize: 14, fontFamily: 'monospace' },
+  panBtnTextSelected: { color: '#cce0f0', fontWeight: 'bold' },
   removeBtn: {
     paddingHorizontal: 10,
     paddingVertical: 4,

@@ -58,6 +58,17 @@ function addRefsFromTrigger(trigger: Trigger, set: Set<string>): void {
   if (trigger.source.kind === 'variable' && !isPredefinedVariable(trigger.source.name)) {
     set.add(trigger.source.name);
   }
+  // Scan regex patterns too — ${name} / ${name:raw} placeholders inside
+  // a pattern (e.g. `^(${nick_x:raw}) llega ...`) need auto-declaration so
+  // the var exists when the pack's set_var triggers populate it later.
+  if (trigger.source.kind === 'regex') {
+    const reInPattern = /\$\{([a-z][a-z0-9_]*)(?::raw)?\}/g;
+    let pm: RegExpExecArray | null;
+    reInPattern.lastIndex = 0;
+    while ((pm = reInPattern.exec(trigger.source.pattern)) !== null) {
+      if (!isPredefinedVariable(pm[1])) set.add(pm[1]);
+    }
+  }
   for (const action of trigger.actions) {
     if (action.type === 'set_var' && action.varName) {
       set.add(action.varName);
@@ -84,6 +95,10 @@ function collectRolesForTrigger(trigger: Trigger, varName: string): UsageRole[] 
   const roles = new Set<UsageRole>();
   if (trigger.source.kind === 'variable' && trigger.source.name === varName) {
     roles.add('watcher');
+  }
+  if (trigger.source.kind === 'regex') {
+    const patternRe = new RegExp(`\\$\\{${escapeRegex(varName)}(?::raw)?\\}`);
+    if (patternRe.test(trigger.source.pattern)) roles.add('reader');
   }
   for (const action of trigger.actions) {
     if (action.type === 'set_var' && action.varName === varName) {

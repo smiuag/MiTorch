@@ -19,6 +19,15 @@ export interface AppSettings {
   logsEnabled: boolean;
   logsMaxLines: LogsMaxLines;
   speechCharDurationMs: number;
+  // Música ambiental por tipo de sala. `ambientEnabled` es el toggle del
+  // usuario (botón en TerminalScreen); el kill-switch global de sonido
+  // (`soundsEnabled`) sigue mandando — si está OFF, el ambient tampoco
+  // suena. `ambientVolume` y `effectsVolume` son sliders 0..1; los wavs
+  // del ambient se reproducen al primero, los `play_sound` de triggers al
+  // segundo. Defaults: 0.4 ambient (sutil de fondo), 0.7 efectos (claros).
+  ambientEnabled: boolean;
+  ambientVolume: number;
+  effectsVolume: number;
 }
 
 export const AVAILABLE_SOUNDS = {
@@ -67,6 +76,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   logsEnabled: false,
   logsMaxLines: 20000,
   speechCharDurationMs: 20,
+  ambientEnabled: true,
+  ambientVolume: 0.4,
+  effectsVolume: 0.7,
   gestures: [
     { type: 'doubletap', enabled: true, command: 'responder ', opensKeyboard: true },
     { type: 'swipe_up', enabled: true, command: 'norte', opensKeyboard: false },

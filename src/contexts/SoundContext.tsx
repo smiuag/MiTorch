@@ -1,6 +1,14 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { Audio } from 'expo-av';
+import Sound from 'react-native-sound';
 import { getCustomSoundUri } from '../storage/customSoundsStorage';
+import { loadSettings } from '../storage/settingsStorage';
+
+// react-native-sound needs to know the audio category before any sound is
+// loaded. 'Playback' is the right one for trigger sounds (mixes with system
+// audio, plays in silent mode = no, plays through the speaker). One-time
+// init at module load.
+Sound.setCategory('Playback');
 
 const CUSTOM_PREFIX = 'custom:';
 const BUILTIN_PREFIX = 'builtin:';
@@ -41,8 +49,20 @@ const soundModules = {
 interface SoundContextType {
   soundCache: Map<string, Audio.Sound>;
   isReady: boolean;
-  playSound: (soundKey: string) => Promise<void>;
+  // `pan` is in [-1, 1] (-1 hard left, 0 centre, +1 hard right). Honoured
+  // for CUSTOM sounds via react-native-sound (D-4 of the Movement plan).
+  // Builtins with non-zero pan fall back to centred and log a warning —
+  // rewrapping the warmed expo-av cache via a second library would defeat
+  // the warmup. Practically, the Movement pack uses custom sounds for all
+  // its directional triggers so this limitation is invisible in the
+  // intended use case.
+  playSound: (soundKey: string, pan?: number) => Promise<void>;
   prepareSounds: () => Promise<void>;
+  // Multiplica el volumen de cada `play_sound` de trigger antes de
+  // reproducirlo. Rango [0, 1]. La pantalla "Mis ambientes" lo actualiza
+  // cuando el usuario mueve el +/- de "Volumen efectos". El kill-switch
+  // (silentModeEnabled) se aplica antes y sigue mandando.
+  setEffectsVolume: (v: number) => void;
 }
 
 const SoundContext = createContext<SoundContextType | undefined>(undefined);
@@ -53,6 +73,15 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
   const soundCacheRef = useRef<Map<string, Audio.Sound>>(new Map());
   const isReadyRef = useRef(false);
   const loadingRef = useRef(false);
+  // Volume multiplier for trigger sounds. Read in playSound on every call
+  // so updates from setEffectsVolume apply immediately without a rerender.
+  // Default 0.7 mirrors the storage default; if loadSettings comes back
+  // with something different we update the ref.
+  const effectsVolumeRef = useRef<number>(0.7);
+
+  const setEffectsVolume = useCallback((v: number) => {
+    effectsVolumeRef.current = Math.max(0, Math.min(1, v));
+  }, []);
 
   const prepareSounds = useCallback(async () => {
     if (isReadyRef.current || loadingRef.current) return;
@@ -119,11 +148,35 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
     }).catch((e) => console.warn(`[SoundContext] setAudioModeAsync failed: ${e}`));
 
     prepareSounds().catch((e) => console.warn(`[SoundContext] prepareSounds failed: ${e}`));
+
+    // Seed effectsVolume from persisted settings. Subsequent changes from
+    // "Mis ambientes" call setEffectsVolume directly — this initial load
+    // keeps the volume coherent across app restarts.
+    loadSettings()
+      .then((s) => {
+        if (typeof s.effectsVolume === 'number') {
+          effectsVolumeRef.current = Math.max(0, Math.min(1, s.effectsVolume));
+        }
+      })
+      .catch(() => {});
   }, [prepareSounds]);
 
-  const playSound = useCallback(async (soundKey: string) => {
+  const playSound = useCallback(async (soundKey: string, pan?: number) => {
+    // Stereo-balance handling: when `pan` is non-zero we route the playback
+    // through react-native-sound (which exposes setPan), otherwise we use
+    // the existing expo-av path (cache + warmup for builtins, on-demand
+    // load for customs). Centred plays keep the existing fast path —
+    // crucial because the builtin cache holds preloaded Audio.Sound
+    // instances that we don't want to throw away. Pan is only honoured for
+    // CUSTOM sounds (the Movement pack uses customs); builtins with pan
+    // ≠ 0 fall back to centred and emit a warning since rewriting the
+    // builtin cache through react-native-sound would defeat the warmup.
     try {
       if (!soundKey) return;
+      const wantsPan = pan !== undefined && pan !== 0;
+      // Volume scalar applied to every trigger sound. Read from ref so
+      // updates from "Mis ambientes" take effect on the very next play.
+      const fxVol = effectsVolumeRef.current;
 
       if (soundKey.startsWith(CUSTOM_PREFIX)) {
         const filename = soundKey.slice(CUSTOM_PREFIX.length);
@@ -132,7 +185,38 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
           console.warn(`[SoundContext.playSound] Custom sound not found: ${filename}`);
           return;
         }
-        const { sound } = await Audio.Sound.createAsync({ uri });
+
+        if (wantsPan) {
+          // react-native-sound expects a filesystem path WITHOUT the
+          // file:// scheme. The clamp protects against malformed callers
+          // even though the wizard already restricts the value to [-1, 1].
+          const path = uri.replace(/^file:\/\//, '');
+          const clamped = Math.max(-1, Math.min(1, pan!));
+          const sound = new Sound(path, '', (err) => {
+            if (err) {
+              console.warn(
+                `[SoundContext.playSound] react-native-sound load failed (${filename}): ${err.message}. Falling back to centred expo-av play.`,
+              );
+              // Fallback: play centred via expo-av so the user still hears
+              // SOMETHING — losing direction is better than silence.
+              Audio.Sound.createAsync({ uri }, { volume: fxVol })
+                .then(({ sound: avSound }) => {
+                  avSound.playAsync();
+                  setTimeout(() => avSound.unloadAsync().catch(() => {}), 8000);
+                })
+                .catch(() => {});
+              return;
+            }
+            sound.setVolume(fxVol);
+            sound.setPan(clamped);
+            sound.play(() => sound.release());
+          });
+          return;
+        }
+
+        // No pan — keep the existing expo-av path so we don't double-load
+        // the same wav through two different libraries on every play.
+        const { sound } = await Audio.Sound.createAsync({ uri }, { volume: fxVol });
         await sound.playAsync();
         setTimeout(() => sound.unloadAsync().catch(() => {}), 8000);
         return;
@@ -146,11 +230,23 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      if (wantsPan) {
+        // Builtins with pan: documented limitation — the cache holds
+        // expo-av instances and rewrapping each builtin through
+        // react-native-sound would lose the warmup. The Movement pack
+        // (the main consumer of pan) uses custom sounds, so this only
+        // affects user-authored triggers that point a builtin to a
+        // panned action.
+        console.warn(
+          `[SoundContext.playSound] pan=${pan} ignored for builtin "${path}" — pan is only honoured on custom sounds.`,
+        );
+      }
+
       const sound = soundCacheRef.current.get(path)!;
-      // Restore volume to 1 — the warmup left it at 0 to keep the priming
-      // play silent. setVolumeAsync awaits before playAsync runs so the new
-      // volume is in effect when playback (re)starts.
-      await sound.setVolumeAsync(1);
+      // Apply the effects volume scalar; warmup left it at 0. setVolumeAsync
+      // awaits before playAsync runs so the new volume is in effect when
+      // playback (re)starts.
+      await sound.setVolumeAsync(fxVol);
       await sound.setPositionAsync(0);
       await sound.playAsync();
     } catch (e) {
@@ -159,7 +255,7 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <SoundContext.Provider value={{ soundCache, isReady, playSound, prepareSounds }}>
+    <SoundContext.Provider value={{ soundCache, isReady, playSound, prepareSounds, setEffectsVolume }}>
       {children}
     </SoundContext.Provider>
   );

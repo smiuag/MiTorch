@@ -20,6 +20,11 @@ export class MapService {
   private nameIndexLower: Map<string, number[]> = new Map();
   private currentRoomId: number | null = null;
   private loaded = false;
+  // Subscribers notified every time `currentRoomId` changes (including to
+  // null when the player loses localization). Used by the AmbientPlayer
+  // to swap categories. The pattern is intentionally cheap — no event
+  // bus, just a flat array; we expect 1-2 subscribers max in practice.
+  private roomSubscribers: Array<(room: MapRoom | null) => void> = [];
 
   async load(): Promise<void> {
     if (this.loaded) return;
@@ -80,7 +85,7 @@ export class MapService {
     if (candidates.length === 1) {
       const room = this.rooms.get(candidates[0]);
       if (room) {
-        this.currentRoomId = room.id;
+        this.setCurrentRoomId(room.id);
         return room;
       }
     }
@@ -99,7 +104,7 @@ export class MapService {
       if (exitsMatches.length === 1) {
         const room = this.rooms.get(exitsMatches[0]);
         if (room) {
-          this.currentRoomId = room.id;
+          this.setCurrentRoomId(room.id);
           return room;
         }
       }
@@ -140,7 +145,7 @@ export class MapService {
     if (destId) {
       const dest = this.rooms.get(destId);
       if (dest) {
-        this.currentRoomId = dest.id;
+        this.setCurrentRoomId(dest.id);
         return dest;
       }
     }
@@ -148,7 +153,35 @@ export class MapService {
   }
 
   setCurrentRoom(roomId: number): void {
+    this.setCurrentRoomId(roomId);
+  }
+
+  // Limpia la localización actual (no se sabe en qué sala está el jugador).
+  // Útil al desconectar o cuando el GMCP deja de mandar Room.Actual.
+  clearCurrentRoom(): void {
+    this.setCurrentRoomId(null);
+  }
+
+  // Suscriptor del cambio de sala. Devuelve una función para desuscribir.
+  // Notifica con la sala completa o `null` si se ha perdido localización.
+  subscribeRoomChange(fn: (room: MapRoom | null) => void): () => void {
+    this.roomSubscribers.push(fn);
+    return () => {
+      const idx = this.roomSubscribers.indexOf(fn);
+      if (idx >= 0) this.roomSubscribers.splice(idx, 1);
+    };
+  }
+
+  // Helper privado que centraliza la mutación de `currentRoomId` para que
+  // SIEMPRE pase por el notifier. Si añades otro lugar que cambie la
+  // sala, hazlo a través de este método (no asignes directamente al campo).
+  private setCurrentRoomId(roomId: number | null): void {
+    if (this.currentRoomId === roomId) return;
     this.currentRoomId = roomId;
+    const room = roomId !== null ? this.rooms.get(roomId) ?? null : null;
+    for (const sub of this.roomSubscribers) {
+      try { sub(room); } catch (e) { console.warn('[mapService] subscriber error:', e); }
+    }
   }
 
   getCurrentRoom(): MapRoom | null {

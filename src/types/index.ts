@@ -41,6 +41,8 @@ export type RootStackParamList = {
   TriggerEditor: { packId: string; autoOpenTriggerId?: string };
   MySounds: undefined;
   UserVariables: undefined;
+  MyAmbients: undefined;
+  ConfigBackup: undefined;
 };
 
 export type TriggerType =
@@ -61,7 +63,13 @@ export type TriggerAction =
   | { type: 'gag' }
   | { type: 'replace'; with: string; withBlocks?: ActionTextBlock[] }
   | { type: 'color'; fg?: string; bg?: string; bold?: boolean }
-  | { type: 'play_sound'; file: string }
+  // `pan` is the stereo balance: -1 hard left, 0 centre (default), +1 hard
+  // right. Range is clamped to [-1, 1] at playback. undefined / missing /
+  // 0 all mean centre. The pan is only honoured by the platform when an
+  // engine that supports stereo balancing is wired up; otherwise the sound
+  // plays centred regardless. Compatible backwards: existing pack JSONs
+  // without `pan` keep playing centred.
+  | { type: 'play_sound'; file: string; pan?: number }
   | { type: 'send'; command: string; commandBlocks?: ActionTextBlock[] }
   | { type: 'notify'; title?: string; titleBlocks?: ActionTextBlock[]; message: string; messageBlocks?: ActionTextBlock[] }
   // `level` selects a preset palette. `fg`/`bg` (optional, hex strings) override
@@ -74,7 +82,11 @@ export type TriggerAction =
   // a predefined variable name (vida, energia, ...). value template can use
   // capture refs ($1, $2 — only meaningful in regex triggers), $old/$new
   // (only in variable triggers), and ${otherVar} for nested user-var refs.
-  | { type: 'set_var'; varName: string; value: string; valueBlocks?: ActionTextBlock[] };
+  // After template expansion, `replacements` (when present) are applied in
+  // order — each pair does a literal (non-regex) string replace-all on the
+  // accumulated value. Common use: turn ", " into "|" so the resulting var
+  // is regex-friendly when injected into a pattern with `${name:raw}`.
+  | { type: 'set_var'; varName: string; value: string; valueBlocks?: ActionTextBlock[]; replacements?: { from: string; to: string }[] };
 
 export type CaptureType = 'word' | 'phrase' | 'number';
 
@@ -146,6 +158,36 @@ export interface TriggerPack {
 }
 
 export type FloatingOrientation = 'portrait' | 'landscape';
+
+// Categorías de ambient sound. La pantalla "Mis ambientes" deja al usuario
+// asignar 0-4 wavs a cada una; el clasificador (`roomCategorizer`) deduce
+// la categoría a partir del nombre de la sala. 'default' captura todo lo
+// que no encaja en ninguna otra.
+export type RoomCategory =
+  | 'desierto'
+  | 'subterraneo'
+  | 'bosque'
+  | 'camino'
+  | 'mar_costa'
+  | 'fortificacion'
+  | 'nieve_frio'
+  | 'volcanico'
+  | 'montana'
+  | 'interior_civil'
+  | 'campo_cultivo'
+  | 'paramo_llanura'
+  | 'pantano'
+  | 'ciudad'
+  | 'templo'
+  | 'ruinas'
+  | 'cementerio_no_muertos'
+  | 'default';
+
+// Mapping persistido en AsyncStorage. Cada categoría guarda hasta 4 refs
+// `custom:{uuid}.{ext}`. Lista vacía → silencio en esa categoría.
+export type AmbientMappings = {
+  [K in RoomCategory]: { sounds: string[] };
+};
 
 export interface LayoutItem {
   id: string;
