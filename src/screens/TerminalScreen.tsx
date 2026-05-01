@@ -2002,6 +2002,19 @@ export function TerminalScreen({ route, navigation }: Props) {
                 </TouchableOpacity>
               )}
 
+              {uiMode === 'blind' && globalAmbientEnabled && (
+                <TouchableOpacity
+                  style={[styles.sendButton, { flex: 0.4, backgroundColor: ambientEnabled ? '#3a5a3a' : '#666666' }]}
+                  onPress={toggleAmbient}
+                  accessible={true}
+                  accessibilityLabel={`Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`}
+                  accessibilityRole="button"
+                  accessibilityHint="Activa o desactiva la música de fondo"
+                >
+                  <Text style={[styles.sendButtonText, { fontSize: 14 }]}>{ambientEnabled ? 'Música' : 'Sin música'}</Text>
+                </TouchableOpacity>
+              )}
+
               {uiMode === 'blind' && (
                 <TouchableOpacity
                   style={[styles.sendButton, { flex: 0.4, backgroundColor: '#336699' }]}
@@ -2316,6 +2329,19 @@ export function TerminalScreen({ route, navigation }: Props) {
                     accessibilityHint={`Lee los mensajes en voz alta. Estado: ${silentModeEnabled ? 'ON' : 'OFF'}`}
                   >
                     <Text style={[styles.sendButtonText, { fontSize: 14 }]}>{silentModeEnabled ? 'Silencio' : 'Sonido'}</Text>
+                  </TouchableOpacity>
+                )}
+
+                {uiMode === 'blind' && globalAmbientEnabled && (
+                  <TouchableOpacity
+                    style={[styles.sendButton, { flex: 0.4, backgroundColor: ambientEnabled ? '#3a5a3a' : '#666666' }]}
+                    onPress={toggleAmbient}
+                    accessible={true}
+                    accessibilityLabel={`Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`}
+                    accessibilityRole="button"
+                    accessibilityHint="Activa o desactiva la música de fondo"
+                  >
+                    <Text style={[styles.sendButtonText, { fontSize: 14 }]}>{ambientEnabled ? 'Música' : 'Sin música'}</Text>
                   </TouchableOpacity>
                 )}
 
