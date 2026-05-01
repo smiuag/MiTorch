@@ -15,7 +15,6 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import { ActionTextBlock, AnchorMode, PatternBlock, Trigger, TriggerAction, TriggerType, VariableCondition } from '../types';
-import { AVAILABLE_SOUNDS } from '../storage/settingsStorage';
 import { CustomSound, addCustomSound, loadCustomSounds } from '../storage/customSoundsStorage';
 import { TriggerPatternBuilder } from './TriggerPatternBuilder';
 import { TriggerActionTextBuilder } from './TriggerActionTextBuilder';
@@ -25,7 +24,6 @@ import { VARIABLE_SPECS, getVariableSpec, isPredefinedVariable } from '../utils/
 import { isValidUserVarName, userVariablesService } from '../services/userVariablesService';
 import { VariablePicker } from './VariablePicker';
 
-const BUILTIN_PREFIX = 'builtin:';
 const CUSTOM_PREFIX = 'custom:';
 
 export function getSoundLabel(soundKey: string, customSounds: CustomSound[]): string {
@@ -35,8 +33,10 @@ export function getSoundLabel(soundKey: string, customSounds: CustomSound[]): st
     const cs = customSounds.find((s) => s.filename === filename);
     return cs ? cs.name : `(falta) ${filename}`;
   }
-  const path = soundKey.startsWith(BUILTIN_PREFIX) ? soundKey.slice(BUILTIN_PREFIX.length) : soundKey;
-  return (AVAILABLE_SOUNDS as Record<string, string>)[path] || path;
+  // Legacy `builtin:*` refs from packs imported in older builds — the audio
+  // for those is no longer bundled. Show the raw key so the user can spot
+  // and reassign them.
+  return soundKey;
 }
 
 const ACTION_TYPES: Array<{ key: TriggerAction['type']; label: string }> = [
@@ -187,7 +187,6 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
   const [testInput, setTestInput] = useState('');
   const [actionPickerVisible, setActionPickerVisible] = useState(false);
   const [soundPickerIndex, setSoundPickerIndex] = useState<number | null>(null);
-  const [soundPickerTab, setSoundPickerTab] = useState<'builtin' | 'custom'>('builtin');
   const [customSounds, setCustomSounds] = useState<CustomSound[]>([]);
   const { playSound } = useSounds();
 
@@ -872,7 +871,6 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
               onChange={(a) => handleUpdateAction(idx, a)}
               onRemove={() => handleRemoveAction(idx)}
               onPickSound={() => {
-                setSoundPickerTab(action.type === 'play_sound' && action.file?.startsWith(CUSTOM_PREFIX) ? 'custom' : 'builtin');
                 setSoundPickerIndex(idx);
               }}
             />
@@ -1048,42 +1046,32 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
               onPress={() => {}}
               style={[styles.pickerBox, { maxHeight: '85%' }]}
             >
-              <Text style={styles.pickerTitle}>Elegir sonido</Text>
-              <View style={styles.tabRow}>
-                <TouchableOpacity
-                  style={[styles.tabBtn, soundPickerTab === 'builtin' && styles.tabBtnActive]}
-                  onPress={() => setSoundPickerTab('builtin')}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: soundPickerTab === 'builtin' }}
-                >
-                  <Text style={[styles.tabBtnText, soundPickerTab === 'builtin' && styles.tabBtnTextActive]}>
-                    Built-in
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.tabBtn, soundPickerTab === 'custom' && styles.tabBtnActive]}
-                  onPress={() => setSoundPickerTab('custom')}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: soundPickerTab === 'custom' }}
-                >
-                  <Text style={[styles.tabBtnText, soundPickerTab === 'custom' && styles.tabBtnTextActive]}>
-                    Mis sonidos ({customSounds.length})
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              <Text style={styles.pickerTitle}>Elegir sonido ({customSounds.length})</Text>
 
-              {soundPickerTab === 'builtin' ? (
+              <TouchableOpacity
+                style={styles.uploadBtn}
+                onPress={handleUploadCustomSound}
+                accessibilityRole="button"
+                accessibilityLabel="Subir sonido desde el móvil"
+              >
+                <Text style={styles.uploadBtnText}>+ Subir sonido del móvil</Text>
+              </TouchableOpacity>
+              {customSounds.length === 0 ? (
+                <Text style={styles.emptyText}>
+                  Aún no has subido sonidos. Pulsa "+ Subir sonido del móvil" para añadir uno (wav, mp3, ogg, m4a, aac o flac).
+                </Text>
+              ) : (
                 <FlatList
-                  data={Object.entries(AVAILABLE_SOUNDS)}
-                  keyExtractor={([path]) => path}
-                  renderItem={({ item: [path, label] }) => {
-                    const key = `${BUILTIN_PREFIX}${path}`;
+                  data={customSounds}
+                  keyExtractor={(s) => s.uuid}
+                  renderItem={({ item }) => {
+                    const key = `${CUSTOM_PREFIX}${item.filename}`;
                     return (
                       <View style={styles.soundPickerRow}>
                         <TouchableOpacity
                           style={styles.previewBtn}
                           onPress={() => playSound(key)}
-                          accessibilityLabel={`Probar ${label}`}
+                          accessibilityLabel={`Probar ${item.name}`}
                           accessibilityRole="button"
                         >
                           <Text style={styles.previewBtnText}>▶</Text>
@@ -1095,65 +1083,16 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
                               handlePickSoundForAction(soundPickerIndex, key);
                             }
                           }}
-                          accessibilityLabel={`Usar ${label}`}
+                          accessibilityLabel={`Usar ${item.name}`}
                           accessibilityRole="button"
                         >
-                          <Text style={styles.pickerItemText}>{label}</Text>
-                          <Text style={styles.pickerItemSubtext}>{path}</Text>
+                          <Text style={styles.pickerItemText}>{item.name}</Text>
+                          <Text style={styles.pickerItemSubtext}>.{item.ext}</Text>
                         </TouchableOpacity>
                       </View>
                     );
                   }}
                 />
-              ) : (
-                <>
-                  <TouchableOpacity
-                    style={styles.uploadBtn}
-                    onPress={handleUploadCustomSound}
-                    accessibilityRole="button"
-                    accessibilityLabel="Subir sonido desde el móvil"
-                  >
-                    <Text style={styles.uploadBtnText}>+ Subir sonido del móvil</Text>
-                  </TouchableOpacity>
-                  {customSounds.length === 0 ? (
-                    <Text style={styles.emptyText}>
-                      Aún no has subido sonidos. Pulsa "+ Subir sonido del móvil" para añadir uno (wav, mp3, ogg, m4a, aac o flac).
-                    </Text>
-                  ) : (
-                    <FlatList
-                      data={customSounds}
-                      keyExtractor={(s) => s.uuid}
-                      renderItem={({ item }) => {
-                        const key = `${CUSTOM_PREFIX}${item.filename}`;
-                        return (
-                          <View style={styles.soundPickerRow}>
-                            <TouchableOpacity
-                              style={styles.previewBtn}
-                              onPress={() => playSound(key)}
-                              accessibilityLabel={`Probar ${item.name}`}
-                              accessibilityRole="button"
-                            >
-                              <Text style={styles.previewBtnText}>▶</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              style={styles.soundPickerItem}
-                              onPress={() => {
-                                if (soundPickerIndex !== null) {
-                                  handlePickSoundForAction(soundPickerIndex, key);
-                                }
-                              }}
-                              accessibilityLabel={`Usar ${item.name}`}
-                              accessibilityRole="button"
-                            >
-                              <Text style={styles.pickerItemText}>{item.name}</Text>
-                              <Text style={styles.pickerItemSubtext}>.{item.ext}</Text>
-                            </TouchableOpacity>
-                          </View>
-                        );
-                      }}
-                    />
-                  )}
-                </>
               )}
             </TouchableOpacity>
           </TouchableOpacity>
@@ -1998,23 +1937,6 @@ const styles = StyleSheet.create({
   },
   newUserVarBtnDisabled: { backgroundColor: '#1a1a1a', borderColor: '#333' },
   newUserVarBtnText: { color: '#0c0', fontSize: 13, fontFamily: 'monospace', fontWeight: 'bold' },
-  tabRow: {
-    flexDirection: 'row',
-    marginBottom: 10,
-    borderRadius: 6,
-    backgroundColor: '#0d0d0d',
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-    overflow: 'hidden',
-  },
-  tabBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  tabBtnActive: { backgroundColor: '#0a3a0a' },
-  tabBtnText: { color: '#888', fontSize: 12, fontFamily: 'monospace', fontWeight: 'bold' },
-  tabBtnTextActive: { color: '#0c0' },
   soundPickerRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -30,39 +30,6 @@ export interface AppSettings {
   effectsVolume: number;
 }
 
-export const AVAILABLE_SOUNDS = {
-  'bloqueos/bloqueo-termina.wav': 'Bloqueo termina',
-  'combate/pierdes-concentracion.wav': 'Pierdes concentración',
-  'hechizos/preparas.wav': 'Preparas hechizo',
-  'hechizos/formulando.wav': 'Formulando',
-  'hechizos/resiste.wav': 'Resiste',
-  'hechizos/fuera-rango.wav': 'Fuera de rango',
-  'hechizos/imagenes-off.wav': 'Imágenes desactivadas',
-  'hechizos/imagenes-up.wav': 'Imágenes activadas',
-  'hechizos/piel-piedra-on.wav': 'Piel de piedra',
-  'combate/impacto.wav': 'Impacto',
-  'combate/esquivado.wav': 'Esquivado',
-  'combate/bloqueado.wav': 'Bloqueado',
-  'combate/objetivo-perdido.wav': 'Objetivo perdido',
-  'combate/interrumpido.wav': 'Interrumpido',
-  'combate/critico.wav': 'Crítico',
-  'combate/golpe-lanzas.wav': 'Golpe que lanzas',
-  'combate/golpe-recibes.wav': 'Golpe que recibes',
-  'combate/muerte-propia.wav': 'Muerte propia',
-  'combate/muerte-otro.wav': 'Muerte de otro',
-  'combate/hemorragia.wav': 'Hemorragia',
-  'combate/cicatrizar.wav': 'Cicatrizar',
-  'combate/incapacitado.wav': 'Incapacitado',
-  'combate/alerta.wav': 'Alerta',
-  'combate/alerta-vida-50.wav': 'Alerta vida 50%',
-  'combate/alerta-vida-30.wav': 'Alerta vida 30%',
-  'combate/alerta-vida-10.wav': 'Alerta vida 10%',
-  'eventos/muerte.wav': 'Muerte',
-  'eventos/victoria.wav': 'Victoria',
-  'eventos/xp.wav': 'XP',
-  'eventos/curacion.wav': 'Curación',
-} as const;
-
 export const DEFAULT_SETTINGS: AppSettings = {
   fontSize: 14,
   uiMode: 'completo',

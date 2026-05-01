@@ -5,13 +5,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, GestureConfig } from '../types';
 import { loadSettings, saveSettings, AppSettings, rebuildGestures } from '../storage/settingsStorage';
-import { enableSoundsPackForBlindMode, enableCombatePackForBlindMode } from '../storage/triggerStorage';
 import { DEFAULT_SETTINGS } from '../storage/settingsStorage';
 import { blindModeService } from '../services/blindModeService';
 import { logService, ExportRange, slugifyServerName } from '../services/logService';
 import { loadServers } from '../storage/serverStorage';
 import { LogsMaxLines } from '../storage/settingsStorage';
-import { useSounds } from '../contexts/SoundContext';
 import { activeConnection } from '../services/activeConnection';
 import { CANONICAL_PROMPT } from '../services/promptParser';
 import { speechQueue } from '../services/speechQueueService';
@@ -30,7 +28,6 @@ type Props = {
 };
 
 export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFontSizeChange, onSoundToggle, onGesturesEnabledChange }: Props) {
-  const { prepareSounds } = useSounds();
   const [settings, setSettings] = useState<AppSettings>(() => ({ ...DEFAULT_SETTINGS }));
   const [encodingModalVisible, setEncodingModalVisible] = useState(false);
   const [gestureModalVisible, setGestureModalVisible] = useState(false);
@@ -47,17 +44,6 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
     // Rebuild gestures when switching modes
     if (key === 'uiMode') {
       updated = rebuildGestures(updated);
-      // When switching to blind mode, auto-enable the seeded MUD sounds pack
-      // and the combat pack, and assign them to every saved server (replicates
-      // legacy behavior — blind users expect feedback sounds out of the box).
-      if (value === 'blind') {
-        enableSoundsPackForBlindMode().catch((e) =>
-          console.warn('[Settings] enableSoundsPackForBlindMode failed:', e),
-        );
-        enableCombatePackForBlindMode().catch((e) =>
-          console.warn('[Settings] enableCombatePackForBlindMode failed:', e),
-        );
-      }
     }
 
     setSettings(updated);
@@ -356,7 +342,7 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Usar sonidos</Text>
             <Text style={styles.rowDesc}>
-              Kill-switch global. Configura qué sonidos suenan en Triggers → "Sonidos del MUD".
+              Kill-switch global. Configura qué sonidos suenan en Triggers.
             </Text>
           </View>
           <Switch
@@ -365,7 +351,6 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
               const updated = { ...settings, soundsEnabled: value };
               setSettings(updated);
               saveSettings(updated);
-              if (value) prepareSounds();
               if (sourceLocation === 'terminal' && onSoundToggle) {
                 onSoundToggle(value);
               }

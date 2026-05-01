@@ -11,17 +11,6 @@
     "concentrationActive": false,
     "inCombat": false
   },
-  "sounds": {
-    "enabled": true,
-    "enabledByDefault": false,
-    "directory": "assets/sounds",
-    "categories": {
-      "bloqueos": "bloqueos/",
-      "hechizos": "hechizos/",
-      "combate": "combate/",
-      "eventos": "eventos/"
-    }
-  },
   "filters": {
     "bloqueos": {
       "enabled": true,

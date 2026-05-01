@@ -274,9 +274,7 @@ Sistema declarativo de reglas que interceptan líneas entrantes del MUD y permit
 
 **Pantallas:** `TriggersScreen` (lista), `TriggerEditorScreen` (contenido + asignación). Entrada: Settings → "Triggers".
 
-**Plantillas seeded en código** (en `triggerStorage.ts`): "Sonidos del MUD" (`pack_seeded_sounds`), "Combate completo" (`pack_seeded_combate`). **Deuda técnica**: ambas referencian wavs con derechos de Rhomdur en `assets/sounds/`. Política nueva (sesión 2026-04-30): los packs seeded migran a un ZIP de defaults distribuido aparte del APK. La limpieza está pendiente — usuarios actuales conservan los packs vivos, pero packs nuevos NO van al APK. Ver "Política de distribución" en sesión 2026-04-30 abajo.
-
-**Auto-enable en blind mode** vía `enablePackForBlindMode(packId)`: cuando `uiMode → 'blind'` en `SettingsScreen.updateSetting`, fuerza `enabled=true` en todos los triggers del pack y añade todos los servidores a `assignedServerIds`. Llamado para "Sonidos del MUD" y "Combate completo".
+**Sin plantillas seeded en código** (limpieza 2026-05-01): la APK ya no embebe `createSoundsPack`/`createCombatePack` ni los wavs `assets/sounds/`. El único origen de plantillas y sonidos es importar/exportar — el `torchzhyla-defaults.zip` (fuera de `aljhtar-store/`) trae Sonidos del MUD, Combate completo, Comunicaciones y Movimiento. Usuarios que tengan los packs seeded vivos en su disk los conservan, pero las refs `builtin:*` quedan mudas (el editor las muestra como `builtin:combate/critico.wav` raw); camino de recuperación: importar el ZIP.
 
 **Reglas no derivables del código:**
 - **Sonido kill-switch global**: el toggle "Usar sonidos" se gatea en `!silentModeEnabledRef.current` — `play_sound` respeta esto independientemente de qué pack lo dispare.
@@ -287,7 +285,7 @@ Sistema declarativo de reglas que interceptan líneas entrantes del MUD y permit
 
 **Pendiente accesibilidad (~1h, alto impacto):** defaultear a modo experto cuando `uiMode === 'blind'` (cajas son visuales, regex en texto plano es navegable con TalkBack) y añadir resumen narrado del patrón debajo del editor.
 
-**Notas de compat:** `play_sound.file` admite tres formatos: bare path (legacy → builtin), `builtin:eventos/xp.wav`, `custom:{uuid}.{ext}`. Sonidos custom se cargan on-demand sin caché para no inflar memoria.
+**Notas de compat:** `play_sound.file` solo se reproduce con prefijo `custom:{uuid}.{ext}`. Refs sin ese prefijo (legacy `builtin:*` o paths bare) caen a silent no-op en runtime y se renderizan raw en el editor para que el usuario las identifique y reasigne. Sonidos custom se cargan on-demand sin caché para no inflar memoria.
 
 ### Decisiones de diseño aprobadas
 
@@ -318,7 +316,7 @@ type TriggerAction =
   | { type: 'gag' }
   | { type: 'replace'; with: string }                            // soporta $1, $2, $old, $new
   | { type: 'color'; fg?: string; bg?: string; bold?: boolean }
-  | { type: 'play_sound'; file: string }                         // 'builtin:x.wav' | 'custom:{uuid}.wav'
+  | { type: 'play_sound'; file: string }                         // 'custom:{uuid}.wav'
   | { type: 'send'; command: string }
   | { type: 'notify'; message: string };
 
@@ -670,11 +668,11 @@ _Por escribir tras cerrar las preguntas._
 
 ### Doctrinas de la sesión 2026-04-30
 
-**Política de distribución de plantillas y sonidos** (aplica de aquí en adelante):
+**Política de distribución de plantillas y sonidos**:
 - La APK se distribuye **limpia de plantillas y sonidos por defecto** — ningún `play_sound` con derechos de terceros, ningún pack seeded de un addon ajeno.
-- Plantillas por defecto (Sonidos del MUD, Combate completo, Comunicaciones, …) van en `torchzhyla-defaults.zip` (raíz del repo TorchZhyla, fuera de `aljhtar-store/`), formato `torchzhyla-trigger-backup` v1. El usuario lo importa con Triggers → Importar.
+- Plantillas por defecto (Sonidos del MUD, Combate completo, Comunicaciones, Movimiento) van en `torchzhyla-defaults.zip` (raíz del repo TorchZhyla, fuera de `aljhtar-store/`), formato `torchzhyla-config-backup`. El usuario lo importa con Configuración → Importar.
 - Razón: los wavs originales son de Rhomdur (addon CMUD blind/RL). No los redistribuimos en la APK.
-- **Deuda técnica reconocida**: la APK actual TODAVÍA contiene `createSoundsPack()` y `createCombatePack()` en `triggerStorage.ts` y los wavs `assets/sounds/{combate,eventos,hechizos,bloqueos}/`. Usuarios actuales conservan los packs vivos. Packs nuevos van SOLO al ZIP. Limpieza pendiente: cuando se haga, usuarios con refs `builtin:combate/...` en sus packs personales perderán sonido y deberán reasignar.
+- **Limpieza ejecutada 2026-05-01**: borrados `createSoundsPack`/`createCombatePack`, `enableSoundsPackForBlindMode`/`enableCombatePackForBlindMode`/`enablePackForBlindMode`, const `AVAILABLE_SOUNDS`, las 30 entradas builtin del cache de `SoundContext`, `assets/sounds/`, sección `sounds` de `blindModeFilters.json`, pestaña Built-in del sound picker. Usuarios con packs seeded vivos del APK anterior los conservan en disk pero las refs `builtin:*` quedan mudas — camino: importar el ZIP. AsyncStorage keys huérfanas `aljhtar_trigger_packs_sounds_seeded`/`...combate_seeded` quedan inocuas en disk de esos usuarios; no se ejecuta migración para borrarlas.
 - Generar el ZIP con script Node + `jszip` (misma lib que la app). PowerShell `Compress-Archive` NO sirve — escribe paths con `\` que rompen el importador (jszip valida `/`).
 - Push al móvil: `adb push C:\proyectos\Claude\TorchZhyla\torchzhyla-defaults.zip /sdcard/Download/`.
 
@@ -912,251 +910,51 @@ ZIP regenerado, mismas dimensiones (~18 MB).
 
 ## Sistema de Ambientación (HECHO 2026-04-30)
 
-Loop de música de fondo que cambia con el **tipo** de room (no por zona específica). Las 9 fases (A1-A9) ejecutadas en una sola sesión continua tras Plan D. **Todo el JS está cableado**, falta solo el rebuild nativo cuando el usuario lo lance (`react-native-sound` se añadió en Plan D, en Plan A solo es JS) y los wavs de ambient (los aporta el usuario, no se bundlean).
+Loop de música de fondo que cambia con el **tipo de room** (no por zona específica). 17 categorías hardcoded + `default` (subterraneo, bosque, ciudad, pantano, mar_costa, etc.). El `roomCategorizer` clasifica por keywords sobre el nombre normalizado de la sala. Cobertura medida ~94% sobre `map-reinos.json`; los defaults restantes son ciudades específicas que el usuario puede asignar al pool `default` desde la UI.
 
-### Decisiones cerradas
+**Pipeline**: `MapService.currentRoomChanged` → `categorizeRoom(room.n)` → `AmbientPlayer.setCategory(category)` (debounced 500 ms) → crossfade 1.5 s entre el sound viejo y el nuevo. Si la categoría no tiene wavs asignados → silencio. Si tiene varios → random al entrar (no round-robin, no resume del anterior).
 
-- **17 categorías + default = 18 tipos**:
-  `desierto, subterraneo, bosque, camino, mar_costa, fortificacion, nieve_frio, volcanico, montana, interior_civil, campo_cultivo, paramo_llanura, pantano, ciudad, templo, ruinas, cementerio_no_muertos, default`.
-- **Random nueva al volver al tipo**: cuando vuelves a un tipo después de salir, se elige random entre las 2-4 melodías. NO reanuda la anterior, NO round-robin. Razón: simplicidad y porque el crossfade entre tipos ya rompe la continuidad perceptual.
-- **Loop seamless vía wavs preparados**: confiar en `setIsLoopingAsync(true)` de expo-av. Los wavs deben venir cortados en zero-crossing con cola que continúa la cabeza. Si surge click audible en uso real → fase A9 con doble buffer (~2 h adicionales, NO MVP).
-- **Crossfade entre tipos**: 1.5 s lineal (30 ticks de 50 ms vía `setVolumeAsync`).
-- **Volúmenes**: `ambientVolume` default 0.4, `effectsVolume` default 0.7. Ambos sliders 0-1, paso 0.05. **`effectsVolume` es nuevo** — hoy no existe slider de volumen para `play_sound` de triggers, solo el kill-switch `silentModeEnabled`.
-- **Una melodía a la vez** (no solapan dos del mismo tipo).
-- **Sin background** con pantalla bloqueada (fricción con notificaciones, ya descartado en doctrina previa).
-- **UI**: pantalla aparte "Mis ambientes" navegable desde Settings, estilo "Mis sonidos". Una entrada por categoría con hasta 4 slots para asignar wavs custom desde el picker existente.
-- **Distribución**: APK SIN wavs. Vienen en `torchzhyla-defaults.zip` o el usuario importa los suyos (misma política que sonidos de triggers, sesión 2026-04-30).
-
-### Modelo de datos
-
-```typescript
-type RoomCategory =
-  | 'desierto' | 'subterraneo' | 'bosque' | 'camino' | 'mar_costa'
-  | 'fortificacion' | 'nieve_frio' | 'volcanico' | 'montana'
-  | 'interior_civil' | 'campo_cultivo' | 'paramo_llanura' | 'pantano'
-  | 'ciudad' | 'templo' | 'ruinas' | 'cementerio_no_muertos'
-  | 'default';
-
-// Storage: aljhtar_ambient_mappings
-type AmbientMappings = {
-  [K in RoomCategory]: { sounds: string[] };  // refs "custom:{uuid}.wav"
-};
-
-// AppSettings — campos nuevos
-interface AppSettings {
-  ambientEnabled: boolean;     // default true
-  ambientVolume: number;       // 0..1, default 0.4
-  effectsVolume: number;       // 0..1, default 0.7 (NUEVO)
-}
-```
-
-### Reglas del clasificador
-
-Por categoría, lista de keywords aplicada después de `name.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim()` y stripeado de prefijos `^Y\d+\s*:?\s*` y `^]\s*Y\d+\s*:?\s*`. **Orden importa — primera regla que matchea gana.**
-
-| # | Categoría | Keywords detonadoras |
-|---|---|---|
-| 1 | subterraneo | cueva, caverna, mina, galeria, subterran, cloaca, alcantarilla, tunel, pasaje, pasadizo, catacumba, sotano, cripta, kheleb, mor groddur, golthur orod, adhul, grimoszk, dum, **excavacion, cantera, foso de crianza, madriguera, nido, colonia de los, oscuridad profunda bajo, nivel de los gladiadores, investigacion geologica** |
-| 2 | volcanico | volcan, lava, magma, ceniza, chimenea volcanica, fragua, ormeion, n.argh |
-| 3 | pantano | pantano, cienag, marisma, marism, marjal, lodazal, **tierras humedas, margenes del** |
-| 4 | nieve_frio | tundra, nieve, glacial, helad, boreal, escarcha, iglu, blanco, paso helado, viento helado, **paramos del viento** |
-| 5 | mar_costa | mar de, playa, muelle, puerto, bahia, cala, lago, laguna, estanque, isla, islote, acantilado, rivera, estrecho, oceano, olas, **costa de** |
-| 6 | desierto | desierto, duna, salina, oasis, arena, sabana |
-| 7 | bosque | bosque, selva, arboled, arbolado, jungla, espesura, foresta |
-| 8 | cementerio_no_muertos | necropolis, nichos del tumulo, taubûrz, taubrz, no-muert, nomuert, tumba, sepultura, panteon, osario |
-| 9 | ciudad | ciudad, urbe, aldea, villa, pueblo, metropoli, **suburb, calle, avenida, casco historico, barrio, barriada, arrabal, feudo** |
-| 10 | fortificacion | castillo, fortaleza, muralla, torre, almena, baluarte, ciudadela, fuerte, base de, **campamento, empalizada, asentamiento, puertas de angaloth** |
-| 11 | campo_cultivo | cultivo, trigal, viñed, vined, huerto, jardin, frutal, olivar, pasto, prado, dehesa, establo, **poblado, granja** |
-| 12 | paramo_llanura | paramo, llanura, llano, erial, baldio, estepa, meseta, tierras pardas, **campos salvajes, campos de, alrededores de, planicie** |
-| 13 | montana | cordillera, montaña, montana, colin, cumbre, cerro, risco, ladera, sierra, peñasco, altiplano, **monte, montes, escalera del cielo, valle de** |
-| 14 | camino | camino, sendero, senda, via, ruta, calzada, desfiladero, paso, **carretera** |
-| 15 | templo | templo, santuario, mausoleo, catedral, altar, monasterio |
-| 16 | interior_civil | hostal, posada, taberna, tienda, salon, biblioteca, herreria, panaderia, mercado, almacen |
-| 17 | ruinas | ruinas, ruinoso, derruido, escombros, abandonad |
-| 18 | default | resto (incluye `Am`, `]`, 427 rooms sin nombre) |
-
-(En **negrita** las keywords añadidas tras la conversación de cierre con el usuario para clasificar los grupos A-G.)
-
-**Cobertura esperada**: ~98% directos, resto a `default`. Validar con un script tras implementar A1.
-
-### Pipeline runtime
-
-```
-MapService.currentRoomChanged
-  → roomCategorizer.categorizeRoom(room.n, room.c) → category
-  → AmbientPlayer.setCategory(category)        // debounced 500 ms
-       ├─ if category === currentCategory → no-op
-       └─ if changed:
-            ├─ pick = mappings[category].sounds[Math.random() * len]
-            ├─ if pick === undefined → fade-out viejo, currentCategory = category, return (silencio)
-            ├─ load expo-av Audio.Sound (URI = ${Paths.document}/sounds/{uuid})
-            ├─ setIsLoopingAsync(true), setVolumeAsync(0)
-            └─ crossfade 1.5 s: old fadeOut → 0 ‖ new fadeIn → ambientVolume; unload old al final
-```
-
-### Reglas operativas no derivables del código
-
-- **Un único `Audio.Sound` cargado** a la vez. Stop + unload del anterior tras crossfade.
+**Reglas operativas no derivables del código:**
+- **Distribución sin wavs**: la APK no bundlea wavs de ambient. Los aporta el usuario importando ZIP o cargándolos manualmente desde "Mis ambientes".
+- **Background**: AppState `'background'` → fade-out + pause; `'active'` → reanuda con la categoría actual del mapa. NO sigue sonando con pantalla bloqueada (decisión de fricción con notificaciones).
 - **Stop al desconectar** (`telnetService.disconnect`) y al perder sala identificada (`currentRoom === null`).
-- **AppState** `'background'` → fade-out + pause; `'active'` → reanuda con la categoría actual del mapa. NO sigue sonando con pantalla bloqueada.
-- **Refs ausentes**: si una `custom:{uuid}.wav` ya no existe en disco → log + saltar a la siguiente del array. Si todas faltan → silencio + log.
-- **Kill-switch global** (`silentModeEnabled`) afecta también al ambient. El toggle propio (`ambientEnabled`) es independiente.
-- **`effectsVolume`** afecta a los `play_sound` de triggers vía `SoundContext.playSound` que multiplica antes de `setVolumeAsync`.
-- **Debounce 500 ms** en `setCategory` evita fade-fade-fade al cruzar zonas rápido (cuenta solo el último cambio).
-- **Una sala sin categoría** o con `mappings[category].sounds=[]` → silencio sin error.
+- **Refs ausentes**: si una `custom:{uuid}.wav` ya no existe en disco → log + saltar a la siguiente del array. Si todas faltan → silencio + log. La UI muestra `(falta) <filename>` en los slots.
+- **Kill-switch**: el toggle propio (`ambientEnabled` 🎵 en TerminalScreen) es independiente del `silentModeEnabled` global, pero ambos silencian.
+- **`effectsVolume`** (slider en "Mis ambientes") afecta a TODOS los `play_sound` de triggers vía `SoundContext` en sus 3 rutas (custom centrado, custom panned con `react-native-sound`, builtin warmed). Default 0.7.
+- **Loop gapless** depende del wav: deben venir cortados en zero-crossing con cola que continúa la cabeza, si no se oye click. Si un wav del usuario tiene click → es problema del wav, no del player.
 
-### Estado real al cierre 2026-04-30
+**Settings**: `ambientEnabled` (bool, default true), `ambientVolume` (0..1, default 0.4), `effectsVolume` (0..1, default 0.7). Storage `aljhtar_ambient_mappings` con map por categoría → array de refs `custom:{uuid}.wav` (cap 4 por categoría, `MAX_SOUNDS_PER_CATEGORY` exportado para la UI).
 
-| Fase | Estado | Archivo principal | Notas |
-|---|---|---|---|
-| A1 Clasificador | HECHO | `src/services/roomCategorizer.ts` | 17 categorías + default. Validador one-shot reportó 94.1% de cobertura sobre `map-reinos.json` (el plan estimaba 98%). Los defaults restantes son nombres de ciudades específicas (Amon Muil, Andlief…) — no merece la pena hardcodear, el usuario puede asignar wavs a `default` para cubrirlas. |
-| A2 Storage + settings | HECHO | `src/storage/ambientStorage.ts` + `settingsStorage.ts` | 3 settings nuevos (`ambientEnabled`, `ambientVolume`, `effectsVolume`). `MAX_SOUNDS_PER_CATEGORY=4` exportado para la UI. |
-| A3 AmbientPlayer | HECHO | `src/services/ambientPlayer.ts` | Singleton con debounce 500 ms, crossfade 30×50ms=1.5s, fade-out 20×50ms=1s. Token de request invalida loads obsoletos. |
-| A4 Hook a MapService | HECHO | `mapService.ts` + `TerminalScreen.tsx` | Mini-emitter `subscribeRoomChange`. `clearCurrentRoom()` se llama en cleanup de la conexión y en reconnect. |
-| A5 Mis ambientes | HECHO | `src/screens/MyAmbientsScreen.tsx` | Sin Slider (no instalado, decisión por accesibilidad blind: `VolumeAdjuster` con +/-). Categorías ordenadas: con sonidos primero, luego por nº de salas. |
-| A6 Toggle terminal | HECHO | `TerminalScreen.tsx` | Botón 🎵 con bg verde si ON / gris si OFF, junto al de silent. Anuncio TalkBack al cambiar (`speechQueue.enqueue`). |
-| A7 effectsVolume | HECHO | `SoundContext.tsx` | `effectsVolumeRef` aplicado en las 3 rutas de play (custom centrado, custom panned, builtin warmed). Seed desde settings al montar; updates inmediatos vía `setEffectsVolume()`. |
-| A8 Polish (AppState) | HECHO | `TerminalScreen.tsx` | Background → `setEnabled(false)`; active → `setEnabled(true)` solo si `settings.ambientEnabled`. Logs `[AMBIENT]` ya integrados como `console.warn`. |
-| A9 Unificación import/export | HECHO | `triggerPackExport.ts` + `ConfigBackupScreen.tsx` | `BACKUP_FORMAT='torchzhyla-config-backup'` (legacy aceptado en read). v2 con `ambientMappings?` + merge por categoría. Pantalla `ConfigBackup` accesible desde Settings. |
+**Archivos clave**: `src/services/roomCategorizer.ts`, `src/services/ambientPlayer.ts` (singleton), `src/storage/ambientStorage.ts`, `src/screens/MyAmbientsScreen.tsx`, `src/screens/ConfigBackupScreen.tsx`, toggle 🎵 en `TerminalScreen.tsx`.
 
-### Reglas operativas validadas
-
-- **`react-native-sound` ya estaba instalado** desde Plan D, así que A4-A7 no requirieron nueva dep nativa. Plan A es 100% JS — JS-only reload (Metro) basta para activar todo en un build que ya tenga el módulo nativo.
-- **Builtins con pan ≠ 0**: warning + centrado (decisión de Plan D). Sigue aplicando.
-- **Builtins ignoran el `effectsVolume`?** No — sí lo aplican. La rama "builtin warmed cache" llama `setVolumeAsync(fxVol)` antes del play. Los warnings de "pan ignorado" solo afectan al pan, no al volumen.
-- **Rebuild nativo NO es necesario** para activar Plan A. Si el dispositivo ya tiene el APK con `react-native-sound` (instalado tras Plan D), un Metro reload coge todo.
-- **Wavs de ambient**: NO bundleados en APK ni en `torchzhyla-defaults.zip`. El usuario los aporta. La pantalla "Mis ambientes" muestra `(falta) <filename>` si una ref apunta a un wav que ya no está en disco.
-
-### Fases (referencia del plan original)
-
-#### A1 — Clasificador (~30 min)
-- `src/services/roomCategorizer.ts`: tabla `CATEGORIES: { category: RoomCategory; keywords: string[] }[]` con orden y keywords de la tabla anterior.
-- `categorizeRoom(name: string, color?: string): RoomCategory`. El parámetro `color` se ignora en MVP (reservado).
-- Tras implementar: script one-shot que itere el mapa entero y reporte la distribución real por categoría + lista de los nombres que caen a `default` para ajustar reglas si hace falta.
-
-#### A2 — Storage + settings (~30 min)
-- `src/storage/ambientStorage.ts`: `loadAmbientMappings()` / `saveAmbientMappings()`. Storage key `aljhtar_ambient_mappings`. Default vacío para los 18 tipos.
-- `settingsStorage`: añadir defaults `ambientEnabled: true`, `ambientVolume: 0.4`, `effectsVolume: 0.7`. Migración: settings antiguos sin estos campos los reciben como default.
-- `src/types/index.ts`: extender `AppSettings`, exportar `RoomCategory`, `AmbientMappings`.
-
-#### A3 — `AmbientPlayer` service (~2 h)
-Singleton en `src/services/ambientPlayer.ts`. Estado: `currentSound`, `currentCategory`, `currentVolume`, `enabled`, timers de debounce y de crossfade.
-
-API:
-- `init()` — carga settings + mappings, configura `Audio.setAudioModeAsync({ playsInSilentModeIOS: true, interruptionModeAndroid: 1, shouldDuckAndroid: false })`.
-- `setCategory(category)` — debounced 500 ms, no-op si misma categoría, crossfade si cambia.
-- `setAmbientVolume(v)` — actualiza `currentSound.setVolumeAsync(v)` si suena.
-- `setEnabled(b)` — false → fade-out + unload; true → reanuda con `currentCategory`.
-- `stop()` — fade-out 1 s + unload, `currentCategory = null`.
-- `dispose()` — cleanup, cancela timers, unload.
-- `reloadMappings()` — invocado al cerrar "Mis ambientes" para refrescar.
-
-Crossfade: `setInterval` cada 50 ms × 30 ticks, volúmenes lineales.
-
-#### A4 — Hook a `MapService` (~30 min)
-- Inspeccionar `MapService` actual: si solo tiene `currentRoomRef` → añadir mini-emitter (`subscribers: ((room) => void)[]`).
-- Subscriber en `App.tsx` o `TerminalScreen`: `room === null` → `AmbientPlayer.stop()`; si no → `setCategory(categorizeRoom(room.n, room.c))`.
-- En `telnetService.disconnect` → `AmbientPlayer.stop()`.
-
-#### A5 — Pantalla "Mis ambientes" (~1.5 h)
-- Pantalla nueva `src/screens/MyAmbientsScreen.tsx`, navegable desde Settings ("🎵 Mis ambientes" o icono coherente).
-- Layout:
-  - Sección superior: dos sliders (Música / Efectos) + toggle "Música ambiente" (espejo del de TerminalScreen).
-  - Lista de las 18 categorías ordenadas con conteo de salas (computado al montar iterando `map-reinos.json` con el clasificador, cacheable).
-  - Cada entrada expandible muestra los slots ocupados (nombre del wav + ✕) y "+ Añadir sonido" hasta cap de 4. Picker reusa el de "Mis sonidos".
-- Persistencia inmediata + `AmbientPlayer.reloadMappings()` al volver.
-- Blind: cada slot con `accessibilityLabel` legible; sliders anuncian valor numérico.
-
-#### A6 — Toggle en TerminalScreen (~30 min)
-- Icono nuevo en el header (musical note ↔ note-off) cerca del de silent mode.
-- Tap → flip `ambientEnabled` + guarda + `AmbientPlayer.setEnabled(value)`.
-- Estado visual: color del tema si ON, gris si OFF.
-- Blind: `accessibilityLabel` "Música ambiente, activada/desactivada" + `speechQueueService.enqueue('Música ambiente activada')` al cambiar.
-
-#### A7 — `effectsVolume` aplicado a triggers (~30 min)
-- `SoundContext.playSound` lee `settings.effectsVolume` y lo pasa a `setVolumeAsync` después de `playAsync`.
-- Si `silentModeEnabled` → ya no toca, kill-switch (return early).
-- El slider en "Mis ambientes" actualiza el setting; `SoundContext` lee del valor más reciente vía ref/observable para que el cambio aplique inmediato sin reiniciar.
-
-#### A8 — Polish (~1 h)
-- Stop/resume con `AppState`: background fade-out + pause; active reanudar con la categoría actual.
-- Refs ausentes: helper `resolveCustomSoundUri(ref)` devuelve `null` si el wav no está; AmbientPlayer prueba el siguiente del array, log si todos faltan.
-- Logs `[AMBIENT]` opt-in (mismo patrón que `[CH_CAP]`).
-- Test mental: arrancar app sin mappings → silencio en todas las salas, sin warning. Asignar 1 wav al bosque → suena al entrar, para al salir, vuelve al entrar.
-- Doc del usuario en la pantalla "Mis ambientes": nota explicando que los wavs deben ser loops perfectos para que no se note el bucle.
-
-#### A9 — Unificación import/export bajo "Configuración" (~2 h)
-
-Decidido 2026-04-30: el ZIP que hoy se llama "exportar/importar plantillas de triggers" ya transporta packs + sonidos custom referenciados, y con A2 ganaría también los mappings de ambiente. Tiene poco sentido seguir llamándolo "triggers" — pasa a ser el formato canónico de **configuración** del usuario, ampliable en el futuro a layouts/servers/settings (lo que hoy figura como "Backup completo de la app" en Temas Pendientes deja de ser tarea aparte).
-
-**Cambios al formato `backup.json`** (`triggerPackExport.ts`):
-- **Constante `BACKUP_FORMAT`** pasa a `'torchzhyla-config-backup'`. El importador acepta TANTO el nombre antiguo `'torchzhyla-trigger-backup'` COMO el nuevo (compat hacia atrás — los ZIPs ya distribuidos siguen importándose).
-- **Constante `BACKUP_VERSION`** sube a `2`. Versión 1 (sin `ambientMappings`) sigue importable; el importador trata el campo como opcional y no rompe.
-- **Nuevo campo opcional `ambientMappings?: AmbientMappings`** en el JSON de export. Si está presente al importar, sobrescribe `aljhtar_ambient_mappings` con merge inteligente: las categorías que vienen en el backup se reemplazan, las que NO vienen se conservan. Esto permite ZIPs "solo de ambiente" (que pisan solo lo que traen) sin destruir la config del usuario.
-- **`soundsManifest`** ahora recolecta refs de `play_sound.file` Y de `ambientMappings[*].sounds[*]`. Helper actual `collectReferencedCustomSoundsAcrossPacks` se renombra a `collectReferencedCustomSounds` y acepta también la lista de mappings.
-- Los uuids de sonidos del backup se remapean con `uuidMap` igual que ahora; tras el remap, las refs en `ambientMappings` también se reescriben (mismo patrón que el de `play_sound.file`).
-
-**Cambios de UI**:
-- **Mover los botones Importar/Exportar/Backup** fuera de `TriggersScreen` (su header se queda con solo "+ Nueva plantilla"). 
-- **Nueva pantalla `ConfigBackupScreen`** o sub-sección en Settings titulada **"Importar / exportar configuración"** que aglutina:
-  - Botón "Exportar configuración" (genera ZIP con packs + mappings + sonidos referenciados, descarga al sistema).
-  - Botón "Importar configuración" (selecciona ZIP, muestra resumen de qué trae, confirma).
-  - Texto explicativo: "Incluye plantillas de triggers, mappings de ambiente y los sonidos personalizados que usen. NO incluye servidores, layouts de botones ni settings — esos se mantienen siempre."
-- En `TriggersScreen`, mantener un enlace pequeño "Importar" SOLO si el usuario tiene 0 packs (onboarding rápido). Tras tener algún pack, el enlace desaparece y el flujo va por Settings.
-
-**Política de merge en import**:
-- **Packs**: comportamiento actual (añadir como nuevos packs con uuids frescos, no se hace merge por nombre — el usuario duplicaría un pack si reimporta el mismo).
-- **`ambientMappings`**: merge por categoría. Categorías presentes en el ZIP sobrescriben; categorías ausentes se conservan. Razón: los ZIPs de defaults pueden traer solo algunas categorías y el usuario espera que su config previa de las otras NO se pierda.
-- **Sonidos custom**: cada uno bajo uuid fresco. Los refs en packs y mappings se reescriben con `uuidMap` antes de persistir.
-
-**Naming en strings de UI**:
-- "Plantilla" sigue siendo "plantilla de triggers" donde aplique.
-- "Configuración" para todo lo relacionado con el ZIP global.
-- El Alert de "Importación completa" pasa a contar las 3 cosas: "Importados N packs, M categorías de ambiente y K sonidos."
-
-**No incluido en A9** (deuda futura para "Backup completo de la app"):
-- Servidores (`ServerProfile[]`).
-- Layouts de botones por server.
-- Settings globales.
-- Variables de usuario declaradas.
-
-Si en algún momento se aborda lo de arriba, se añaden secciones opcionales más al `backup.json` (`servers?`, `layouts?`, `settings?`, `userVariables?`) y la pantalla "Importar / exportar configuración" gana checkboxes para elegir qué traer en el import. La estructura del formato ya soporta el crecimiento.
-
-### Coste total
-
-| Fase | Tiempo |
-|---|---:|
-| A1 Clasificador | 30 min |
-| A2 Storage + settings | 30 min |
-| A3 AmbientPlayer | 2 h |
-| A4 Hook map | 30 min |
-| A5 Mis ambientes | 1.5 h |
-| A6 Toggle terminal | 30 min |
-| A7 effectsVolume | 30 min |
-| A8 Polish | 1 h |
-| A9 Unificación import/export | 2 h |
-| **Total** | **~9 h** |
-
-### Riesgos conocidos
-
-- **Loop gapless depende del wav**: si los wavs no están bien cortados, click audible. Mitigación: documentar requisitos en README de defaults; si molesta → fase opcional con doble-buffer (~2 h, no MVP).
-- **Mezcla con triggers simultáneos**: ambient + 5 `play_sound` paralelos puede saturar en dispositivos viejos. Si surge → fase opcional con ducking automático (~1 h, evaluar tras uso real).
-- **Cambio rápido de tipos**: debounce 500 ms colapsa intermedios. Aceptable.
-- **Memoria**: una `Audio.Sound` cargada (1-3 MB típico). Trivial.
-
-### Fuera de scope (descartado consciente)
-
-- Background playback con pantalla bloqueada (+1.5-2 h, fricción con notificaciones).
-- Ducking automático del ambient cuando suena trigger (+1 h, evaluar tras uso real).
-- Cambio temporal por hora del juego (día/noche) — el MUD no expone hora sintetizable.
-- Override por nombre de zona específica (`Bosque de Urlom` con su propio wav distinto del genérico bosque) — fácil de añadir si surge: capa extra antes del clasificador.
-- Rotación temporal dentro del mismo tipo (cambiar de melodía cada N minutos sin salir del tipo) — no fue solicitado.
-- Reglas regex editables por el usuario en Settings — el clasificador queda hardcoded en código, suficiente para MVP.
+**Import/export unificado**: el ZIP de "exportar plantillas de triggers" pasó a ser **"exportar configuración"** (formato `torchzhyla-config-backup` v2). Transporta packs + ambientMappings + sonidos referenciados. Importador acepta también el nombre legacy `torchzhyla-trigger-backup`. Merge de `ambientMappings` por categoría: las que vienen pisan, las que faltan se conservan. Pantalla `ConfigBackupScreen` accesible desde Settings (la versión granular con checkboxes está en Temas Pendientes).
 
 ## Temas Pendientes
 
-- **Revisar botones de modo blind de consultar vida, energía...**
-- **Backup completo de la app** — la fase A9 del sistema de Ambientación renombra el ZIP actual de triggers a "configuración" y suma `ambientMappings`. Eso establece el formato extensible. Si más adelante surge la necesidad de meter también `servers`, `layouts`, `settings` y user vars (cambio de móvil, backup defensivo), se añaden como secciones opcionales al `backup.json` y la pantalla "Importar / exportar configuración" gana checkboxes. NO es tarea independiente — vive como extensión natural de A9.
+- **Exportación completa de configuración** (extensión del formato `torchzhyla-config-backup` v2). Hoy el ZIP transporta packs + ambientMappings + sonidos referenciados, pero NO servidores, layouts, channel aliases, ni settings globales. Plan: pantalla de export con checkboxes granulares para cambio de móvil / backup defensivo.
+
+  **UI de export propuesta**:
+  - **Master "Todo"** arriba — marca/desmarca todas las casillas de golpe.
+  - **Sección "Plantillas de triggers"**: un checkbox por pack (todos marcados por default). Cada pack al exportarse arrastra automáticamente sus user vars referenciadas + sus sonidos custom referenciados (no hay que pensar en eso).
+  - **Checkbox "Ambiente"** (default ON). Incluye los `ambientMappings` completos + todos los sonidos asignados a alguna categoría.
+  - **Checkbox "Servidores"** (default **OFF** — credenciales son específicas del personaje). Incluye TODOS los `ServerProfile` (host, port, username, password, autologin, blindMode, etc.).
+
+  **Importador**: checkboxes paralelos mostrando lo que el ZIP realmente contiene, con la misma granularidad. Política de merge:
+  - **Packs**: añadir con uuids frescos (sin merge por nombre — comportamiento actual).
+  - **`ambientMappings`**: merge por categoría (las que vienen pisan, las que faltan se conservan).
+  - **Servidores**: añadir como nuevos `ServerProfile` (sin merge — el usuario puede duplicar un personaje si reimporta).
+  - **Sonidos custom**: uuid fresco vía `uuidMap` reescribiendo refs.
+
+  **Faltantes a decidir antes de implementar** (preguntas para el siguiente arranque):
+  - **Layouts de botones**: per-server en modo normal, global en blind. Opción A: cuando exportas un server arrastras su layout normal, y el layout blind global va como checkbox aparte. Opción B: checkbox unificado "Layouts" que se lleva todo (normal + blind). Decidir.
+  - **Channel aliases**: per-server. Lo más natural es que viajen con el server al exportarlo (igual que el layout normal).
+  - **Settings generales** (theme, fontSize, blind toggles, speechCharDurationMs, silentModeEnabled, ambientEnabled, ambientVolume, effectsVolume, etc.): checkbox "Settings de la app". Decidir si los volúmenes y kill-switches viajan o se respeta el estado del móvil destino.
+  - **User variables sueltas** (declaradas pero NO referenciadas por ninguna plantilla incluida): edge case raro. Sugerencia: ignorar — si el usuario las quiere, las re-declara desde "Mis variables".
+  - **Logs**: explícitamente fuera (son audit data del usuario, no configuración).
+
+  **Estructura del backup.json tras la extensión**: añadir secciones opcionales `servers?`, `layouts?`, `channelAliases?`, `settings?`. Cada una se exporta solo si su checkbox está marcado. Importador trata cada campo como opcional y aplica solo si presente.
+
+  **Coste estimado**: 4-6 h.
 - **Acceso rápido a comandos en blind mode** (planteado 2026-05-01, en discusión). Problema: en MUD el usuario blind necesita 8-12 comandos accesibles en <1 s sin pasar por menús ni doble-tap-explorar. Botones pequeños con `accessibilityActions` son demasiado lentos. Opciones contempladas hasta ahora:
   - **Zona doble-tap-hold + drag direccional** (candidato técnico). Una `View` grande tipo "Zona de gestos rápidos" enfocada por TalkBack como un único elemento. El usuario hace doble-tap manteniendo el segundo dedo (gesto estándar de Android para drag/slider) — TalkBack cede el touch a la app durante todo el gesto. Detectamos `dx/dy` del PanResponder al soltar y disparamos el comando configurado para esa dirección (8 sectores: 4 cardinales + 4 diagonales). Ergonomía: rápido, sin precisión, 8-10 comandos por gesto. Limpio dentro del SDK accesible, sin permisos ni ajustes OS. Coste estimado: ~3-4 h para prototipo + settings de 8 slots.
   - **Volume Up/Down a nivel `KeyEvent`** (TalkBack no los consume): 2 atajos extra "duros".

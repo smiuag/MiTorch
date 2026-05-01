@@ -35,7 +35,7 @@ import { VitalBars } from '../components/VitalBars';
 import { ButtonGrid, GRID_COLS, GRID_ROWS } from '../components/ButtonGrid';
 import { ButtonEditModal } from '../components/ButtonEditModal';
 import { RoomSearchResults } from '../components/RoomSearchResults';
-import { loadSettings, saveSettings } from '../storage/settingsStorage';
+import { loadSettings } from '../storage/settingsStorage';
 import { MapService, MapRoom } from '../services/mapService';
 import { ButtonLayout, createDefaultLayout, createBlindModeLayout, loadLayout, saveLayout, loadServerLayout, saveServerLayout } from '../storage/layoutStorage';
 import { loadServers, saveServers } from '../storage/serverStorage';
@@ -129,8 +129,18 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  // Toggles dual: el `global*` es el setting persistido (Settings → "Usar
+  // sonidos" y Mis ambientes → "Música ambiente"); el `silentModeEnabled`/
+  // `ambientEnabled` es override de SESIÓN solo dentro del Terminal —
+  // arranca en su valor "ON" y se descarta al desmontar el componente.
+  // El botón en TerminalScreen solo se renderiza cuando el global está ON;
+  // si está OFF hay que ir a Settings para activarlo. Cuando el global pasa
+  // OFF→ON (al volver de Settings), el override de sesión se resetea a ON.
+  const [globalSoundsEnabled, setGlobalSoundsEnabled] = useState(true);
+  const [globalAmbientEnabled, setGlobalAmbientEnabled] = useState(true);
   const [silentModeEnabled, setSilentModeEnabled] = useState(false);
   const [ambientEnabled, setAmbientEnabled] = useState(true);
+  const [isAppActive, setIsAppActive] = useState(true);
   const [loginFailed, setLoginFailed] = useState(false);
   const [channels, setChannels] = useState<string[]>([]);
   const [channelMessages, setChannelMessages] = useState<ChannelMessage[]>([]);
@@ -220,27 +230,14 @@ export function TerminalScreen({ route, navigation }: Props) {
     };
   }, []);
 
-  // Track app foreground/background state so notifications only fire when not active
+  // Track app foreground/background state so notifications only fire when
+  // not active y el ambient se pause con pantalla bloqueada. La lógica de
+  // pause/resume del ambient vive ahora en el useEffect centralizado más
+  // abajo (depende de `isAppActive` + globales + sesión).
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
-      const prev = appStateRef.current;
       appStateRef.current = state;
-      // Pause/resume del ambient con la app en background. Doctrina:
-      // ambient NO suena con pantalla bloqueada (descartado por fricción
-      // con notificaciones). En `active` reanudamos con la categoría
-      // actual del mapa, no la hardcodeamos — si el usuario está fuera
-      // de cobertura o desconectado, `currentCategory` ya es null y se
-      // queda en silencio.
-      if (state !== 'active' && prev === 'active') {
-        ambientPlayer.setEnabled(false);
-      } else if (state === 'active' && prev !== 'active') {
-        // Solo reactiva si el usuario tiene el toggle ON. La consulta a
-        // settings es async pero no bloqueante: setEnabled(false) es
-        // idempotente, así que rebote de estado no rompe nada.
-        loadSettings().then((s) => {
-          if (s.ambientEnabled) ambientPlayer.setEnabled(true);
-        }).catch(() => {});
-      }
+      setIsAppActive(state === 'active');
     });
     return () => sub.remove();
   }, []);
@@ -334,12 +331,10 @@ export function TerminalScreen({ route, navigation }: Props) {
       notificationsEnabledRef.current = settings.notificationsEnabled;
     }
     if (settings.soundsEnabled !== undefined) {
-      // silent = !sounds. We track the inverse locally for the in-Terminal
-      // toggle UI (🔊/🔇), but the canonical state lives in settings.
-      setSilentModeEnabled(!settings.soundsEnabled);
+      setGlobalSoundsEnabled(settings.soundsEnabled);
     }
     if (settings.ambientEnabled !== undefined) {
-      setAmbientEnabled(settings.ambientEnabled);
+      setGlobalAmbientEnabled(settings.ambientEnabled);
     }
     logService.configure(
       settings.logsEnabled ?? false,
@@ -824,44 +819,69 @@ export function TerminalScreen({ route, navigation }: Props) {
     loadNicks();
   }, []);
 
-  // Keep silentModeEnabled ref in sync so processingAndAddLine can read current value
+  // Estado efectivo: el global manda — si está OFF, da igual el override
+  // de sesión, está silenciado/apagado. Si está ON, manda el override.
+  const silentEffective = !globalSoundsEnabled || silentModeEnabled;
+  const ambientEffective =
+    globalAmbientEnabled && ambientEnabled && !silentEffective && isAppActive;
+
+  // El ref que leen los handlers de audio (trigger sounds, screen reader
+  // announces, gate del subscriber del map) refleja el silencio efectivo.
   useEffect(() => {
-    silentModeEnabledRef.current = silentModeEnabled;
-  }, [silentModeEnabled]);
+    silentModeEnabledRef.current = silentEffective;
+  }, [silentEffective]);
 
-  // Toggle silent mode AND persist to settings.soundsEnabled (inverted) so
-  // the change survives across sessions and stays in sync with the Settings
-  // screen toggle. Both UI toggles (🔊/🔇 in Terminal and "Usar sonidos" in
-  // Settings) end up writing to the same field.
-  // Toggle música ambiental. Persiste en settings.ambientEnabled y avisa al
-  // AmbientPlayer para que arranque/pare con fade. El kill-switch global
-  // de sonidos (silentModeEnabled) sigue ganando: si está silenciado, el
-  // ambient tampoco suena aunque ambientEnabled sea true.
-  const toggleAmbient = useCallback(async () => {
-    const next = !ambientEnabled;
-    setAmbientEnabled(next);
-    ambientPlayer.setEnabled(next);
-    try {
-      const current = await loadSettings();
-      await saveSettings({ ...current, ambientEnabled: next });
-    } catch (e) {
-      console.warn('[TerminalScreen] persist ambientEnabled failed:', e);
+  // Reset del override de sesión cuando el global pasa OFF→ON. Si el usuario
+  // entra a Settings y enciende "Usar sonidos" (o "Música ambiente"), al
+  // volver al Terminal el botón aparece arrancando en ON, no recuerda el
+  // estado de la sesión anterior.
+  const prevGlobalSoundsRef = useRef(globalSoundsEnabled);
+  useEffect(() => {
+    if (!prevGlobalSoundsRef.current && globalSoundsEnabled) {
+      setSilentModeEnabled(false);
     }
-    if (uiMode === 'blind') {
-      speechQueue.enqueue(`Música ambiente ${next ? 'activada' : 'desactivada'}`);
-    }
-  }, [ambientEnabled, uiMode]);
+    prevGlobalSoundsRef.current = globalSoundsEnabled;
+  }, [globalSoundsEnabled]);
 
-  const toggleSilentMode = useCallback(async () => {
-    const next = !silentModeEnabled;
-    setSilentModeEnabled(next);
-    try {
-      const current = await loadSettings();
-      await saveSettings({ ...current, soundsEnabled: !next });
-    } catch (e) {
-      console.warn('[TerminalScreen] persist soundsEnabled failed:', e);
+  const prevGlobalAmbientRef = useRef(globalAmbientEnabled);
+  useEffect(() => {
+    if (!prevGlobalAmbientRef.current && globalAmbientEnabled) {
+      setAmbientEnabled(true);
     }
-  }, [silentModeEnabled]);
+    prevGlobalAmbientRef.current = globalAmbientEnabled;
+  }, [globalAmbientEnabled]);
+
+  // Sync centralizado del ambient player con el estado efectivo. Cubre todas
+  // las transiciones: toggle global, toggle de sesión, AppState background/
+  // active, kill-switch de sonidos. Al pasar a ON resincroniza con la sala
+  // actual (durante el OFF el subscriber no actualizó la categoría).
+  useEffect(() => {
+    if (ambientEffective) {
+      ambientPlayer.setEnabled(true);
+      const room = mapServiceRef.current?.getCurrentRoom();
+      if (room) ambientPlayer.setCategory(categorizeRoom(room.n, room.c));
+    } else {
+      ambientPlayer.setEnabled(false);
+    }
+  }, [ambientEffective]);
+
+  // Toggles de SESIÓN (no persisten). Solo se ven cuando el global está ON;
+  // en ese caso la lectura UI usa silentModeEnabled / ambientEnabled (la
+  // capa global ya está garantizada por el render). El sync con el player
+  // y con el ref lo hace el useEffect de arriba.
+  const toggleSilentMode = useCallback(() => {
+    setSilentModeEnabled(prev => !prev);
+  }, []);
+
+  const toggleAmbient = useCallback(() => {
+    setAmbientEnabled(prev => {
+      const next = !prev;
+      if (uiMode === 'blind') {
+        speechQueue.enqueue(`Música ambiente ${next ? 'activada' : 'desactivada'}`);
+      }
+      return next;
+    });
+  }, [uiMode]);
 
   // Keep playSound ref in sync so processingAndAddLine always has the latest version
   useEffect(() => {
@@ -1969,7 +1989,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         <View style={[styles.inputSection, { height: inputHeight }, uiMode === 'completo' && { marginTop: 2 }]}>
           {connected ? (
             <>
-              {uiMode === 'blind' && (
+              {uiMode === 'blind' && globalSoundsEnabled && (
                 <TouchableOpacity
                   style={[styles.sendButton, { flex: 0.4, backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
                   onPress={toggleSilentMode}
@@ -2070,26 +2090,30 @@ export function TerminalScreen({ route, navigation }: Props) {
                   >
                     <Text style={styles.compactButtonText}>💬</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.compactButton, { backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
-                    onPress={toggleSilentMode}
-                    accessible={true}
-                    accessibilityLabel={`Silenciar sonidos ${silentModeEnabled ? 'desactivado' : 'activado'}`}
-                    accessibilityRole="button"
-                    accessibilityHint="Activa/desactiva los sonidos de eventos"
-                  >
-                    <Text style={styles.compactButtonText}>{silentModeEnabled ? '🔇' : '🔊'}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.compactButton, { backgroundColor: ambientEnabled ? '#3a5a3a' : '#666666' }]}
-                    onPress={toggleAmbient}
-                    accessible={true}
-                    accessibilityLabel={`Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`}
-                    accessibilityRole="button"
-                    accessibilityHint="Activa/desactiva la música de fondo según tipo de sala"
-                  >
-                    <Text style={styles.compactButtonText}>🎵</Text>
-                  </TouchableOpacity>
+                  {globalSoundsEnabled && (
+                    <TouchableOpacity
+                      style={[styles.compactButton, { backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
+                      onPress={toggleSilentMode}
+                      accessible={true}
+                      accessibilityLabel={`Silenciar sonidos ${silentModeEnabled ? 'desactivado' : 'activado'}`}
+                      accessibilityRole="button"
+                      accessibilityHint="Activa/desactiva los sonidos de eventos"
+                    >
+                      <Text style={styles.compactButtonText}>{silentModeEnabled ? '🔇' : '🔊'}</Text>
+                    </TouchableOpacity>
+                  )}
+                  {globalAmbientEnabled && (
+                    <TouchableOpacity
+                      style={[styles.compactButton, { backgroundColor: ambientEnabled ? '#3a5a3a' : '#666666' }]}
+                      onPress={toggleAmbient}
+                      accessible={true}
+                      accessibilityLabel={`Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`}
+                      accessibilityRole="button"
+                      accessibilityHint="Activa/desactiva la música de fondo según tipo de sala"
+                    >
+                      <Text style={styles.compactButtonText}>🎵</Text>
+                    </TouchableOpacity>
+                  )}
                 </>
               )}
 
@@ -2282,7 +2306,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           <View style={[styles.inputSection, { height: inputHeight }]}>
             {connected ? (
               <>
-                {uiMode === 'blind' && (
+                {uiMode === 'blind' && globalSoundsEnabled && (
                   <TouchableOpacity
                     style={[styles.sendButton, { flex: 0.4, backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
                     onPress={toggleSilentMode}
@@ -2383,16 +2407,18 @@ export function TerminalScreen({ route, navigation }: Props) {
                     >
                       <Text style={styles.compactButtonText}>💬</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.compactButton, { backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
-                      onPress={toggleSilentMode}
-                      accessible={true}
-                      accessibilityLabel={`Silenciar sonidos ${silentModeEnabled ? 'desactivado' : 'activado'}`}
-                      accessibilityRole="button"
-                      accessibilityHint="Activa/desactiva los sonidos de eventos"
-                    >
-                      <Text style={styles.compactButtonText}>{silentModeEnabled ? '🔇' : '🔊'}</Text>
-                    </TouchableOpacity>
+                    {globalSoundsEnabled && (
+                      <TouchableOpacity
+                        style={[styles.compactButton, { backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
+                        onPress={toggleSilentMode}
+                        accessible={true}
+                        accessibilityLabel={`Silenciar sonidos ${silentModeEnabled ? 'desactivado' : 'activado'}`}
+                        accessibilityRole="button"
+                        accessibilityHint="Activa/desactiva los sonidos de eventos"
+                      >
+                        <Text style={styles.compactButtonText}>{silentModeEnabled ? '🔇' : '🔊'}</Text>
+                      </TouchableOpacity>
+                    )}
                   </>
                 )}
 
@@ -2556,7 +2582,7 @@ export function TerminalScreen({ route, navigation }: Props) {
               navigation={navigation as unknown as NativeStackScreenProps<RootStackParamList, 'Settings'>['navigation']}
               sourceLocation="terminal"
               onFontSizeChange={setFontSize}
-              onSoundToggle={(enabled) => setSilentModeEnabled(!enabled)}
+              onSoundToggle={(enabled) => setGlobalSoundsEnabled(enabled)}
               onGesturesEnabledChange={(enabled) => gesturesEnabledRef.current = enabled}
             />
           </View>
