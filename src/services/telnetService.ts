@@ -48,6 +48,15 @@ export class TelnetService {
   }
 
   connect(): void {
+    // Guarda defensiva: si por alguna race ya tenemos un socket vivo,
+    // ciérralo antes de crear el nuevo. En el flujo normal el caller
+    // (TerminalScreen useEffect cleanup, handleReconnect) ya llama
+    // disconnect() previo, pero esto previene leak si alguien llama
+    // connect() dos veces sin cleanup.
+    if (this.socket) {
+      this.disconnect();
+    }
+
     try {
       this.socket = TcpSocket.createConnection(
         { host: this.server.host, port: this.server.port },
