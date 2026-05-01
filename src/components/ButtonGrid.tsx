@@ -95,10 +95,12 @@ function ButtonCell({
 
           longPressTimerRef.current = setTimeout(() => {
             isLongPressTriggeredRef.current = true;
-            // Don't allow editing fixed buttons
-            if (!button?.fixed) {
-              onEditButton();
-            }
+            // Siempre delegar al callback — el padre decide qué hacer
+            // (abrir editor para botones normales, abrir modal de gestión
+            // de paneles para el switch del modo completo, ignorar para
+            // otros fixed). Antes filtrábamos `fixed` aquí; eso bloqueaba
+            // el long-press en el switch y no llegaba el modal de paneles.
+            onEditButton();
           }, 800);
         },
         onPanResponderMove: (evt) => {

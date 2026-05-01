@@ -483,7 +483,7 @@ export function ServerListScreen({ navigation }: Props) {
                       {([
                         { size: 5 as const, label: 'Pequeño', hint: '5×4 / 4×5' },
                         { size: 7 as const, label: 'Mediano', hint: '7×5 / 5×7' },
-                        { size: 9 as const, label: 'Grande', hint: '9×5 / 5×9' },
+                        { size: 9 as const, label: 'Grande', hint: '9×6 / 6×9' },
                       ]).map(({ size, label, hint }) => (
                         <TouchableOpacity
                           key={size}
