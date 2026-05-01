@@ -1,13 +1,27 @@
 import JSZip from 'jszip';
 import { Paths, File, Directory } from 'expo-file-system';
-import { AmbientMappings, RoomCategory, Trigger, TriggerAction, TriggerPack } from '../types';
+import { AmbientMappings, RoomCategory, ServerProfile, Trigger, TriggerAction, TriggerPack } from '../types';
 import {
-  CustomSound,
   loadCustomSounds,
   addCustomSoundFromBytes,
 } from '../storage/customSoundsStorage';
-import { newPackId, newTriggerId } from '../storage/triggerStorage';
+import { loadPacks, newPackId, newTriggerId, savePacks } from '../storage/triggerStorage';
 import { loadAmbientMappings, saveAmbientMappings } from '../storage/ambientStorage';
+import { loadServers, saveServers } from '../storage/serverStorage';
+import {
+  ButtonLayout,
+  loadServerLayout,
+  saveServerLayout,
+} from '../storage/layoutStorage';
+import {
+  loadChannelAliases,
+  loadChannelOrder,
+  saveChannelAliases,
+  saveChannelOrder,
+} from '../storage/channelStorage';
+import { AppSettings, loadSettings, saveSettings } from '../storage/settingsStorage';
+import { collectVarsReferencedByPacks } from '../utils/userVariablesUsage';
+import { userVariablesService } from '../services/userVariablesService';
 
 // Export format header — kept stable so older app versions can detect (and
 // reject with a clear error) packs created by newer ones, and so we can bump
@@ -211,20 +225,25 @@ function rewriteActionSoundRef(
   return { ...action, file: `${CUSTOM_PREFIX}${newUuid}.${ext}` };
 }
 
-// ---- Backup global (todas las plantillas) ---------------------------------
-// Mismo formato base que el export per-pack pero con varias plantillas y sus
-// sonidos consolidados (deduplicados por uuid). Útil para cambio de móvil.
+// ---- Configuración global (export/import granular) -----------------------
+// Formato `torchzhyla-config-backup` — el nombre legacy
+// `torchzhyla-trigger-backup` (de cuando solo transportaba plantillas) sigue
+// aceptado en lectura para no romper ZIPs ya distribuidos.
+//
+// El export es granular: el caller decide qué packs incluir, si lleva
+// ambient, servidores, settings. Cada sección es opcional en el JSON; un
+// importador antiguo lee solo las que conoce y ignora el resto.
+//
+// El import es en dos fases. `readImportManifest` parsea el ZIP y devuelve
+// un resumen de qué contiene; el caller pinta checkboxes y llama a
+// `applyImport(manifest, selections)` para aplicar solo lo seleccionado.
 
-// Formato del backup multi-pack. Renombrado en A9 a "config-backup" para
-// reflejar que ya transporta más que solo triggers (mappings de ambient,
-// y a futuro layouts/servers/settings). Mantenemos la cadena legacy en
-// el set de formatos aceptados al importar para que ZIPs ya distribuidos
-// sigan funcionando.
 const BACKUP_FORMAT = 'torchzhyla-config-backup';
 const BACKUP_FORMAT_LEGACY = 'torchzhyla-trigger-backup';
 const ACCEPTED_BACKUP_FORMATS = new Set([BACKUP_FORMAT, BACKUP_FORMAT_LEGACY]);
-// v2: añadido `ambientMappings` opcional.
-const BACKUP_VERSION = 2;
+// v3: añadidos servers, layouts, channelAliases, channelOrder, settings
+// (todos opcionales). v2 añadió ambientMappings. v1 solo packs+sounds.
+const BACKUP_VERSION = 3;
 
 interface ExportedBackupPack {
   name: string;
@@ -232,36 +251,41 @@ interface ExportedBackupPack {
 }
 
 interface ExportedBackupJson {
-  // Acepta tanto el nombre nuevo como el legacy en import; al exportar
-  // siempre escribimos el nuevo.
   format: string;
   version: number;
   exportedAt: number;
-  packs: ExportedBackupPack[];
-  soundsManifest: SoundManifestEntry[];
-  // Mappings de ambient — opcional para compatibilidad con ZIPs v1 sin
-  // la sección. Cuando está presente, el importador aplica merge por
-  // categoría (las que vienen sobrescriben, las que no se conservan).
+  // Todas las secciones son opcionales para soportar export granular y
+  // versiones más antiguas. Un export que solo lleve ambient tendrá
+  // packs/soundsManifest ausentes o vacíos.
+  packs?: ExportedBackupPack[];
+  soundsManifest?: SoundManifestEntry[];
   ambientMappings?: Partial<AmbientMappings>;
+  // v3:
+  servers?: ServerProfile[];
+  // Map serverId-en-el-ZIP → layout / aliases / order. El importador
+  // remapea los serverIds a frescos y reescribe estas keys con `serverIdMap`.
+  layouts?: Record<string, ButtonLayout>;
+  channelAliases?: Record<string, Record<string, string>>;
+  channelOrder?: Record<string, string[]>;
+  settings?: AppSettings;
 }
 
-export interface BackupImportResult {
-  packs: TriggerPack[];
-  importedSoundCount: number;
-  missingSoundCount: number;
-  // Número de categorías de ambient que el ZIP traía (independiente de
-  // si tenían wavs o eran categoría vacía). 0 si el ZIP no incluía la
-  // sección o si era v1.
-  ambientCategoriesApplied: number;
+// ---- Export ---------------------------------------------------------------
+
+export interface ExportConfigOptions {
+  // IDs de packs a incluir. Empty array = no se exporta ningún pack. Para
+  // exportar todos, el caller pasa `packs.map(p => p.id)`. La elección
+  // explícita evita suposiciones sobre "todos por defecto" en este nivel.
+  packIds: string[];
+  includeAmbient: boolean;
+  // Servidores arrastra: ServerProfile[] + layouts per-server + channel
+  // aliases per-server + channel order per-server. Todo o nada.
+  includeServers: boolean;
+  includeSettings: boolean;
 }
 
-export type ImportZipResult =
-  | { kind: 'pack'; result: ImportResult }
-  | { kind: 'backup'; result: BackupImportResult };
-
-// Recolecta refs únicas a custom sounds de packs Y de mappings de ambient
-// (cuando se pasan). Devuelve un único array sin duplicados — un wav que
-// aparezca en N packs + en 1 mapping se exporta UNA sola vez.
+// Recolecta refs únicas a custom sounds de packs Y de mappings de ambient.
+// Un wav usado en N packs + 1 mapping se exporta UNA sola vez.
 function collectReferencedCustomSoundsAcrossPacks(
   packs: TriggerPack[],
   mappings?: AmbientMappings | null,
@@ -291,22 +315,43 @@ function collectReferencedCustomSoundsAcrossPacks(
   return Array.from(seen.entries()).map(([uuid, ext]) => ({ uuid, ext }));
 }
 
-// Exporta packs (y opcionalmente mappings de ambient) a un ZIP de
-// "configuración". Si `includeAmbients` es true, carga `loadAmbientMappings`
-// internamente; el caller puede pasarle también los mappings ya cargados
-// vía `mappings` para evitar el round-trip al storage.
-export async function exportAllPacksToZip(
-  packs: TriggerPack[],
-  options?: { includeAmbients?: boolean; mappings?: AmbientMappings | null },
-): Promise<string> {
-  const includeAmbients = options?.includeAmbients ?? true;
-  let mappings: AmbientMappings | null = options?.mappings ?? null;
-  if (includeAmbients && !mappings) {
+export async function exportConfigToZip(options: ExportConfigOptions): Promise<string> {
+  const allPacks = await loadPacks();
+  const selectedPacks = allPacks.filter((p) => options.packIds.includes(p.id));
+
+  let mappings: AmbientMappings | null = null;
+  if (options.includeAmbient) {
     mappings = await loadAmbientMappings();
   }
 
+  let servers: ServerProfile[] | null = null;
+  let layouts: Record<string, ButtonLayout> | null = null;
+  let channelAliases: Record<string, Record<string, string>> | null = null;
+  let channelOrder: Record<string, string[]> | null = null;
+  if (options.includeServers) {
+    servers = await loadServers();
+    layouts = {};
+    channelAliases = {};
+    channelOrder = {};
+    for (const s of servers) {
+      const layout = await loadServerLayout(s.id);
+      if (layout.buttons.length > 0) layouts[s.id] = layout;
+      const aliases = await loadChannelAliases(s.id);
+      if (Object.keys(aliases).length > 0) channelAliases[s.id] = aliases;
+      const order = await loadChannelOrder(s.id);
+      if (order.length > 0) channelOrder[s.id] = order;
+    }
+  }
+
+  let settings: AppSettings | null = null;
+  if (options.includeSettings) {
+    settings = await loadSettings();
+  }
+
+  // Bundle de wavs: solo los referenciados por las secciones incluidas.
+  // Si el usuario exporta ambient sin packs, no metemos sonidos de packs.
   const allSounds = await loadCustomSounds();
-  const referenced = collectReferencedCustomSoundsAcrossPacks(packs, mappings);
+  const referenced = collectReferencedCustomSoundsAcrossPacks(selectedPacks, mappings);
 
   const soundsManifest: SoundManifestEntry[] = [];
   const zip = new JSZip();
@@ -321,20 +366,25 @@ export async function exportAllPacksToZip(
     soundsManifest.push({ uuid: meta.uuid, name: meta.name, ext: meta.ext });
   }
 
-  // Strip volatile fields the importer regenerates (id, assignedServerIds).
-  // Server IDs are local-generated and don't survive a device move; the
-  // importer empties assignments and the user reassigns from the editor.
   const exported: ExportedBackupJson = {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
     exportedAt: Date.now(),
-    packs: packs.map((p) => ({ name: p.name, triggers: p.triggers })),
-    soundsManifest,
   };
+  if (selectedPacks.length > 0) {
+    // Strip volatile fields the importer regenerates (id, assignedServerIds).
+    // assignedServerIds no sobrevive cambio de móvil — los serverIds son
+    // locales y diferentes en cada instalación.
+    exported.packs = selectedPacks.map((p) => ({ name: p.name, triggers: p.triggers }));
+    exported.soundsManifest = soundsManifest;
+  } else if (soundsManifest.length > 0) {
+    // Caso: solo ambient con sonidos. soundsManifest sí va aunque no haya
+    // packs (los wavs están en sounds/ y el JSON tiene que indexarlos).
+    exported.soundsManifest = soundsManifest;
+  }
   if (mappings) {
-    // Filtramos las categorías sin wavs para no inflar el JSON con
-    // ruido — el merge en import omite categorías ausentes, así que
-    // exportar las vacías no aporta valor.
+    // Filtramos categorías sin wavs (ruido en el JSON; merge en import
+    // ya ignora las ausentes).
     const filtered: Partial<AmbientMappings> = {};
     for (const [cat, value] of Object.entries(mappings) as Array<[RoomCategory, { sounds: string[] }]>) {
       if (value.sounds.length > 0) filtered[cat] = { sounds: [...value.sounds] };
@@ -342,6 +392,18 @@ export async function exportAllPacksToZip(
     if (Object.keys(filtered).length > 0) {
       exported.ambientMappings = filtered;
     }
+  }
+  if (servers) {
+    // La contraseña NUNCA se exporta — el destino tendrá que reescribirla
+    // tras importar. Esto es independiente del toggle "Personajes": si lo
+    // marcas, vienen los servidores pero sin credenciales.
+    exported.servers = servers.map(({ password: _password, ...rest }) => rest);
+    if (Object.keys(layouts!).length > 0) exported.layouts = layouts!;
+    if (Object.keys(channelAliases!).length > 0) exported.channelAliases = channelAliases!;
+    if (Object.keys(channelOrder!).length > 0) exported.channelOrder = channelOrder!;
+  }
+  if (settings) {
+    exported.settings = settings;
   }
   zip.file('backup.json', JSON.stringify(exported, null, 2));
 
@@ -356,19 +418,54 @@ export async function exportAllPacksToZip(
   return outFile.uri;
 }
 
+// ---- Import: dos fases ----------------------------------------------------
+
+// Resumen de lo que un ZIP contiene. La UI lo usa para pintar checkboxes
+// con qué traer. `_data` es opaco — se le pasa íntegro a `applyImport`.
+export interface ImportManifest {
+  version: number;
+  packs: { name: string; triggerCount: number }[];
+  hasAmbient: boolean;
+  ambientCategoryCount: number;
+  hasServers: boolean;
+  serverCount: number;
+  hasSettings: boolean;
+  totalSoundCount: number;
+  _data: {
+    zip: JSZip;
+    parsed: ExportedBackupJson;
+  };
+}
+
+export interface ImportSelections {
+  // Índices en `manifest.packs` que el usuario quiere importar.
+  packIndices: number[];
+  importAmbient: boolean;
+  importServers: boolean;
+  importSettings: boolean;
+}
+
+export interface ImportApplyResult {
+  importedPacks: TriggerPack[];
+  importedSoundCount: number;
+  missingSoundCount: number;
+  ambientCategoriesApplied: number;
+  importedServerCount: number;
+  importedSettingsApplied: boolean;
+  newlyDeclaredVarNames: string[];
+}
+
 function isExportedBackup(obj: any): obj is ExportedBackupJson {
   return (
     obj &&
     typeof obj === 'object' &&
     typeof obj.format === 'string' &&
     ACCEPTED_BACKUP_FORMATS.has(obj.format) &&
-    typeof obj.version === 'number' &&
-    Array.isArray(obj.packs) &&
-    Array.isArray(obj.soundsManifest)
+    typeof obj.version === 'number'
   );
 }
 
-export async function importBackupFromZip(zipUri: string): Promise<BackupImportResult> {
+export async function readImportManifest(zipUri: string): Promise<ImportManifest> {
   const srcFile = new File(zipUri);
   if (!srcFile.exists) throw new Error('El archivo no existe');
   const bytes = await srcFile.bytes();
@@ -380,29 +477,120 @@ export async function importBackupFromZip(zipUri: string): Promise<BackupImportR
     throw new Error('El archivo no es un ZIP válido');
   }
 
+  // Normalizamos single-pack ZIP (pack.json) y backup ZIP (backup.json) al
+  // mismo shape. Single-pack se ve como un backup con UN pack, sin secciones.
+  let parsed: ExportedBackupJson;
   const backupEntry = zip.file('backup.json');
-  if (!backupEntry) throw new Error('El ZIP no contiene backup.json');
-  const json = await backupEntry.async('text');
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch (e) {
-    throw new Error('backup.json corrupto: no es JSON válido');
-  }
-  if (!isExportedBackup(parsed)) {
-    throw new Error('backup.json no tiene el formato esperado de TorchZhyla');
-  }
-  if (parsed.version > BACKUP_VERSION) {
-    throw new Error(`Este backup es de una versión más reciente (v${parsed.version}). Actualiza la app.`);
+  const packEntry = zip.file('pack.json');
+  if (backupEntry) {
+    const json = await backupEntry.async('text');
+    let raw: unknown;
+    try {
+      raw = JSON.parse(json);
+    } catch (e) {
+      throw new Error('backup.json corrupto: no es JSON válido');
+    }
+    if (!isExportedBackup(raw)) {
+      throw new Error('backup.json no tiene el formato esperado de TorchZhyla');
+    }
+    parsed = raw;
+  } else if (packEntry) {
+    const json = await packEntry.async('text');
+    let raw: unknown;
+    try {
+      raw = JSON.parse(json);
+    } catch (e) {
+      throw new Error('pack.json corrupto: no es JSON válido');
+    }
+    if (!isExportedPack(raw)) {
+      throw new Error('pack.json no tiene el formato esperado de TorchZhyla');
+    }
+    parsed = {
+      format: BACKUP_FORMAT,
+      version: raw.version,
+      exportedAt: Date.now(),
+      packs: [{ name: raw.name, triggers: raw.triggers }],
+      soundsManifest: raw.soundsManifest,
+    };
+  } else {
+    throw new Error('El ZIP no contiene ni backup.json ni pack.json — no es un export de TorchZhyla');
   }
 
-  // Install each unique sound once and share the uuid map across all packs —
-  // a sound referenced by N packs only ends up on disk once.
+  if (parsed.version > BACKUP_VERSION) {
+    throw new Error(`Este archivo es de una versión más reciente (v${parsed.version}). Actualiza la app.`);
+  }
+
+  let ambientCategoryCount = 0;
+  if (parsed.ambientMappings) {
+    for (const value of Object.values(parsed.ambientMappings)) {
+      if (value && Array.isArray(value.sounds) && value.sounds.length > 0) ambientCategoryCount++;
+    }
+  }
+
+  return {
+    version: parsed.version,
+    packs: (parsed.packs ?? []).map((p) => ({
+      name: p.name,
+      triggerCount: p.triggers.length,
+    })),
+    hasAmbient: ambientCategoryCount > 0,
+    ambientCategoryCount,
+    hasServers: !!parsed.servers && parsed.servers.length > 0,
+    serverCount: parsed.servers?.length ?? 0,
+    hasSettings: !!parsed.settings,
+    totalSoundCount: parsed.soundsManifest?.length ?? 0,
+    _data: { zip, parsed },
+  };
+}
+
+export async function applyImport(
+  manifest: ImportManifest,
+  selections: ImportSelections,
+): Promise<ImportApplyResult> {
+  const { zip, parsed } = manifest._data;
+
+  // Filtra packs por índice. Mantiene el orden original del ZIP.
+  const allPacks = parsed.packs ?? [];
+  const selectedExported = selections.packIndices
+    .filter((i) => i >= 0 && i < allPacks.length)
+    .sort((a, b) => a - b)
+    .map((i) => allPacks[i]);
+
+  // Recolecta refs de sonidos a instalar: solo los usados por lo que el
+  // usuario eligió importar. Si no marca packs ni ambient, no instalamos
+  // wavs aunque el ZIP los traiga.
+  const refsNeeded = new Set<string>(); // "uuid.ext"
+  const wantedAmbient = selections.importAmbient && parsed.ambientMappings;
+  const collectFromAction = (a: TriggerAction) => {
+    if (a.type === 'play_sound' && a.file?.startsWith(CUSTOM_PREFIX)) {
+      const filename = a.file.slice(CUSTOM_PREFIX.length);
+      refsNeeded.add(filename);
+    }
+  };
+  for (const p of selectedExported) {
+    for (const t of p.triggers) {
+      for (const a of t.actions) collectFromAction(a);
+    }
+  }
+  if (wantedAmbient) {
+    for (const value of Object.values(parsed.ambientMappings!)) {
+      if (!value) continue;
+      for (const ref of value.sounds) {
+        if (ref.startsWith(CUSTOM_PREFIX)) {
+          refsNeeded.add(ref.slice(CUSTOM_PREFIX.length));
+        }
+      }
+    }
+  }
+
+  // Instala solo los wavs necesarios. uuidMap: oldUuid → newUuid.
   const uuidMap = new Map<string, string>();
   let importedSoundCount = 0;
   let missingSoundCount = 0;
-  for (const entry of parsed.soundsManifest) {
-    const zipPath = `sounds/${entry.uuid}.${entry.ext}`;
+  for (const entry of parsed.soundsManifest ?? []) {
+    const filename = `${entry.uuid}.${entry.ext}`;
+    if (!refsNeeded.has(filename)) continue;
+    const zipPath = `sounds/${filename}`;
     const soundEntry = zip.file(zipPath);
     if (!soundEntry) {
       missingSoundCount++;
@@ -419,7 +607,8 @@ export async function importBackupFromZip(zipUri: string): Promise<BackupImportR
     }
   }
 
-  const packs: TriggerPack[] = parsed.packs.map((p) => ({
+  // Construye los TriggerPacks importados con ids frescos.
+  const importedPacks: TriggerPack[] = selectedExported.map((p) => ({
     id: newPackId(),
     name: p.name,
     triggers: p.triggers.map((t) => ({
@@ -429,13 +618,24 @@ export async function importBackupFromZip(zipUri: string): Promise<BackupImportR
     })),
     assignedServerIds: [],
   }));
+  if (importedPacks.length > 0) {
+    const existing = await loadPacks();
+    await savePacks([...existing, ...importedPacks]);
+  }
 
-  // Apply ambient mappings if the backup carries them. Strategy: merge
-  // by category — categories present in the backup overwrite the user's
-  // current set; categories absent are preserved. This lets a "solo
-  // bosque" partial ZIP not destroy the user's other categories.
+  // Auto-declare user vars referenciadas por los packs importados.
+  let newlyDeclaredVarNames: string[] = [];
+  if (importedPacks.length > 0) {
+    const refs = collectVarsReferencedByPacks(importedPacks);
+    if (refs.length > 0) {
+      newlyDeclaredVarNames = await userVariablesService.declareMany(refs);
+    }
+  }
+
+  // Ambient: merge por categoría (las que vienen pisan; las ausentes se
+  // conservan). Permite ZIPs "solo bosque" sin destruir el resto.
   let ambientCategoriesApplied = 0;
-  if (parsed.ambientMappings) {
+  if (selections.importAmbient && parsed.ambientMappings) {
     const current = await loadAmbientMappings();
     const next = { ...current };
     for (const [cat, value] of Object.entries(parsed.ambientMappings) as Array<[
@@ -443,10 +643,6 @@ export async function importBackupFromZip(zipUri: string): Promise<BackupImportR
       { sounds: string[] } | undefined,
     ]>) {
       if (!value || !Array.isArray(value.sounds)) continue;
-      // Rewrite each ref through uuidMap so the new uuids in disk match
-      // the imported wavs. Refs whose uuid wasn't found in uuidMap (e.g.
-      // missing wav, or a custom: ref to a sound the user already has
-      // under a different uuid) get filtered — better silent than dead.
       const rewritten: string[] = [];
       for (const ref of value.sounds) {
         if (!ref.startsWith(CUSTOM_PREFIX)) continue;
@@ -466,30 +662,77 @@ export async function importBackupFromZip(zipUri: string): Promise<BackupImportR
     }
   }
 
-  return { packs, importedSoundCount, missingSoundCount, ambientCategoriesApplied };
+  // Servidores: política decidida (1-A) — añadir como duplicados, sin merge
+  // por nombre/host. El usuario gestiona si surgen "Aljhtar" y "Aljhtar"
+  // en la lista. Cada server importado recibe un id fresco; layouts /
+  // aliases / order se reescriben con ese id nuevo.
+  let importedServerCount = 0;
+  if (selections.importServers && parsed.servers) {
+    const serverIdMap = new Map<string, string>(); // oldId → newId
+    const importedServers: ServerProfile[] = parsed.servers.map((s) => {
+      const newId = newServerId();
+      serverIdMap.set(s.id, newId);
+      return { ...s, id: newId };
+    });
+    if (importedServers.length > 0) {
+      const existing = await loadServers();
+      await saveServers([...existing, ...importedServers]);
+      importedServerCount = importedServers.length;
+
+      // Layouts per-server.
+      if (parsed.layouts) {
+        for (const [oldId, layout] of Object.entries(parsed.layouts)) {
+          const newId = serverIdMap.get(oldId);
+          if (newId && layout?.buttons) {
+            await saveServerLayout(newId, layout);
+          }
+        }
+      }
+      // Channel aliases per-server.
+      if (parsed.channelAliases) {
+        for (const [oldId, aliases] of Object.entries(parsed.channelAliases)) {
+          const newId = serverIdMap.get(oldId);
+          if (newId && aliases) {
+            await saveChannelAliases(newId, aliases);
+          }
+        }
+      }
+      // Channel order per-server.
+      if (parsed.channelOrder) {
+        for (const [oldId, order] of Object.entries(parsed.channelOrder)) {
+          const newId = serverIdMap.get(oldId);
+          if (newId && Array.isArray(order)) {
+            await saveChannelOrder(newId, order);
+          }
+        }
+      }
+    }
+  }
+
+  // Settings: replace blob completo. Si el usuario marcó este checkbox
+  // está pidiendo "tráeme la config del otro móvil"; merge parcial sería
+  // confuso (qué se hace con campos nuevos? con defaults?). El blob
+  // sustituye al actual.
+  let importedSettingsApplied = false;
+  if (selections.importSettings && parsed.settings) {
+    await saveSettings(parsed.settings);
+    importedSettingsApplied = true;
+  }
+
+  return {
+    importedPacks,
+    importedSoundCount,
+    missingSoundCount,
+    ambientCategoriesApplied,
+    importedServerCount,
+    importedSettingsApplied,
+    newlyDeclaredVarNames,
+  };
 }
 
-// Detects which kind of export the ZIP contains and dispatches. Saves the
-// caller from sniffing the file twice.
-export async function importFromZip(zipUri: string): Promise<ImportZipResult> {
-  const srcFile = new File(zipUri);
-  if (!srcFile.exists) throw new Error('El archivo no existe');
-  const bytes = await srcFile.bytes();
-
-  let zip: JSZip;
-  try {
-    zip = await JSZip.loadAsync(bytes);
-  } catch (e) {
-    throw new Error('El archivo no es un ZIP válido');
-  }
-
-  if (zip.file('backup.json')) {
-    const result = await importBackupFromZip(zipUri);
-    return { kind: 'backup', result };
-  }
-  if (zip.file('pack.json')) {
-    const result = await importPackFromZip(zipUri);
-    return { kind: 'pack', result };
-  }
-  throw new Error('El ZIP no contiene ni backup.json ni pack.json — no es un export de TorchZhyla');
+function newServerId(): string {
+  // ServerProfile.id es libre — usamos un id "ts + random" como ya hace el
+  // resto del código (ver serverStorage / TriggerPack ids). No hay un
+  // helper centralizado para esto, así que lo replicamos local.
+  return `srv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }

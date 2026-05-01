@@ -13,6 +13,9 @@ import { LogsMaxLines } from '../storage/settingsStorage';
 import { activeConnection } from '../services/activeConnection';
 import { CANONICAL_PROMPT } from '../services/promptParser';
 import { speechQueue } from '../services/speechQueueService';
+import { ambientPlayer } from '../services/ambientPlayer';
+import { useSounds } from '../contexts/SoundContext';
+import { VolumeAdjuster } from '../components/VolumeAdjuster';
 
 const SPEECH_CHAR_DURATION_MIN = 5;
 const SPEECH_CHAR_DURATION_MAX = 150;
@@ -32,6 +35,7 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
   const [encodingModalVisible, setEncodingModalVisible] = useState(false);
   const [gestureModalVisible, setGestureModalVisible] = useState(false);
   const [exportRangeModalVisible, setExportRangeModalVisible] = useState(false);
+  const { setEffectsVolume } = useSounds();
 
   useEffect(() => {
     loadSettings().then(setSettings);
@@ -51,6 +55,14 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
 
     if (key === 'speechCharDurationMs') {
       speechQueue.setCharDurationMs(value as number);
+    }
+    // Audio: aplicar inmediato sin esperar a recargar la app.
+    if (key === 'ambientEnabled' && typeof value === 'boolean') {
+      ambientPlayer.setEnabled(value);
+    } else if (key === 'ambientVolume' && typeof value === 'number') {
+      ambientPlayer.setAmbientVolume(value);
+    } else if (key === 'effectsVolume' && typeof value === 'number') {
+      setEffectsVolume(value);
     }
 
     // Trigger callbacks for immediate changes in terminal mode
@@ -357,6 +369,35 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             }}
             trackColor={{ false: '#333', true: '#0c0' }}
             thumbColor={settings.soundsEnabled ? '#000' : '#666'}
+          />
+        </View>
+
+        {/* Música ambiente (kill-switch + volúmenes) */}
+        <View style={styles.row}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle}>Música ambiente</Text>
+            <Text style={styles.rowDesc}>
+              Loop de fondo que cambia con el tipo de sala. Asigna sonidos en "Mis ambientes".
+            </Text>
+          </View>
+          <Switch
+            value={settings.ambientEnabled}
+            onValueChange={(value) => updateSetting('ambientEnabled', value)}
+            trackColor={{ false: '#333', true: '#0c0' }}
+            thumbColor={settings.ambientEnabled ? '#000' : '#666'}
+          />
+        </View>
+
+        <View style={styles.audioVolumesBlock}>
+          <VolumeAdjuster
+            label="Volumen ambiente"
+            value={settings.ambientVolume}
+            onChange={(v) => updateSetting('ambientVolume', v)}
+          />
+          <VolumeAdjuster
+            label="Volumen efectos (triggers)"
+            value={settings.effectsVolume}
+            onChange={(v) => updateSetting('effectsVolume', v)}
           />
         </View>
 
@@ -1064,6 +1105,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a1a',
     borderRadius: 8,
     padding: 16,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    marginBottom: 10,
+  },
+  audioVolumesBlock: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: '#2a2a2a',
     marginBottom: 10,

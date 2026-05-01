@@ -6,17 +6,6 @@ export interface ServerProfile {
   encoding?: string;
   username?: string;
   password?: string;
-  buttonLayout?: {
-    buttons: Array<{
-      id: string;
-      col: number;
-      row: number;
-      label: string;
-      command: string;
-      color: string;
-      textColor: string;
-    }>;
-  };
 }
 
 export interface AnsiSpan {

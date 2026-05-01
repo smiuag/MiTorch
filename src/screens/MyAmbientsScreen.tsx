@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   FlatList,
   Modal,
-  Switch,
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,7 +20,6 @@ import {
   MAX_SOUNDS_PER_CATEGORY,
 } from '../storage/ambientStorage';
 import { CustomSound, loadCustomSounds } from '../storage/customSoundsStorage';
-import { loadSettings, saveSettings, AppSettings } from '../storage/settingsStorage';
 import { ambientPlayer } from '../services/ambientPlayer';
 import { categorizeRoom, listCategories } from '../services/roomCategorizer';
 import { useSounds } from '../contexts/SoundContext';
@@ -73,22 +71,19 @@ async function getCategoryCounts(): Promise<Record<RoomCategory, number>> {
 export function MyAmbientsScreen({ navigation }: Props) {
   const [mappings, setMappings] = useState<AmbientMappings | null>(null);
   const [sounds, setSounds] = useState<CustomSound[]>([]);
-  const [settings, setSettings] = useState<AppSettings | null>(null);
   const [counts, setCounts] = useState<Record<RoomCategory, number> | null>(null);
   const [expanded, setExpanded] = useState<RoomCategory | null>(null);
   const [pickerCategory, setPickerCategory] = useState<RoomCategory | null>(null);
-  const { playSound, setEffectsVolume } = useSounds();
+  const { playSound } = useSounds();
 
   const refresh = useCallback(async () => {
-    const [m, s, st, cs] = await Promise.all([
+    const [m, s, cs] = await Promise.all([
       loadAmbientMappings(),
       loadCustomSounds(),
-      loadSettings(),
       getCategoryCounts(),
     ]);
     setMappings(m);
     setSounds(s);
-    setSettings(st);
     setCounts(cs);
   }, []);
 
@@ -107,27 +102,6 @@ export function MyAmbientsScreen({ navigation }: Props) {
       ambientPlayer.reloadMappings().catch(() => {});
     };
   }, []);
-
-  const updateSetting = useCallback(
-    async <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
-      if (!settings) return;
-      const next = { ...settings, [key]: value };
-      setSettings(next);
-      await saveSettings(next);
-      // Aplica inmediato al AmbientPlayer cuando aplica.
-      if (key === 'ambientVolume' && typeof value === 'number') {
-        ambientPlayer.setAmbientVolume(value);
-      } else if (key === 'ambientEnabled' && typeof value === 'boolean') {
-        ambientPlayer.setEnabled(value);
-      } else if (key === 'effectsVolume' && typeof value === 'number') {
-        // Inmediato a la siguiente reproducción de trigger; sin esto el
-        // usuario tendría que reabrir la app para que el cambio surtiera
-        // efecto.
-        setEffectsVolume(value);
-      }
-    },
-    [settings, setEffectsVolume],
-  );
 
   const handleAddSound = useCallback(
     async (category: RoomCategory, sound: CustomSound) => {
@@ -173,7 +147,7 @@ export function MyAmbientsScreen({ navigation }: Props) {
     });
   }, [mappings, counts]);
 
-  if (!mappings || !settings || !counts) {
+  if (!mappings || !counts) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
         <Text style={styles.loading}>Cargando…</Text>
@@ -196,27 +170,6 @@ export function MyAmbientsScreen({ navigation }: Props) {
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.controlsBlock}>
-          <View style={styles.controlRow}>
-            <Text style={styles.controlLabel}>Música ambiente</Text>
-            <Switch
-              value={settings.ambientEnabled}
-              onValueChange={(v) => updateSetting('ambientEnabled', v)}
-              accessibilityLabel="Activar música ambiente"
-            />
-          </View>
-          <VolumeAdjuster
-            label="Volumen ambiente"
-            value={settings.ambientVolume}
-            onChange={(v) => updateSetting('ambientVolume', v)}
-          />
-          <VolumeAdjuster
-            label="Volumen efectos (triggers)"
-            value={settings.effectsVolume}
-            onChange={(v) => updateSetting('effectsVolume', v)}
-          />
-        </View>
-
         <Text style={styles.sectionLabel}>Categorías</Text>
 
         {orderedCategories.map((cat) => {
@@ -345,50 +298,6 @@ export function MyAmbientsScreen({ navigation }: Props) {
   );
 }
 
-// Sub-componente de ajuste de volumen con botones +/- de paso 0.05.
-// Preferido sobre Slider en este codebase por accesibilidad blind: cada
-// botón tiene su propio accessibilityLabel y TalkBack puede anunciar el
-// valor numérico claramente.
-function VolumeAdjuster({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  const pct = Math.round(value * 100);
-  const dec = () => onChange(Math.max(0, Math.round((value - 0.05) * 100) / 100));
-  const inc = () => onChange(Math.min(1, Math.round((value + 0.05) * 100) / 100));
-  return (
-    <View style={styles.volRow}>
-      <Text style={styles.volLabel}>{label}</Text>
-      <TouchableOpacity
-        onPress={dec}
-        disabled={value <= 0}
-        style={[styles.volBtn, value <= 0 && styles.volBtnDisabled]}
-        accessibilityRole="button"
-        accessibilityLabel={`Bajar ${label.toLowerCase()}`}
-      >
-        <Text style={styles.volBtnText}>-</Text>
-      </TouchableOpacity>
-      <Text style={styles.volValue} accessibilityLabel={`${label}: ${pct} por ciento`}>
-        {pct}%
-      </Text>
-      <TouchableOpacity
-        onPress={inc}
-        disabled={value >= 1}
-        style={[styles.volBtn, value >= 1 && styles.volBtnDisabled]}
-        accessibilityRole="button"
-        accessibilityLabel={`Subir ${label.toLowerCase()}`}
-      >
-        <Text style={styles.volBtnText}>+</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   loading: { color: '#888', textAlign: 'center', marginTop: 40, fontFamily: 'monospace' },
@@ -406,49 +315,6 @@ const styles = StyleSheet.create({
   subtitle: { color: '#888', fontSize: 11, fontFamily: 'monospace', marginTop: 6, lineHeight: 16 },
   scroll: { flex: 1 },
   scrollContent: { padding: 16, paddingBottom: 32 },
-  controlsBlock: {
-    backgroundColor: '#111',
-    borderWidth: 1,
-    borderColor: '#222',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-  },
-  controlRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  controlLabel: { color: '#ccc', fontSize: 13, fontFamily: 'monospace' },
-  controlValue: { color: '#0c0', fontSize: 13, fontFamily: 'monospace' },
-  volRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-    marginBottom: 2,
-    gap: 8,
-  },
-  volLabel: { flex: 1, color: '#ccc', fontSize: 13, fontFamily: 'monospace' },
-  volBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 6,
-    backgroundColor: '#0a3a0a',
-    borderWidth: 1,
-    borderColor: '#0c0',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  volBtnDisabled: { opacity: 0.3 },
-  volBtnText: { color: '#0c0', fontSize: 18, fontFamily: 'monospace', fontWeight: 'bold' },
-  volValue: {
-    color: '#0c0',
-    fontSize: 14,
-    fontFamily: 'monospace',
-    minWidth: 50,
-    textAlign: 'center',
-  },
   sectionLabel: {
     color: '#888',
     fontSize: 12,

@@ -190,7 +190,7 @@ Button grids are customizable layouts with two modes:
 - **Blind mode**: Two separate panels (Panel 1 and Panel 2) that can be toggled with a switch button
 - **Landscape mode**: Grid is transformed (rows → columns) for horizontal orientation
 - `LayoutButton` interface: `{ id, col, row, label, command, color, textColor, secondaryCommand?, blindPanel? }`
-- Buttons are per-server in normal mode, global in blind mode
+- Buttons are per-server in BOTH modes (normal y blind), persistidos bajo la clave `buttonLayout_{serverId}`. La diferencia entre modos es solo la **plantilla por defecto** (`createDefaultLayout()` vs `createBlindModeLayout()`) que se usa como base cuando un server no tiene aún layout guardado y el set de campos relevantes (modo blind usa `blindPanel`, modo completo usa `completoPanel`). La frase "global in blind mode" que aparecía aquí antes era inexacta: existe `loadLayout`/`saveLayout` (sin server.id) en `layoutStorage.ts` pero está **sin usar** — es leftover de una era previa donde había un layout único global.
 - Colors come from button definition, not terminal rendering
 
 ## Blind Mode & Accessibility
@@ -457,13 +457,13 @@ Reemplaza el concepto de `ModoJ` (Combate / XP / Idle) de los scripts blind: en 
 
 **Implementación**:
 - `LayoutButton.blindPanel`: pasar de `1 | 2` a `number` (entero positivo). Compatible hacia atrás — los 1/2 actuales siguen funcionando.
-- Nuevo storage: `aljhtar_blind_panels` (clave global, igual que el resto del layout blind) con array `{ id: number; name: string }[]`. Default `[{id:1, name:'Panel 1'}, {id:2, name:'Panel 2'}]`.
+- Nuevo storage: `aljhtar_blind_panels_{serverId}` (per-server, igual que el resto del layout) con array `{ id: number; name: string }[]`. Default `[{id:1, name:'Panel 1'}, {id:2, name:'Panel 2'}]`.
 - `BlindModePanelSwitch` botón actualiza para ciclar y para anunciar el nombre del panel destino con `AccessibilityInfo.announceForAccessibility(panel.name)`.
 - Settings → "Layout blind": pantalla nueva con lista de paneles, botones "+ Añadir panel", "✏ Renombrar", "✕ Borrar" (con warning si tiene botones), reordenar con flechas ▲/▼.
 - `ButtonEditModal` añade dropdown "Panel" con la lista actualizada.
 
 **Decisiones pendientes**:
-- Per-server vs global: hoy los botones blind son globales (todos los servers comparten layout). Los paneles podrían también ser globales o per-server. Recomendación: mantener global para coherencia. Si un usuario MUD-hops a otro juego, edita los nombres y comandos.
+- Per-server vs global: hoy los layouts de botones (incluido blind) son **per-server** (clave `buttonLayout_{serverId}`). La definición de paneles (qué paneles existen y cómo se llaman) podría ser global o per-server. Recomendación: hacerla **per-server** para consistencia con el layout que ya lo es. Si surge demanda de "modos compartidos entre personajes", se replantea.
 - Default: ¿1 panel o 2? Mantener 2 para no sorprender a usuarios actuales.
 
 **Limitación**: solo cubre el caso "modo de botones" del `ModoJ` del CMUD. Los modos de output (`ModoE`, `ModoS`, `ModoMono`, `ModoAmbientacion`) no se modelan con paneles — son toggles globales aparte (varios ya existen).
@@ -578,93 +578,21 @@ Por orden de coste/beneficio. Cada sub-fase es independiente — se puede hacer 
 
 Total Fase 6 completa: ~8-12h de trabajo. Dependiendo de qué se aborde, el pack de "Suite Blind" puede tener diferentes niveles de cobertura.
 
-#### Plan en preparación — Tipos de botón + variables (sub-fase 6.2)
+#### Sub-fase 6.2 — Tipos de botón + variables (HECHO 2026-04-30)
 
-Decidido 2026-04-29 abordar **antes** del resto de Fase 6 y **antes** del plan "Combate básico Panel 2" (que depende de esto). Sustituye al scope original de la sub-fase 6.2 (que era solo expansión `${var}` en `command`) y descarta la convención `>>` para acciones locales en favor de un dropdown explícito en el editor del botón.
+`LayoutButton.kind?: 'command' | 'floating'` (undefined ≡ `'command'`). Comando manda al MUD; floating muestra mensaje local con `pushFloating` (anunciado por TalkBack si activo). Mismo campo `command` para el payload de ambos tipos.
 
-**Decisiones cerradas (2026-04-29):**
-- Dos tipos de botón: `'command'` (default — manda al MUD como hoy) y `'floating'` (muestra mensaje flotante local; `pushFloating` ya hace `announceForAccessibility` si TalkBack está activo). Sin `'set_var'` por ahora — se añade si surge caso real (modo combate, marcar objetivo).
-- Dropdown "Tipo: Comando / Aviso" en `ButtonEditModal`, encima del campo principal. El label del input cambia ("Comando" ↔ "Mensaje") según el tipo.
-- Reutilizar el campo `command` existente como **payload** — guarda el comando si `kind === 'command'` o el texto del aviso si `kind === 'floating'`. Sin campos `message`/`payload` nuevos (opción A del 2026-04-29).
-- Soporte de `${variable}` en el payload de **ambos** tipos. Resuelve contra:
-  - System vars (`VARIABLE_SPECS` en `src/utils/variableMap.ts` — `vida`, `vida_max`, `vida_pct`, `energia`, `energia_max`, `energia_pct`, `xp`, `salidas`, `enemigos`, `aliados`, `combatientes`, `en_combate`, etc.).
-  - User vars (`userVariablesService.get(name)`).
-  - Variable no encontrada / sin valor → `""`. Sin sintaxis de default — el usuario escribe el fallback en el texto si lo quiere.
-- Migración trivial: botones existentes sin `kind` se asumen `'command'` en runtime. NO se reescribe el storage al migrar.
-- Eliminamos del seed default de `createBlindModeLayout`: **Daño** (`ultimo daño`) y **Enemigo** (`enemigos`). Los layouts ya guardados de los usuarios NO se tocan — si quieren se los borran a mano desde el editor.
-- Migramos en el seed default a `kind: 'floating'`:
-  - **VID** → `command: 'Vida: ${vida}/${vida_max}'`
-  - **GPS** → relabel a **ENE**, `command: 'Energía: ${energia}/${energia_max}'` (el label "GPS" no representa el contenido)
-  - **XP** → `command: 'XP: ${xp}'`
-  - **Salidas** → `command: 'Salidas: ${salidas}'`
-- Borramos los 6 intercepts hardcoded en `sendCommand` (`TerminalScreen.tsx:1155-1201`): `consultar vida`, `consultar energia`, `consultar salidas`, `xp`, `ultimo daño`, `enemigos`. Los 4 botones que sobreviven (VID/ENE/XP/Salidas) ya no necesitan intercepción especial — son entradas normales del layout.
+`expandVars(template)` resuelve `${name}` contra system vars (`VARIABLE_SPECS`) primero, user vars después; inexistente → `""`. Aplicado en `sendCommand` antes de los intercepts y en el handler de botones floating.
 
-**Implementación:**
+Seed default `createBlindModeLayout`: VID/ENE/XP/Salidas pasan a `kind: 'floating'` con templates `${vida}/${vida_max}` etc.; Daño y Enemigo borrados. Layouts ya guardados de usuarios NO se tocan — la migración ignora `kind`.
 
-1. **`src/utils/expandVars.ts` (NUEVO)** — `expandVars(template: string): string`. Para cada `${name}`:
-   - Si `name ∈ VARIABLE_SPECS`: resuelve contra `playerStatsService.getCurrentVariables()` (con derivadas `vida_pct`, `energia_pct`, `en_combate` computadas con la lógica de `variableMap.ts`).
-   - Si no: lee `userVariablesService.get(name)`.
-   - No encontrado → `""`.
-   - Plantear extraer y reusar desde `triggerEngine.expandTemplate` (que hoy hace lo mismo para user vars + capturas + `$old`/`$new`); por ahora código separado, refactor diferido si vuelve a duplicarse.
+Borrados los 6 intercepts hardcoded en `sendCommand` (consultar vida/energia/salidas, xp, ultimo daño, enemigos) — los botones VID/ENE/XP/Salidas ya no necesitan intercept; muestran floating directo sin pasar por `sendCommand`.
 
-2. **`src/storage/layoutStorage.ts`**:
-   - `LayoutButton` añade `kind?: 'command' | 'floating'` (opcional, default implícito `'command'`).
-   - `createBlindModeLayout()`: aplica los cambios de seed listados arriba (VID/ENE/XP/Salidas como floating, eliminar Daño y Enemigo).
-   - `migrateLayout`: NO toca `kind` — undefined se interpreta en runtime como `'command'`.
+**Lo que desbloquea**: `set_var` como tercer tipo es trivial de añadir si surge caso real (combate, marcar objetivo); no implementado.
 
-3. **`src/components/ButtonGrid.tsx`**:
-   - Nuevo prop `onShowFloating?: (text: string) => void`.
-   - En el `onPress`: si `button.kind === 'floating'` → `onShowFloating?.(button.command)` y return. Si no → flujo actual (`onAddTextButton` o `onSendCommand`).
-   - Mismo dispatch para `accessibilityActions` cuando aplique (botones blind con secondary).
-   - `accessibilityLabel`/`accessibilityHint` mencionan que es aviso para `kind === 'floating'`.
+#### Combate básico Panel 2 (blind mode) — pendiente
 
-4. **`src/screens/TerminalScreen.tsx`**:
-   - Nueva callback `handleShowFloating(text: string)`: `pushFloating(expandVars(text), 'info', 2000)`.
-   - Pasarla a los dos `<ButtonGrid>` (líneas 1965 y 2283).
-   - En `sendCommand` (línea 1081): tras manejar `__SWITCH_PANEL__` y antes de los intercepts (`irsala`, `locate`, etc.), expandir `command = expandVars(command)`. Permite que `irsala ${objetivo}` y similares funcionen.
-   - Borrar los 6 bloques de intercept en líneas 1155-1201. NOTA: si el usuario teclea `xp` por consola, debe llegar al MUD (era solo el botón XP el que lo interceptaba — ahora el botón muestra floating sin pasar por sendCommand).
-
-5. **`src/components/ButtonEditModal.tsx`**:
-   - Estado nuevo `kind: 'command' | 'floating'` inicializado desde `button.kind ?? 'command'`.
-   - Dropdown / segmented "Tipo: Comando / Aviso" en la cabecera del formulario.
-   - Label del input principal cambia: `"Comando"` si `command`, `"Mensaje"` si `floating`.
-   - Hint debajo: `"Puedes usar variables como \${vida}, \${energia}, \${xp}, \${salidas}..."` (no exhaustivo).
-   - `handleSave` incluye `kind` en el `LayoutButton` que persiste.
-   - En modo `'floating'`: ocultar `addText` y campos secundarios (`alternativeCommands`) — no aplican.
-
-**Casos de prueba mentales:**
-- Botón legacy sin `kind` `{ command: 'norte' }` → ejecuta como comando, manda "norte". ✅
-- Botón nuevo `{ kind: 'command', command: 'atacar ${objetivo}' }` con user var `objetivo='goblin'` → manda "atacar goblin". ✅
-- Botón nuevo `{ kind: 'floating', command: 'Vida: ${vida}/${vida_max}' }` con HP 100/100 → muestra "Vida: 100/100" + announceForAccessibility. ✅
-- Variable no declarada `{ kind: 'floating', command: 'Test ${nope}' }` → muestra "Test ". ✅
-- Comando interceptado mantiene comportamiento: `irsala ${ultimo_destino}` → expande primero, luego entra en el intercept de irsala. ✅
-- Usuario sin prompt canónico aplicado: `${vida}` expande a "0", el botón VID muestra "Vida: 0/0". Comportamiento idéntico al actual.
-
-**Coste estimado:** 1.5-2 h.
-
-**Componentes que se desbloquean tras esto:**
-- "Combate básico Panel 2" (ver plan abajo) — depende de tener tipos de botón y `${var}` en `command` para sus botones de combate.
-- `set_var` como tercer tipo — añadible incrementalmente con un valor más en el dropdown si surge caso real.
-
-#### Plan en preparación — Combate básico Panel 2 (blind mode)
-
-Decidido 2026-04-29 abordar **antes que el resto de Fase 6**: rellenar el Panel 2 del blind mode con un set mínimo viable de botones de combate genérico (sin habilidades de clase). Mantiene el Panel 1 actual (direcciones) intacto.
-
-Este plan se rellena con preguntas/respuestas durante la fase de diseño antes de implementar. Al final servirá como spec ejecutable.
-
-**Componentes del entregable**:
-- Sub-fase **6.2 implementada** vía el plan independiente "Tipos de botón + variables" (ver bloque dedicado arriba) — incluye expansión de `${var}` y dropdown Comando/Aviso. La convención `>>` queda **descartada** en favor del dropdown explícito.
-- Trigger pack seeded "Combate genérico" con captura de heridas y último remitente.
-- User vars auto-declaradas: `objetivo`, `heridas`, `ultimo_remitente` (nombres a confirmar).
-- Botones predefinidos en el Panel 2 del layout blind (`createBlindModeLayout` en `layoutStorage.ts`).
-
-**Preguntas y decisiones cerradas (se rellena conforme avanzamos)**:
-
-_Pendiente de empezar el cuestionario._
-
-**Implementación final (a escribir cuando se ataque)**:
-
-_Por escribir tras cerrar las preguntas._
+Llenar el Panel 2 del blind mode con botones de combate genérico (sin habilidades de clase). Necesita pack "Combate genérico" seeded con captura de heridas y último remitente, y user vars `objetivo`/`heridas`/`ultimo_remitente`. Sin diseño cerrado todavía — esperar a que el pack Movimiento esté validado en uso real.
 
 ### Doctrinas de la sesión 2026-04-30
 
@@ -696,212 +624,6 @@ interface PlayerVariables { playerName: string; /* desde ServerProfile.username 
 interface AppSettings { speechCharDurationMs: number; /* default 20 */ }
 ```
 
-### Plan en preparación — Pack "Movimiento" + pan estéreo + ${var} en regex (Plan D)
-
-Decidido 2026-04-30 ir al nivel D directo (con pan estéreo y distinción aliado/enemigo). Por fases para poder probar incrementalmente. Origen: `blind/Movimiento_otros.set` y `blind/Movimiento_propio.set` de Rhomdur.
-
-**Decisión sobre la implementación del pan**: usar la librería **`react-native-sound`** (subopción "c" / híbrida) para los `play_sound` con `pan`, manteniendo `expo-av` para todo lo demás. Razones: (1) `react-native-sound` tiene `setPan(-1..1)` que funciona en Android e iOS sin código nativo extra, (2) coste para futuro port a iOS = 0h específicos de la feature, (3) menos invasivo que reescribir toda la capa de audio. **Riesgo conocido**: `react-native-sound` es mantenida por la comunidad y va lenta; si en el futuro se rompe, alternativas son `react-native-nitro-sound` o módulo nativo custom (~3-5h por plataforma).
-
-**Coste de adaptar a iOS** (la feature, no el port de app):
-- Con `react-native-sound`: **~0h**. La lib ya soporta iOS.
-- El port completo de TorchZhyla a iOS es deuda separada (~1-2 semanas) — `ios/` folder, equivalente Swift de `modules/torchzhyla-foreground/`, signing, App Store, etc.
-
-#### Fase D-1 — Ampliar sustitución de `${var}` en regex (HECHO 2026-04-30)
-
-`triggerEngine.setActiveTriggers` ahora sustituye en patrones regex CUALQUIER `${name}` (system var o user var) en lugar de solo `${personaje}`. Sintaxis dual decidida tras descubrir el problema del `|` en listas pipe-separated:
-
-- **`${name}`** → valor regex-escapado (escape de `\\^$.*+?()[]{}|`). Útil para nombres atómicos como `${personaje}`. Compatible con el comportamiento previo del único caso ya soportado.
-- **`${name:raw}`** → valor inyectado tal cual, sin escapar. Para cuando la user var contiene una alternancia ya construida (`Bandido|Espía|Jorge`) que el motor regex debe interpretar como tal. El usuario asume la responsabilidad de no romper el regex.
-- Valor vacío / undefined / 0 / false → sustituido por `(?!)` (assertion inerte que nunca matchea). Permite triggers tipo "enemigo llega" que se quedan inertes mientras el usuario no haya tecleado `nick x ...`.
-
-**Resolución de nombres**: primero busca en `VARIABLE_SPECS` (system vars: `personaje`, `vida`, `enemigos`, `salidas`, etc.). Si no es predefinida, busca en `userVariablesService`. Nombres desconocidos (typo) → undefined → `(?!)`.
-
-**Auto-recompile**: el motor mantiene `patternUserVarRefs: Set<string>` con los nombres de user vars que aparecen en algún patrón. Cuando una acción `set_var` cambia el valor de una de esas vars, se marca `needsRecompile = true`. La recompilación se aplica al inicio del siguiente `process()` (no mid-loop, para no invalidar `compiled[]` mientras se itera). Coste: una recompilación de todos los patrones por cada cambio relevante. Aceptable porque las vars referenciadas en patrones cambian poco (típicamente una vez por sesión cuando el usuario teclea `nick x`).
-
-**System vars NO se auto-recompilan**: los `${enemigos}`, `${aliados}` etc. del prompt cambian línea a línea pero son demasiado caros de re-evaluar en hot path. Se snapshootean al recompilar (cambio de personaje, edición de pack, etc.). En la práctica, los triggers de movimiento NO usan `${enemigos}` del prompt — ver sección D-2.
-
-**Auto-declare en patrones**: `collectVarsReferencedByPacks` (utils/userVariablesUsage) ahora también escanea `t.source.pattern` buscando `${name}` y `${name:raw}` para auto-declarar user vars en bootstrap del server e import de packs. Mismo flujo que ya hacía con `set_var.varName` y bloques `user_var_ref` de acciones. `collectRolesForTrigger` también añade rol "reader" cuando la var aparece en el patrón.
-
-**Hallazgo que cambió el diseño** (descubierto leyendo `blind/Nicks.set` y `blind/Funciones.set` de Rhomdur): en RdL la lista del prompt `$k` (variable `enemigos`) viene como `"10 szylases, (Novel) Lioren, Jorge"` — con contadores, prefijos de raza/visitante, plurales. Es **inutilizable directamente en regex**. Rhomdur tampoco la usa así: mantiene tres listas auxiliares (`@NickX`, `@PresentesE`, `@Peleas`) construidas con captura de comandos del MUD y limpieza de nicks. Por tanto el plan original de D-2 ("usar `${enemigos}` del prompt en patrones de movimiento") está descartado. Diseño nuevo en D-2: el pack incluye un trigger que captura la respuesta de `nick x ...` y mantiene una user var pipe-separated que los triggers de movimiento usan vía `${nick_x:raw}`.
-
-#### Fase D-2 — Pack "Movimiento" base sin pan (HECHO 2026-04-30)
-
-**Pack añadido a `torchzhyla-defaults.zip`**: 104 triggers + 94 wavs nuevos. ZIP ahora ~18 MB. Estructura final:
-
-| Categoría | Triggers | Wavs |
-|---|---|---|
-| Captura `nick x` (5 plantillas del MUD) | 5 | 0 |
-| Direccionales (entrada/salida × aliado/enemigo × 16 dirs) | 64 | 64 |
-| Modificadores no-blocking (saltando, desplomándose) | 3 | 3 |
-| Seguir / esquinazo | 10 | 4 |
-| Árboles (caer, trepar, ramas) | 5 | 3 |
-| Movimiento propio (sigues, dirección errónea, puertas) | 5 | 4 |
-| Terreno (nieve, pantano) | 6 | 4 |
-| Movimiento invisible (notas, aparece) | 4 | 0 (reusa Llega/Se va desconocido) |
-| Movimiento entre árboles | 2 | 0 (reusa Arbol1) |
-| **Total** | **104** | **94** |
-
-Las 16 direcciones cubiertas: `norte, sur, este, oeste, noreste, noroeste, sudeste, sudoeste, arriba, abajo, dentro, fuera, hueco, grieta, cubil, algun`. El generador tiene un fallback para typos del addon original — `Llegada enemigos/Hueco.wav` no existe en source pero `ueco.wav` sí, se copia bajo el displayName correcto. Tabla `TYPO_FALLBACKS` extensible en el script si aparecen más.
-
-**Patrones permisivos**: cada trigger direccional usa un regex tipo `^(SUJETO) llega.*?(?:desde|de)\s+(?:el |la |del |un |una |al )?DIRECCION\b.*\.$` (case-insensitive). Cubre las variantes "X llega desde el norte.", "X llega galopando desde el norte, dejando rastro.", "X llega de un cubil.", etc. con un solo trigger por dirección × tipo. Limitación conocida: "X llega de un cubil al norte." (entrada con escala intermedia) no matchea — el `.*?` no llega entre el artículo y la dirección.
-
-**Sin pan estéreo todavía** — todos los `play_sound` salen centrados. El pan se añade en D-5 reaprovechando estos mismos triggers (solo cambia el JSON del pack, no el código).
-
-**Distribución**: el ZIP regenerado vive en `C:/proyectos/Claude/TorchZhyla/torchzhyla-defaults.zip`. Para probarlo en el móvil: `adb push <zip> /sdcard/Download/`, luego en la app Triggers → Importar → seleccionar el archivo. Importará los 4 packs (Sonidos, Combate, Comunicaciones, Movimiento). Si "Movimiento" ya existía → reemplazo limpio (sus sonidos exclusivos se reasignan a UUIDs frescos).
-
-**Setup que tiene que hacer el usuario tras importar el pack** (documentar en futura ayuda in-app):
-1. Asignar el pack a sus personajes (auto-asignación on por defecto en futuros).
-2. Teclear en el MUD: `nick x nombre1 nombre2 nombre3` con los nicks de los enemigos. La user var `nick_x` se rellena automáticamente vía los triggers de captura. Sin `nick x` todo suena como aliado.
-
-**Generador**: el script `gen-movimiento-pack.mjs` está en `C:\Users\diego\AppData\Local\Temp\` — léelo para cualquier modificación. Re-ejecutarlo regenera el pack idempotentemente (elimina pack previo + sus sonidos exclusivos antes de re-añadir).
-
-##### Plan original (referencia)
-
-Lo que sigue es el diseño que se mantenía como referencia mientras se implementaba. Se conserva por contexto histórico y porque la sub-fase D-2 puede revisitarse si surgen falsos negativos en patrones.
-
-Triggers cubriendo:
-- Entradas: `* llega desde *`, `* llega de *`, variantes con `seguido de`, `galopando`, `nadando`, `saltando`, `desplomándose`, `levitando a escasos`, `surcando las aguas`, `dejando rastro`, `de la nada`, `de repente y sin saber cómo`. ~12 triggers.
-- Salidas: `* se va hacia *`, `* se va en dirección * seguido de *`, `* sale galopando en su * en dirección *`, `* se va, deslizándose velozmente, en dirección *`, `* salta hacia *`, `Notas marcharse a alguien`, `Ves a * irse`. ~10 triggers.
-- Seguir: `* comienza a seguirte`, `* te sigue`, `* te sigue de un salto`, `* te da esquinazo`, `* intenta seguirte pero le das esquinazo`, `* sigue a tu *`. ~6 triggers.
-- Árboles: caer, trepar empezar/terminar, ver moverse las ramas. ~5 triggers.
-- Movimiento propio: entrada en sala genérica `Sigues a * en dirección *`, dirección errónea, puerta cerrada, salida bloqueada, terreno (nieve, pantano, naturalizado). ~10 triggers.
-- Personajes en otra sala: `* está allí`. 1 trigger.
-- Notar movimientos invisibles: `Notas que alguien llega a tu posición`, `* aparece de la nada`. 2 triggers.
-
-Total: ~45 triggers.
-
-Wavs por dirección (`norte/sur/este/oeste/noreste/noroeste/sudeste/sudoeste/arriba/abajo/dentro/fuera`):
-- Llegada aliado × 12 dir = 12 wavs
-- Llegada enemigo × 12 = 12 wavs
-- Salida aliado × 12 = 12 wavs
-- Salida enemigo × 12 = 12 wavs
-= **48 wavs direccionales**.
-
-Wavs adicionales no direccionales: `Llega desconocido`, `Se va desconocido`, `Llega saltando`, `Se va saltando`, `Desplomandose*3`, `Naturalizado`, `Sigilando`, `Movimiento`, `Sigue aliado/enemigo {llega/se va/inicio}`, `Te sigue aliado/enemigo {/ inicio}`, `Trepa empezar/terminar`, `Movimiento ramas`, `Arbol*5`, `Direccion erronea`, `Puerta cerrada`, `Salida bloqueada`, `Nieve*5`, `Nieve bloquea`, `Pantano*3`, `Pantano Bloquea`, `Aliado alli`, `Enemigo alli`, `Enemigo`, `Objetivo aqui`, `Objetivo llega`, `Objetivo se va`, `No seguir`, `Das esquinazo`, `Sigues`. ~30 wavs.
-
-Total: ~80 wavs nuevos en el ZIP.
-
-**Distinción aliado/enemigo (rediseñada 2026-04-30 tras D-1)**: NO usamos `${enemigos}` del prompt — viene con plurales, contadores y prefijos que lo hacen inutilizable en regex. Replicamos la mecánica `@NickX` de Rhomdur:
-
-1. **User var `nick_x`** (auto-declarada al importar el pack). Inicia vacía → `(?!)` en patrones → todo cae al catchall de aliado.
-2. **5 triggers de captura** (cubren todas las plantillas que el MUD usa para confirmar cambios al slot `x`):
-   - `^Nombre corto x quedando: (.+)\.$` (respuesta a `nick x A B C` o `dnick x C`)
-   - `^Añadiendo nombre corto x como (.+)\.$` (respuesta a `anick x` / `nickear x`)
-   - `^El nickname x equivale a (.+)\.$` (respuesta a query)
-   - `^Nombre corto x cambiado de .+ a (.+)\.$` (rename)
-   - `^Nombre corto x borrado\.$` → set_var nick_x = ""
-   
-   Los 4 primeros hacen `set_var nick_x = $1` con transformación `, → |` (pendiente de decidir cómo expresarla — opciones en D-2 design open). Resultado: `nick_x = "szylah|Lioren|Jorge"`.
-3. **Triggers de movimiento ordenados**: específico-enemigo PRIMERO, catchall-aliado DESPUÉS. Ambos `blocking: true`. First-match-wins hace lo correcto.
-   - `^(${nick_x:raw}) llega .+? desde (.+)\.` → llegada enemigo (suena wav enemigo).
-   - `^(.+?) llega .+? desde (.+)\.` → llegada aliado/desconocido (suena wav aliado).
-4. **Auto-recompile** (de D-1) hace que cuando el usuario teclea `nick x szylah Lioren` en el MUD, el set_var dispare la recompilación y la siguiente línea de movimiento ya use el regex actualizado.
-
-**Convención que documentamos al usuario**: "Para que el cliente distinga enemigos en triggers de movimiento, teclea en el MUD `nick x nombre1 nombre2 ...`. La lista persiste server-side por personaje. Sin nick x configurado, todo el movimiento suena como aliado."
-
-**No replicamos en primera pasada**: `@PresentesE` (auto-detect parseando "Aquí ves a: ..." que requiere un mini-corrector tipo `FuncCorrectorPlayers` para limpiar razas/paréntesis/plurales). Si en uso real falta, lo abordamos en D-6.
-
-**Pendiente de cerrar en D-2** (preguntas para el siguiente arranque de D-2):
-- Cómo expresar la transformación `, → |` en el value template del set_var. Opciones: (a) capturar con regex de N grupos opcionales y juntar con `|` literal en el value, (b) añadir un modificador de transformación tipo `${1:replace=', '|'}`, (c) acción nueva `set_var_transform`. Decisión cuando arranque D-2.
-
-Sin pan en esta fase. La dirección se siente solo por el wav distinto (norte.wav vs este.wav vs oeste.wav).
-
-#### Fase D-3 — Schema y motor para pan (HECHO 2026-04-30)
-
-Cableado completo del valor `pan` desde `TriggerAction.play_sound` hasta `SoundContext.playSound(soundKey, pan)`. Todavía no audible — `expo-av` no expone stereo balance, así que la firma acepta el parámetro pero lo ignora hasta D-4.
-
-Cambios:
-- **`src/types/index.ts`** — `play_sound` añade `pan?: number`. Comentario documenta rango [-1, 1], default centro, compat hacia atrás.
-- **`src/services/triggerEngine.ts`** — `TriggerSideEffect` para `play_sound` propaga `pan?`. Los dos lugares donde se hace push del side-effect (regex y variable triggers) lo incluyen.
-- **`src/contexts/SoundContext.tsx`** — `playSound(soundKey, pan?)` acepta el parámetro y lo ignora con `_pan`. Comentario explícito sobre por qué (D-4 lo activa).
-- **`src/screens/TerminalScreen.tsx`** — los dos consumidores de side-effects pasan `fx.pan` al `playSoundRef.current`.
-- **`src/components/TriggerEditModal.tsx`** — `<PanPicker>` con 5 botones presets (◀◀ -1, ◀ -0.5, ● 0, ▶ +0.5, ▶▶ +1). Sin slider numérico — los presets cubren la convención CMUD del addon blind. El pan = 0 se persiste como `undefined` (no inflar el JSON con valores default).
-
-Sin cambios funcionales en audio. Lo que sí se puede verificar tras esta fase:
-- Crear/editar un trigger con pan ≠ 0, exportarlo y reimportarlo: el pan persiste.
-- El motor recibe el pan en el side-effect (se puede inspeccionar con un `console.log` puntual).
-- El UI muestra el botón seleccionado con el color de selección.
-
-#### Fase D-4 — Integración `react-native-sound` para pan (HECHO 2026-04-30)
-
-Pan estéreo audible para sonidos custom. Sonidos builtin con pan ≠ 0 caen a centrado + warning (limitación documentada).
-
-**Cambios:**
-- **`package.json`** — añadida dep `react-native-sound ^0.13.0`. Sin alias, sin overrides.
-- **`src/contexts/SoundContext.tsx`** — `Sound.setCategory('Playback')` al cargar el módulo. `playSound(soundKey, pan)` ahora bifurca:
-  - `pan === undefined || 0` (default) → ruta `expo-av` actual (cache de builtins + warmup, custom on-demand).
-  - `pan ≠ 0` y key custom → carga vía `new Sound(path, '', cb)`, aplica `setPan(clamped)`, `play()`, libera con `release()`. Si la carga falla, fallback a `expo-av` centrado para que el usuario oiga ALGO.
-  - `pan ≠ 0` y key builtin → ignora el pan + `console.warn`. Reescribir el cache de builtins en `react-native-sound` rompería el warmup; en la práctica el pack Movimiento usa sonidos custom así que no se nota.
-
-**Reglas operativas:**
-- **`react-native-sound` espera path SIN `file://`**. El código hace `uri.replace(/^file:\/\//, '')` antes de pasarlo al constructor.
-- **Pan se clamp a [-1, 1]** en runtime aunque el wizard ya restrinja. Defensivo contra packs importados con valores fuera de rango.
-- **Una `Sound` por play, liberada al terminar**. NO se cachea — los sonidos panned son one-shot, cachear acumularía instancias y la lib mantiene su propia caché interna.
-
-**Linking**: autolinking de RN ≥ 0.60 lo recoge automáticamente al construir. **Requiere rebuild nativo** — el siguiente `npm run android` (o `cd android && ./gradlew.bat assembleDebug`) lleva el plugin nativo al APK. JS-only reload (Metro) NO es suficiente.
-
-**Riesgo conocido**: `react-native-sound` es comunidad. Si en el futuro deja de mantenerse o rompe en una versión RN, alternativas: `react-native-nitro-sound` (más reciente, requiere Nitro Modules), `expo-audio` (la nueva lib de Expo — no soporta pan al 2026-04-30, hay que verificar), o módulo nativo custom (~3-5h por plataforma con AudioTrack/AVAudioPlayer).
-
-#### ~~Fase D-4 — plan original (referencia)~~
-
-- Añadir dep `react-native-sound`.
-- Linking nativo en `android/` (autolinking de RN ≥ 0.60 lo hace, comprobar).
-- Refactor de `SoundContext`:
-  - Mantener `expo-av` para todo el flujo actual (cache, warmup, prepareSounds).
-  - Añadir un segundo cache `panSoundCache` con `react-native-sound` para sonidos que se reproducen con pan ≠ 0.
-  - `playSound(soundKey, pan)`:
-    - Si `pan === 0` o undefined → ruta expo-av actual.
-    - Si `pan != 0` → ruta react-native-sound: `new Sound(...)`, `setPan(pan)`, `play(...)`.
-- Wavs ZIP: react-native-sound espera URIs de archivo en `${Paths.document}/sounds/<uuid>.wav`. La ruta funciona porque el sistema de import de packs ya copia los wavs ahí. Confirmar con un test.
-- Compatibilidad: si la lib falla en el dispositivo (lib comunitaria, no expo-managed), fallback a expo-av sin pan + warning en consola.
-
-Riesgos:
-- `react-native-sound` puede tener fricciones con la versión de React Native. Verificar tras añadir.
-- Memory: cada `Sound` instance carga el wav. Decidir si cachear o crear-y-liberar. Cachear si el wav se usa más de una vez (probable).
-
-#### Fase D-5 — Pack "Movimiento" v2 con pan (HECHO 2026-04-30)
-
-Generador `gen-movimiento-pack.mjs` extendido con tabla `DIR_PAN`:
-
-| Dirección | Pan |
-|---|---|
-| este | +1.0 |
-| oeste | -1.0 |
-| noreste, sudeste | +0.5 |
-| noroeste, sudoeste | -0.5 |
-| norte, sur, arriba, abajo, dentro, fuera | 0 |
-| hueco, grieta, cubil, algun | 0 (terrain-special, sin convención horizontal) |
-
-Cada trigger direccional persiste `pan` solo cuando es ≠ 0 — pan = 0 se omite del JSON para mantenerlo limpio (default implícito). Verificado tras regenerar:
-- `Llega aliado desde Este` → pan=+1 ✓
-- `Llega aliado desde Oeste` → pan=-1 ✓
-- `Llega enemigo desde Noreste` → pan=+0.5 ✓
-- `Se va aliado hacia Sudoeste` → pan=-0.5 ✓
-- `Llega aliado desde Hueco` → sin campo pan ✓
-
-ZIP regenerado, mismas dimensiones (~18 MB).
-
-#### Fase D-6 — Polish y prueba en uso real (HECHO parcial 2026-04-30)
-
-**Hecho**: documentación de cada sub-fase actualizada con el estado HECHO + reglas operativas. La parte de "recompile-on-`${enemigos}`-change" del plan original quedó NO APLICABLE — el rediseño de D-2 cambió `${enemigos}` (system var del prompt) por `${nick_x:raw}` (user var poblada por trigger). Las user vars ya disparan auto-recompile al cambiar gracias a D-1, así que no hay caso límite que cubrir.
-
-**Pendiente del usuario** (no se puede hacer sin device):
-1. **Rebuild nativo**: la dep `react-native-sound` requiere reconstruir el APK. `cd android && ./gradlew.bat assembleDebug && adb install -r android/app/build/outputs/apk/debug/app-debug.apk`. JS-only reload (Metro) no basta.
-2. **Push del ZIP de defaults**: `adb push "C:\proyectos\Claude\TorchZhyla\torchzhyla-defaults.zip" /sdcard/Download/torchzhyla-defaults.zip`.
-3. **Importar en la app**: Triggers → Importar → `torchzhyla-defaults.zip`. Reemplaza limpio si Movimiento ya existe.
-4. **Configurar enemigos** en el MUD: `nick x nombre1 nombre2 ...`. Sin esto todo el movimiento suena como aliado (regex enemigo `(?!)` siempre falla).
-5. **Test escenarios**:
-   - Caminar y oir el sonido propio (`Sucesos/Sigues.wav`) en cada dirección.
-   - Entrar/salir alguien marcado en `nick x` → wav de enemigo + pan según dirección.
-   - Entrar/salir alguien NO marcado → wav de aliado + pan.
-   - Verificar que `este` se oye claramente en oído derecho, `oeste` en izquierdo, diagonales suaves a 50%.
-   - Probar `dnick x nombre` y `nick x borrado` para verificar que el trigger de borrado vacía la var (los siguientes movimientos pasan a sonar todos como aliados).
-6. **Ajuste de volumen** (opcional): si los wavs panned suenan más bajos que los centrados (Android puede atenuar al aplicar pan), comparar y ajustar el volumen `setVolume(0.9)` en la rama `react-native-sound` de `SoundContext.playSound`.
-
-**Total Plan D estimado**: ~2.5-3 días de trabajo efectivo, distribuibles en sesiones de 2-4h.
-
-**Plan D — cierre 2026-04-30**: ejecutado en una sesión continua. Sub-fases D-1 a D-5 completadas. D-6 al 80% — falta el test en MUD real que solo puede hacer el usuario.
-
 ### Decisiones pendientes
 
 - **Orden entre plantillas** cuando un server tiene varias asignadas. Default actual: alfabético por nombre de plantilla. Reordenación manual entre plantillas se difiere a Fase 4 si hace falta. (La reordenación **dentro** de una plantilla ya está implementada con flechas ▲/▼.)
@@ -920,41 +642,36 @@ Loop de música de fondo que cambia con el **tipo de room** (no por zona especí
 - **Stop al desconectar** (`telnetService.disconnect`) y al perder sala identificada (`currentRoom === null`).
 - **Refs ausentes**: si una `custom:{uuid}.wav` ya no existe en disco → log + saltar a la siguiente del array. Si todas faltan → silencio + log. La UI muestra `(falta) <filename>` en los slots.
 - **Kill-switch**: el toggle propio (`ambientEnabled` 🎵 en TerminalScreen) es independiente del `silentModeEnabled` global, pero ambos silencian.
-- **`effectsVolume`** (slider en "Mis ambientes") afecta a TODOS los `play_sound` de triggers vía `SoundContext` en sus 3 rutas (custom centrado, custom panned con `react-native-sound`, builtin warmed). Default 0.7.
+- **`effectsVolume`** (slider en Settings, debajo del toggle Música ambiente) afecta a TODOS los `play_sound` de triggers vía `SoundContext` en sus 3 rutas (custom centrado, custom panned con `react-native-sound`, builtin warmed). Default 0.7.
 - **Loop gapless** depende del wav: deben venir cortados en zero-crossing con cola que continúa la cabeza, si no se oye click. Si un wav del usuario tiene click → es problema del wav, no del player.
 
 **Settings**: `ambientEnabled` (bool, default true), `ambientVolume` (0..1, default 0.4), `effectsVolume` (0..1, default 0.7). Storage `aljhtar_ambient_mappings` con map por categoría → array de refs `custom:{uuid}.wav` (cap 4 por categoría, `MAX_SOUNDS_PER_CATEGORY` exportado para la UI).
 
 **Archivos clave**: `src/services/roomCategorizer.ts`, `src/services/ambientPlayer.ts` (singleton), `src/storage/ambientStorage.ts`, `src/screens/MyAmbientsScreen.tsx`, `src/screens/ConfigBackupScreen.tsx`, toggle 🎵 en `TerminalScreen.tsx`.
 
-**Import/export unificado**: el ZIP de "exportar plantillas de triggers" pasó a ser **"exportar configuración"** (formato `torchzhyla-config-backup` v2). Transporta packs + ambientMappings + sonidos referenciados. Importador acepta también el nombre legacy `torchzhyla-trigger-backup`. Merge de `ambientMappings` por categoría: las que vienen pisan, las que faltan se conservan. Pantalla `ConfigBackupScreen` accesible desde Settings (la versión granular con checkboxes está en Temas Pendientes).
+**Import/export granular** (formato `torchzhyla-config-backup` v3, HECHO 2026-05-01). Pantalla `ConfigBackupScreen` accesible desde Settings con checkboxes para cada sección. Defaults: TODO marcado al abrir el modal — el usuario desmarca lo que no quiera.
+- **Plantillas** (un checkbox por pack). Cada pack arrastra sus user vars referenciadas + sus sonidos custom.
+- **Ambiente**: `ambientMappings` completos + sus sonidos asignados.
+- **Personajes**: `ServerProfile[]` + por server su `buttonLayout` + `channelAliases` + `channelOrder`. **La contraseña NUNCA viaja en el ZIP** (stripped en `exportConfigToZip` antes de serializar). El usuario destino tendrá que reescribirla.
+- **Settings de la app**: blob completo de `AppSettings` que sustituye al actual al importar. Tema, fuente, gestos, volúmenes, kill-switches, etc.
+- **Master "Todo"**: check derivado del estado de los sub-checks. Marcado solo cuando todos los sub-checks están marcados; al desmarcarlo desmarca todos los demás. Tras desmarcar un sub-check, "Todo" se desmarca automáticamente.
+
+Reglas operativas:
+- **El export solo bundlea wavs referenciados** por las secciones marcadas. Si exportas solo ambient sin packs, los wavs de los packs no van en el ZIP.
+- **El import bundlea solo los wavs necesarios** para lo que el usuario marque (ahorra tiempo en ZIPs grandes con secciones no deseadas).
+- **Servers en import: añadir duplicados** (sin merge por nombre/host). Si el usuario importa "Aljhtar" y ya tiene "Aljhtar", verá dos en la lista. Cada server importado recibe id fresco; layouts/aliases/order se reescriben con el id nuevo vía `serverIdMap`.
+- **Ambient en import: merge por categoría** — las que vienen pisan, las ausentes se conservan.
+- **Single-pack ZIPs (`pack.json` del export per-plantilla)** se aceptan en este flujo y se normalizan como un manifest de UN pack sin otras secciones. Compat hacia atrás con todos los ZIPs anteriores: lectura acepta tanto `torchzhyla-config-backup` como el legacy `torchzhyla-trigger-backup`.
+- **Versiones**: v3 añade servers/layouts/channelAliases/channelOrder/settings (todo opcional). v2 añadió ambientMappings. v1 solo packs+sounds. Importar un v3 en una app v2 antigua falla con mensaje claro ("versión más reciente, actualiza la app").
+
+**APIs** (`src/services/triggerPackExport.ts`):
+- `exportConfigToZip({ packIds, includeAmbient, includeServers, includeSettings })`.
+- `readImportManifest(zipUri)` → `ImportManifest` (qué contiene el ZIP, sin side-effects).
+- `applyImport(manifest, selections)` → aplica solo lo seleccionado, devuelve resumen.
+- Single-pack flow per-plantilla sigue intacto: `exportPackToZip(pack)` desde TriggersScreen.
 
 ## Temas Pendientes
 
-- **Exportación completa de configuración** (extensión del formato `torchzhyla-config-backup` v2). Hoy el ZIP transporta packs + ambientMappings + sonidos referenciados, pero NO servidores, layouts, channel aliases, ni settings globales. Plan: pantalla de export con checkboxes granulares para cambio de móvil / backup defensivo.
-
-  **UI de export propuesta**:
-  - **Master "Todo"** arriba — marca/desmarca todas las casillas de golpe.
-  - **Sección "Plantillas de triggers"**: un checkbox por pack (todos marcados por default). Cada pack al exportarse arrastra automáticamente sus user vars referenciadas + sus sonidos custom referenciados (no hay que pensar en eso).
-  - **Checkbox "Ambiente"** (default ON). Incluye los `ambientMappings` completos + todos los sonidos asignados a alguna categoría.
-  - **Checkbox "Servidores"** (default **OFF** — credenciales son específicas del personaje). Incluye TODOS los `ServerProfile` (host, port, username, password, autologin, blindMode, etc.).
-
-  **Importador**: checkboxes paralelos mostrando lo que el ZIP realmente contiene, con la misma granularidad. Política de merge:
-  - **Packs**: añadir con uuids frescos (sin merge por nombre — comportamiento actual).
-  - **`ambientMappings`**: merge por categoría (las que vienen pisan, las que faltan se conservan).
-  - **Servidores**: añadir como nuevos `ServerProfile` (sin merge — el usuario puede duplicar un personaje si reimporta).
-  - **Sonidos custom**: uuid fresco vía `uuidMap` reescribiendo refs.
-
-  **Faltantes a decidir antes de implementar** (preguntas para el siguiente arranque):
-  - **Layouts de botones**: per-server en modo normal, global en blind. Opción A: cuando exportas un server arrastras su layout normal, y el layout blind global va como checkbox aparte. Opción B: checkbox unificado "Layouts" que se lleva todo (normal + blind). Decidir.
-  - **Channel aliases**: per-server. Lo más natural es que viajen con el server al exportarlo (igual que el layout normal).
-  - **Settings generales** (theme, fontSize, blind toggles, speechCharDurationMs, silentModeEnabled, ambientEnabled, ambientVolume, effectsVolume, etc.): checkbox "Settings de la app". Decidir si los volúmenes y kill-switches viajan o se respeta el estado del móvil destino.
-  - **User variables sueltas** (declaradas pero NO referenciadas por ninguna plantilla incluida): edge case raro. Sugerencia: ignorar — si el usuario las quiere, las re-declara desde "Mis variables".
-  - **Logs**: explícitamente fuera (son audit data del usuario, no configuración).
-
-  **Estructura del backup.json tras la extensión**: añadir secciones opcionales `servers?`, `layouts?`, `channelAliases?`, `settings?`. Cada una se exporta solo si su checkbox está marcado. Importador trata cada campo como opcional y aplica solo si presente.
-
-  **Coste estimado**: 4-6 h.
 - **Acceso rápido a comandos en blind mode** (planteado 2026-05-01, en discusión). Problema: en MUD el usuario blind necesita 8-12 comandos accesibles en <1 s sin pasar por menús ni doble-tap-explorar. Botones pequeños con `accessibilityActions` son demasiado lentos. Opciones contempladas hasta ahora:
   - **Zona doble-tap-hold + drag direccional** (candidato técnico). Una `View` grande tipo "Zona de gestos rápidos" enfocada por TalkBack como un único elemento. El usuario hace doble-tap manteniendo el segundo dedo (gesto estándar de Android para drag/slider) — TalkBack cede el touch a la app durante todo el gesto. Detectamos `dx/dy` del PanResponder al soltar y disparamos el comando configurado para esa dirección (8 sectores: 4 cardinales + 4 diagonales). Ergonomía: rápido, sin precisión, 8-10 comandos por gesto. Limpio dentro del SDK accesible, sin permisos ni ajustes OS. Coste estimado: ~3-4 h para prototipo + settings de 8 slots.
   - **Volume Up/Down a nivel `KeyEvent`** (TalkBack no los consume): 2 atajos extra "duros".

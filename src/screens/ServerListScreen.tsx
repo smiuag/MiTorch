@@ -192,7 +192,6 @@ export function ServerListScreen({ navigation }: Props) {
   };
 
   const renderServer = ({ item }: { item: ServerProfile }) => {
-    const isConfigured = !!item.buttonLayout;
     return (
       <TouchableOpacity
         style={styles.serverCard}

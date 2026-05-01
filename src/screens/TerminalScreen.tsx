@@ -38,7 +38,6 @@ import { RoomSearchResults } from '../components/RoomSearchResults';
 import { loadSettings } from '../storage/settingsStorage';
 import { MapService, MapRoom } from '../services/mapService';
 import { ButtonLayout, createDefaultLayout, createBlindModeLayout, loadLayout, saveLayout, loadServerLayout, saveServerLayout } from '../storage/layoutStorage';
-import { loadServers, saveServers } from '../storage/serverStorage';
 import { getTriggersForServer, loadPacks } from '../storage/triggerStorage';
 import { collectVarsReferencedByPacks } from '../utils/userVariablesUsage';
 import { triggerEngine } from '../services/triggerEngine';
@@ -457,32 +456,31 @@ export function TerminalScreen({ route, navigation }: Props) {
     setLoginFailed(false);
 
     (async () => {
-      // Load server-specific button layout from storage
-      const serverLayout = await loadServerLayout(server.id);
-
-      let layout: ButtonLayout;
-
-      if (uiMode === 'blind') {
-        // In Blind Mode: use createBlindModeLayout as base + merge any server customizations
-        const blindLayout = createBlindModeLayout();
-
-        if (serverLayout.buttons.length > 0) {
-          // Merge: replace buttons from blindLayout with their customized versions (by position + panel)
-          layout = {
-            buttons: blindLayout.buttons.map(btn => {
-              const custom = serverLayout.buttons.find(c =>
-                c.col === btn.col && c.row === btn.row && c.blindPanel === btn.blindPanel
-              );
-              return custom || btn;
-            })
-          };
-        } else {
-          layout = blindLayout;
-        }
-      } else {
-        // Completo mode: use server-specific layout or default
-        layout = serverLayout.buttons.length > 0 ? serverLayout : createDefaultLayout();
+      // Load server-specific button layout. Mismo modelo en blind y completo:
+      // si el server tiene layout guardado → snapshot puro; si no → plantilla
+      // por defecto (distinta según uiMode) que se usa solo como vista hasta
+      // que el usuario haga el primer save (entonces queda como suya).
+      // Migración 2026-05-01: el field legacy `ServerProfile.buttonLayout`
+      // (storage `aljhtar_servers`) se rescata si el server tiene datos ahí
+      // pero `buttonLayout_{serverId}` está vacío. Tras rescatar se persiste
+      // a la clave nueva y queda muerto en el JSON viejo.
+      let serverLayout = await loadServerLayout(server.id);
+      const legacyLayout = (server as unknown as { buttonLayout?: ButtonLayout })
+        .buttonLayout;
+      if (
+        serverLayout.buttons.length === 0 &&
+        legacyLayout?.buttons?.length
+      ) {
+        serverLayout = legacyLayout;
+        await saveServerLayout(server.id, serverLayout);
       }
+
+      const layout: ButtonLayout =
+        serverLayout.buttons.length > 0
+          ? serverLayout
+          : uiMode === 'blind'
+            ? createBlindModeLayout()
+            : createDefaultLayout();
 
       // Replace LOGIN_NAME placeholder with actual server name
       const buttons = layout.buttons.map(btn =>
@@ -1490,18 +1488,12 @@ export function TerminalScreen({ route, navigation }: Props) {
     const newLayout = { buttons: updated };
     setButtonLayout(newLayout);
 
-    const updatedServer = {
-      ...server,
-      buttonLayout: newLayout,
-    };
-    setServer(updatedServer);
-
-    const servers = await loadServers();
-    const index = servers.findIndex(s => s.id === server.id);
-    if (index >= 0) {
-      servers[index] = updatedServer;
-      await saveServers(servers);
-    }
+    // Persiste al mismo storage que handleSaveButton (`buttonLayout_{serverId}`).
+    // Antes escribíamos al field legacy `ServerProfile.buttonLayout` vía
+    // saveServers — distinto storage del que lee loadServerLayout, así que
+    // los borrados no sobrevivían a un reload salvo que después hicieras
+    // otro save/move que persistiera el layout completo.
+    await saveServerLayout(server.id, newLayout);
 
     setEditButtonVisible(false);
   };
