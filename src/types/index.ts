@@ -6,6 +6,28 @@ export interface ServerProfile {
   encoding?: string;
   username?: string;
   password?: string;
+  // Configuración del grid de botones del Terminal en modo completo. Se
+  // decide al CREAR el server y es inmutable después (la edición de server
+  // no muestra estos campos). Servers cargados sin estos campos se migran
+  // a defaults: layoutKind='standard', panels=[1, 2].
+  //
+  // 'standard': grid 9×6 (vertical) / 6×9 (horizontal) con transformaciones
+  //   `normalModeTransforms` que reorganizan la zona de direcciones al
+  //   pivotar. Layout por defecto incluye Decir/Res/STOP/IR/SIG/LOC y la
+  //   cruz de direcciones. Al añadir paneles, se copia la zona de direcciones
+  //   del panel 1.
+  // 'custom': grid lógico cuadrado (5×5, 7×7, 9×9). En cada orientación se
+  //   renderiza solo el sub-rectángulo que cabe (Pequeño 4×5/5×4, Mediano
+  //   5×7/7×5, Grande 5×9/9×5). Sin transformaciones de landscape — solo
+  //   recortar. Botones fuera del rectángulo visible quedan guardados pero
+  //   inaccesibles hasta rotar el móvil. Empieza vacío excepto el switch
+  //   button en (0,0). Al añadir paneles, panel vacío.
+  layoutKind?: 'standard' | 'custom';
+  customGridSize?: 5 | 7 | 9;
+  // IDs de paneles del modo completo. Default [1, 2]. Cap máximo 6. Los
+  // dos primeros no se pueden eliminar. Los IDs no necesitan ser
+  // consecutivos (al borrar uno y añadir otro, se usa max+1).
+  panels?: number[];
 }
 
 export interface AnsiSpan {

@@ -36,9 +36,17 @@ export function ServerListScreen({ navigation }: Props) {
   const [formPort, setFormPort] = useState('');
   const [formUsername, setFormUsername] = useState('');
   const [formPassword, setFormPassword] = useState('');
+  // Tipo de botonera del modo completo. Solo se elige al CREAR (inmutable
+  // tras creación; el modal de editar no muestra estos campos).
+  const [formLayoutKind, setFormLayoutKind] = useState<'standard' | 'custom'>('standard');
+  const [formCustomGridSize, setFormCustomGridSize] = useState<5 | 7 | 9>(9);
   const [helpModalVisible, setHelpModalVisible] = useState(false);
   const [welcomeModalVisible, setWelcomeModalVisible] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState(true);
+  // Modo de la app del usuario (completo / blind). En blind, el selector de
+  // "tipo de botonera" no se muestra al crear server: la botonera custom es
+  // solo del modo completo y no aporta nada al usuario blind. Asume estándar.
+  const [appUiMode, setAppUiMode] = useState<'completo' | 'blind'>('completo');
 
   const nameInputRef = useRef<TextInput>(null);
   const usernameInputRef = useRef<TextInput>(null);
@@ -58,6 +66,7 @@ export function ServerListScreen({ navigation }: Props) {
         const [loadedServers, settings] = await Promise.all([loadServers(), loadSettings()]);
         setServers(loadedServers);
         setOnboardingDone(settings.onboardingDone);
+        setAppUiMode(settings.uiMode || 'completo');
         if (!settings.onboardingDone) {
           setWelcomeModalVisible(true);
         }
@@ -79,6 +88,8 @@ export function ServerListScreen({ navigation }: Props) {
     setFormPort('5001');
     setFormUsername('');
     setFormPassword('');
+    setFormLayoutKind('standard');
+    setFormCustomGridSize(9);
     setModalVisible(true);
   };
 
@@ -120,6 +131,9 @@ export function ServerListScreen({ navigation }: Props) {
         port,
         username: formUsername.trim() || undefined,
         password: formPassword.trim() || undefined,
+        layoutKind: formLayoutKind,
+        customGridSize: formLayoutKind === 'custom' ? formCustomGridSize : undefined,
+        panels: [1, 2],
       };
       updated = [...servers, newServer];
       createdServerId = newServer.id;
@@ -432,6 +446,62 @@ export function ServerListScreen({ navigation }: Props) {
               accessibilityLabel="Contraseña"
               accessibilityHint="Ingresa tu contraseña para auto-login"
             />
+
+            {!editingServer && appUiMode !== 'blind' && (
+              <>
+                <Text style={[styles.label, { marginTop: 20 }]}>Tipo de botonera</Text>
+                <Text style={styles.helperText}>
+                  No se puede cambiar después de crear el personaje. La botonera es solo del modo completo (visual); el modo accesible no se afecta.
+                </Text>
+                <View style={styles.layoutKindRow}>
+                  <TouchableOpacity
+                    style={[styles.layoutKindBtn, formLayoutKind === 'standard' && styles.layoutKindBtnActive]}
+                    onPress={() => setFormLayoutKind('standard')}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: formLayoutKind === 'standard' }}
+                    accessibilityLabel="Botonera estándar"
+                  >
+                    <Text style={[styles.layoutKindBtnText, formLayoutKind === 'standard' && styles.layoutKindBtnTextActive]}>Estándar</Text>
+                    <Text style={[styles.layoutKindBtnHint, formLayoutKind === 'standard' && styles.layoutKindBtnTextActive]}>9×6 con direcciones</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.layoutKindBtn, formLayoutKind === 'custom' && styles.layoutKindBtnActive]}
+                    onPress={() => setFormLayoutKind('custom')}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: formLayoutKind === 'custom' }}
+                    accessibilityLabel="Botonera personalizada"
+                  >
+                    <Text style={[styles.layoutKindBtnText, formLayoutKind === 'custom' && styles.layoutKindBtnTextActive]}>Personalizada</Text>
+                    <Text style={[styles.layoutKindBtnHint, formLayoutKind === 'custom' && styles.layoutKindBtnTextActive]}>Tú la rellenas</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {formLayoutKind === 'custom' && (
+                  <>
+                    <Text style={[styles.label, { marginTop: 12 }]}>Tamaño del grid</Text>
+                    <View style={styles.layoutKindRow}>
+                      {([
+                        { size: 5 as const, label: 'Pequeño', hint: '5×4 / 4×5' },
+                        { size: 7 as const, label: 'Mediano', hint: '7×5 / 5×7' },
+                        { size: 9 as const, label: 'Grande', hint: '9×5 / 5×9' },
+                      ]).map(({ size, label, hint }) => (
+                        <TouchableOpacity
+                          key={size}
+                          style={[styles.layoutKindBtn, formCustomGridSize === size && styles.layoutKindBtnActive]}
+                          onPress={() => setFormCustomGridSize(size)}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected: formCustomGridSize === size }}
+                          accessibilityLabel={`Tamaño ${label}`}
+                        >
+                          <Text style={[styles.layoutKindBtnText, formCustomGridSize === size && styles.layoutKindBtnTextActive]}>{label}</Text>
+                          <Text style={[styles.layoutKindBtnHint, formCustomGridSize === size && styles.layoutKindBtnTextActive]}>{hint}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                )}
+              </>
+            )}
 
             {editingServer && (
               <>
@@ -1031,5 +1101,45 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     marginTop: 4,
     lineHeight: 14,
+  },
+  helperText: {
+    color: '#888',
+    fontSize: 11,
+    fontFamily: 'monospace',
+    marginBottom: 8,
+    lineHeight: 14,
+  },
+  layoutKindRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  layoutKindBtn: {
+    flex: 1,
+    backgroundColor: '#0a2a3a',
+    borderWidth: 1,
+    borderColor: '#225588',
+    borderRadius: 6,
+    padding: 10,
+    alignItems: 'center',
+  },
+  layoutKindBtnActive: {
+    backgroundColor: '#0099ff',
+    borderColor: '#55bbff',
+  },
+  layoutKindBtnText: {
+    color: '#88ccff',
+    fontSize: 13,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+  },
+  layoutKindBtnHint: {
+    color: '#669',
+    fontSize: 10,
+    fontFamily: 'monospace',
+    marginTop: 2,
+  },
+  layoutKindBtnTextActive: {
+    color: '#fff',
   },
 });

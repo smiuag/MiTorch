@@ -34,10 +34,12 @@ import { MiniMap, MiniMapHandle } from '../components/MiniMap';
 import { VitalBars } from '../components/VitalBars';
 import { ButtonGrid, GRID_COLS, GRID_ROWS } from '../components/ButtonGrid';
 import { ButtonEditModal } from '../components/ButtonEditModal';
+import { PanelManagementModal } from '../components/PanelManagementModal';
 import { RoomSearchResults } from '../components/RoomSearchResults';
 import { loadSettings } from '../storage/settingsStorage';
 import { MapService, MapRoom } from '../services/mapService';
-import { ButtonLayout, createDefaultLayout, createBlindModeLayout, loadLayout, saveLayout, loadServerLayout, saveServerLayout } from '../storage/layoutStorage';
+import { ButtonLayout, LayoutButton, createDefaultLayout, createBlindModeLayout, createCustomLayout, createPanelButtons, loadLayout, saveLayout, loadServerLayout, saveServerLayout } from '../storage/layoutStorage';
+import { loadServers, saveServers } from '../storage/serverStorage';
 import { getTriggersForServer, loadPacks } from '../storage/triggerStorage';
 import { collectVarsReferencedByPacks } from '../utils/userVariablesUsage';
 import { triggerEngine } from '../services/triggerEngine';
@@ -54,7 +56,7 @@ import { activeConnection } from '../services/activeConnection';
 import { useSounds } from '../contexts/SoundContext';
 import { useFloatingMessages } from '../contexts/FloatingMessagesContext';
 import { FloatingMessages } from '../components/FloatingMessages';
-import { NORMAL_MODE, BLIND_MODE } from '../config/gridConfig';
+import { NORMAL_MODE, BLIND_MODE, getCustomDisplayDimensions } from '../config/gridConfig';
 import { BlindChannelModal, ChannelMessage, nextMsgId } from '../components/BlindChannelModal';
 import { loadChannelAliases, saveChannelAliases, loadChannelOrder, saveChannelOrder } from '../storage/channelStorage';
 import { loadNicks, recordNickSeen, filterNicks } from '../storage/nickStorage';
@@ -120,6 +122,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [encoding, setEncoding] = useState('utf8');
   const [buttonLayout, setButtonLayout] = useState<ButtonLayout | null>(null);
   const [editButtonVisible, setEditButtonVisible] = useState(false);
+  const [panelManagementVisible, setPanelManagementVisible] = useState(false);
   const [editButtonCol, setEditButtonCol] = useState(0);
   const [editButtonRow, setEditButtonRow] = useState(0);
   const [moveMode, setMoveMode] = useState(false);
@@ -480,7 +483,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           ? serverLayout
           : uiMode === 'blind'
             ? createBlindModeLayout()
-            : createDefaultLayout();
+            : (server.layoutKind === 'custom' ? createCustomLayout() : createDefaultLayout());
 
       // Replace LOGIN_NAME placeholder with actual server name
       const buttons = layout.buttons.map(btn =>
@@ -1349,14 +1352,19 @@ export function TerminalScreen({ route, navigation }: Props) {
       return;
     }
 
-    // Handle panel switch (blind or completo)
+    // Handle panel switch (blind o completo). En completo el array de paneles
+    // viene del server (ServerProfile.panels, default [1, 2]) y la rotación
+    // es cíclica entre todos. Blind sigue con 1↔2 fijo (modo blind no
+    // soporta paneles dinámicos por ahora).
     if (command === '__SWITCH_PANEL__') {
       if (uiMode === 'blind') {
         const nextPanel = currentBlindPanel === 1 ? 2 : 1;
         setCurrentBlindPanel(nextPanel);
         speechQueue.enqueue(`Panel ${nextPanel}`);
       } else {
-        const nextPanel = currentCompletoPanel === 1 ? 2 : 1;
+        const panels = server.panels && server.panels.length > 0 ? server.panels : [1, 2];
+        const idx = panels.indexOf(currentCompletoPanel);
+        const nextPanel = panels[(idx >= 0 ? idx + 1 : 0) % panels.length];
         setCurrentCompletoPanel(nextPanel);
       }
       return;
@@ -1430,6 +1438,13 @@ export function TerminalScreen({ route, navigation }: Props) {
       }
       return !b.completoPanel || b.completoPanel === currentCompletoPanel;
     });
+    // Switch button del modo completo: long-press abre el modal de gestión
+    // de paneles en lugar del editor (el switch es fixed/locked y no se
+    // edita; queremos reaprovechar el gesto para una acción útil).
+    if (button?.command === '__SWITCH_PANEL__' && uiMode === 'completo') {
+      setPanelManagementVisible(true);
+      return;
+    }
     if (button?.fixed) {
       return;
     }
@@ -1756,32 +1771,115 @@ export function TerminalScreen({ route, navigation }: Props) {
         ? buttonLayout.buttons.filter(btn => !btn.blindPanel || btn.blindPanel === currentBlindPanel)
         : buttonLayout.buttons.filter(btn => !btn.completoPanel || btn.completoPanel === currentCompletoPanel))
     : [];
+  // Handlers de gestión de paneles del modo completo (modal abierto desde
+  // long-press en el switch button).
+  const serverPanels = server.panels && server.panels.length >= 2 ? server.panels : [1, 2];
+
+  const handleAddPanel = useCallback(async () => {
+    if (!buttonLayout) return;
+    if (serverPanels.length >= 6) return;
+    const newId = Math.max(...serverPanels) + 1;
+    const kind = server.layoutKind === 'custom' ? 'custom' : 'standard';
+    // En estándar: clonar zona direcciones del panel 1 (botones del layout
+    // actual con completoPanel=1 en cols 3-6 / rows 2-5).
+    const sourcePanel = kind === 'standard'
+      ? buttonLayout.buttons.filter(b => b.completoPanel === 1)
+      : undefined;
+    const newButtons = createPanelButtons(newId, kind, sourcePanel);
+    const updatedLayout: ButtonLayout = { buttons: [...buttonLayout.buttons, ...newButtons] };
+    setButtonLayout(updatedLayout);
+    await saveServerLayout(server.id, updatedLayout);
+    // Persistir el nuevo array de paneles en el server.
+    const allServers = await loadServers();
+    const newPanels = [...serverPanels, newId];
+    const updatedAllServers = allServers.map(s =>
+      s.id === server.id ? { ...s, panels: newPanels } : s
+    );
+    await saveServers(updatedAllServers);
+    // Mutamos el server local para que el render refleje los nuevos paneles
+    // sin esperar al próximo focus. (El navigation.params se rehidratará al
+    // volver a la lista; aquí trabajamos sobre la copia que tenemos.)
+    (server as any).panels = newPanels;
+    setCurrentCompletoPanel(newId);
+  }, [buttonLayout, server, serverPanels]);
+
+  const handleDeletePanel = useCallback(async (id: number) => {
+    if (!buttonLayout) return;
+    // Los 2 primeros paneles no se pueden borrar (regla del modal).
+    const idx = serverPanels.indexOf(id);
+    if (idx < 2) return;
+    // Borrar los botones del panel + actualizar el array de paneles.
+    const filteredButtons = buttonLayout.buttons.filter(b => b.completoPanel !== id);
+    const updatedLayout: ButtonLayout = { buttons: filteredButtons };
+    setButtonLayout(updatedLayout);
+    await saveServerLayout(server.id, updatedLayout);
+    const newPanels = serverPanels.filter(p => p !== id);
+    const allServers = await loadServers();
+    const updatedAllServers = allServers.map(s =>
+      s.id === server.id ? { ...s, panels: newPanels } : s
+    );
+    await saveServers(updatedAllServers);
+    (server as any).panels = newPanels;
+    // Si estábamos en el panel borrado, saltar al primero.
+    if (currentCompletoPanel === id) {
+      setCurrentCompletoPanel(newPanels[0]);
+    }
+  }, [buttonLayout, server, serverPanels, currentCompletoPanel]);
+
+  const handleSelectPanel = useCallback((id: number) => {
+    setCurrentCompletoPanel(id);
+    setPanelManagementVisible(false);
+  }, []);
+
+  // Server con layoutKind='custom': el grid es cuadrado lógico (5/7/9) y en
+  // cada orientación se renderiza solo el sub-rectángulo que cabe (sin
+  // transponer). Custom solo aplica en modo completo. En blind se ignora.
+  const isCustomCompleto = uiMode === 'completo' && server.layoutKind === 'custom' && !!server.customGridSize;
+  const customVertical = isCustomCompleto ? getCustomDisplayDimensions(server.customGridSize as 5|7|9, 'vertical') : null;
+  const customHorizontal = isCustomCompleto ? getCustomDisplayDimensions(server.customGridSize as 5|7|9, 'horizontal') : null;
+
   const modeConfig = isMinimalista ? BLIND_MODE : NORMAL_MODE;
-  const gridCols = modeConfig.vertical.cols;
-  const gridRows = modeConfig.vertical.rows;
+  const gridCols = customVertical ? customVertical.cols : modeConfig.vertical.cols;
+  const gridRows = customVertical ? customVertical.rows : modeConfig.vertical.rows;
   const BUTTON_PADDING_VERTICAL = 3 * 2;
   const BUTTON_GAP = 3;
   const BUTTON_GAPS_TOTAL = (gridRows - 1) * BUTTON_GAP;
 
-  // Calculate cell size for square buttons, fill available space
-  const maxCellSizeByWidth = width / gridCols;
-  const maxCellSizeByHeight = (availableHeight - inputHeight) / gridRows;
+  // Calculate cell size for square buttons, fill available space.
+  //
+  // En custom queremos que los botones tengan el tamaño físico que tendrían
+  // si el grid lógico (5/7/9) cupiera completo en pantalla, NO ampliados
+  // para llenar el sub-rectángulo visible. Por eso el denominador del
+  // cellSize en custom es `customGridSize`, no las dims visibles. Resultado:
+  //   - 9×9 portrait: cellSize ≈ width/9 (mismo que estándar 9×6).
+  //   - 7×7 portrait: cellSize ≈ width/7 (botones algo más grandes).
+  //   - 5×5 portrait: cellSize ≈ width/5 (botones aún más grandes).
+  // El sub-rectángulo visible ocupa solo el espacio que necesita; sobra el
+  // resto del ancho a la derecha.
+  const cellDenomCols = isCustomCompleto ? (server.customGridSize as number) : gridCols;
+  const cellDenomRows = isCustomCompleto ? (server.customGridSize as number) : gridRows;
+  const maxCellSizeByWidth = width / cellDenomCols;
+  const maxCellSizeByHeight = (availableHeight - inputHeight) / cellDenomRows;
   const cellSize = Math.min(maxCellSizeByWidth, maxCellSizeByHeight);
   const buttonGridHeight = gridRows * cellSize + BUTTON_GAPS_TOTAL + BUTTON_PADDING_VERTICAL;
 
   // Horizontal layout dimensions
   const vitalsWidth = uiMode === 'blind' ? 0 : 30;
-  const horizontalGridCols = modeConfig.horizontal.cols;
-  const horizontalGridRows = modeConfig.horizontal.rows;
+  const horizontalGridCols = customHorizontal ? customHorizontal.cols : modeConfig.horizontal.cols;
+  const horizontalGridRows = customHorizontal ? customHorizontal.rows : modeConfig.horizontal.rows;
   const availableHorizontalWidthForButtons = width - vitalsWidth - insets.left - insets.right - 20;
-  const maxHorizontalCellSizeByWidth = availableHorizontalWidthForButtons / horizontalGridCols;
+  // Mismo criterio en horizontal: denominador = gridSize lógico para que el
+  // tamaño del botón no dependa de cuántas cols visibles caben.
+  const hCellDenomCols = isCustomCompleto ? (server.customGridSize as number) : horizontalGridCols;
+  const hCellDenomRows = isCustomCompleto ? (server.customGridSize as number) : horizontalGridRows;
+  const maxHorizontalCellSizeByWidth = availableHorizontalWidthForButtons / hCellDenomCols;
 
   // Height calculation differs by mode
   let maxHorizontalCellSizeByHeight: number;
   const horizontalButtonGapsTotal = (horizontalGridRows - 1) * BUTTON_GAP;
 
   // Account for internal gaps and padding in ButtonGrid container for both modes
-  maxHorizontalCellSizeByHeight = (availableHeight - horizontalButtonGapsTotal - BUTTON_PADDING_VERTICAL) / horizontalGridRows;
+  maxHorizontalCellSizeByHeight = (availableHeight - horizontalButtonGapsTotal - BUTTON_PADDING_VERTICAL) / hCellDenomRows;
 
   const horizontalCellSize = Math.min(maxHorizontalCellSizeByWidth, maxHorizontalCellSizeByHeight);
   const horizontalButtonGridWidth = horizontalGridCols * horizontalCellSize + (horizontalGridCols - 1) * BUTTON_GAP;
@@ -2172,6 +2270,8 @@ export function TerminalScreen({ route, navigation }: Props) {
               minimalista={isMinimalista}
               minCols={gridCols}
               minRows={gridRows}
+              disableTransforms={isCustomCompleto}
+              verticalCellSize={isCustomCompleto ? cellSize : undefined}
             />
           </View>
         )}
@@ -2507,6 +2607,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 minimalista={isMinimalista}
                 minCols={gridCols}
                 minRows={horizontalGridRows}
+                disableTransforms={isCustomCompleto}
               />
             </View>
           </View>
@@ -2537,6 +2638,17 @@ export function TerminalScreen({ route, navigation }: Props) {
           />
         );
       })()}
+
+      {/* Panel management (long-press en switch button del modo completo) */}
+      <PanelManagementModal
+        visible={panelManagementVisible}
+        panels={serverPanels}
+        currentPanel={currentCompletoPanel}
+        onClose={() => setPanelManagementVisible(false)}
+        onAddPanel={handleAddPanel}
+        onDeletePanel={handleDeletePanel}
+        onSelectPanel={handleSelectPanel}
+      />
 
 
       {/* Channel Modal */}

@@ -13,8 +13,11 @@ export interface LayoutButton {
   alternativeCommands?: string[];
   locked?: boolean;
   fixed?: boolean;
-  blindPanel?: 1 | 2; // Panel 1 or 2 for blind mode buttons
-  completoPanel?: 1 | 2; // Panel 1 or 2 for completo mode buttons
+  blindPanel?: 1 | 2; // Panel 1 or 2 for blind mode buttons (fijo, no dinámico)
+  // Panel del modo completo. Antes era `1 | 2` fijo; ahora puede ser cualquier
+  // ID de panel definido en `ServerProfile.panels` (default [1, 2], hasta 6).
+  // Migración: valores 1 y 2 existentes siguen funcionando idénticos.
+  completoPanel?: number;
   // 'command' (default, unset) sends the payload to the MUD; 'floating'
   // shows the payload as an in-app floating message (also announced via
   // TalkBack). Both expand ${var} via expandVars().
@@ -83,6 +86,45 @@ export function createDefaultLayout(): ButtonLayout {
   ];
 
   return { buttons: [...panel1, ...panel2] };
+}
+
+// Layout inicial para servers con `layoutKind='custom'`. Empieza con solo
+// el switch button en (0,0) replicado en los 2 paneles iniciales. El usuario
+// va creando el resto de botones a mano.
+export function createCustomLayout(): ButtonLayout {
+  return {
+    buttons: [
+      { id: genId(), col: 0, row: 0, label: 'Panel', command: '__SWITCH_PANEL__', color: '#336666', textColor: '#88ccff', completoPanel: 1, fixed: true, locked: true },
+      { id: genId(), col: 0, row: 0, label: 'Panel', command: '__SWITCH_PANEL__', color: '#336666', textColor: '#88ccff', completoPanel: 2, fixed: true, locked: true },
+    ],
+  };
+}
+
+// Genera los botones de un panel nuevo. Para 'standard' clona la zona de
+// direcciones del panel base (típicamente panel 1) — incluye los direcciones
+// AR/AB/DE/FU + N/S/E/O/NO/NE/SO/SE en sus posiciones canónicas. El switch
+// button siempre se añade. Para 'custom' solo se añade el switch button (sin
+// más botones — el usuario los crea a mano).
+export function createPanelButtons(panelId: number, kind: 'standard' | 'custom', sourcePanel?: LayoutButton[]): LayoutButton[] {
+  const switchBtn: LayoutButton = {
+    id: genId(),
+    col: 0, row: 0,
+    label: 'Panel', command: '__SWITCH_PANEL__',
+    color: '#336666', textColor: '#88ccff',
+    completoPanel: panelId,
+    fixed: true, locked: true,
+  };
+  if (kind === 'custom') return [switchBtn];
+
+  // Standard: copia la zona de direcciones del panel fuente. Si no se da
+  // un panel fuente, usa los defaults del panel 1.
+  const direccionesSource = sourcePanel ?? createDefaultLayout().buttons.filter(b => b.completoPanel === 1);
+  const direccionesCopy: LayoutButton[] = direccionesSource
+    // Solo botones que NO sean el switch (que ya añadimos arriba) y que estén
+    // en la zona de direcciones (cols 3-6, rows 2-5).
+    .filter(b => b.command !== '__SWITCH_PANEL__' && b.col >= 3 && b.col <= 6 && b.row >= 2 && b.row <= 5)
+    .map(b => ({ ...b, id: genId(), completoPanel: panelId }));
+  return [switchBtn, ...direccionesCopy];
 }
 
 export function createBlindModeLayout(): ButtonLayout {

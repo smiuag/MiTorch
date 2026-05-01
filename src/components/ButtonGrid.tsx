@@ -31,6 +31,17 @@ interface ButtonGridProps {
   minimalista?: boolean;
   minCols?: number;
   minRows?: number;
+  // Server con layoutKind='custom': el render NO transpone ni reorganiza
+  // direcciones al pivotar — solo recorta lo que cabe en el rectángulo
+  // visible (cellSize × minCols × minRows). Las coords de almacenamiento y
+  // visuales coinciden 1:1.
+  disableTransforms?: boolean;
+  // Override del cellSize en vertical (cuando no hay horizontalMode). Por
+  // defecto el grid calcula `width / displayCols`, que en custom haría
+  // botones gigantes (porque displayCols es la dim visible recortada). El
+  // padre puede pasar el cellSize calculado a partir del grid lógico para
+  // que los botones tengan el tamaño físico esperado.
+  verticalCellSize?: number;
 }
 
 function ButtonCell({
@@ -237,13 +248,16 @@ export function ButtonGrid({
   minimalista = false,
   minCols = GRID_COLS,
   minRows = GRID_ROWS,
+  disableTransforms = false,
+  verticalCellSize,
 }: ButtonGridProps) {
   const { width } = useWindowDimensions();
 
-  // Use blind mode dimensions if enabled, otherwise use normal mode
+  // Use blind mode dimensions if enabled, otherwise honor minCols/minRows
+  // from parent (allows custom layouts to pass display dims).
   const blindConfig = BLIND_MODE.vertical;
-  const displayCols = minimalista ? blindConfig.cols : GRID_COLS;
-  const displayRows = minimalista ? blindConfig.rows : GRID_ROWS;
+  const displayCols = minimalista ? blindConfig.cols : minCols;
+  const displayRows = minimalista ? blindConfig.rows : minRows;
 
   // Additional transformations in horizontal mode (after swap col/row and row inversion)
   // Normal mode: complex rearrangement of directions
@@ -282,7 +296,9 @@ export function ButtonGrid({
     '3,0': { col: 2, row: 1 }, // FU → AB position
   };
 
-  const additionalTransforms = minimalista ? blindModeTransforms : normalModeTransforms;
+  const additionalTransforms = disableTransforms
+    ? {}
+    : (minimalista ? blindModeTransforms : normalModeTransforms);
   const verticalCols = minimalista ? BLIND_MODE.vertical.cols : NORMAL_MODE.vertical.cols;
 
   // Inverse of additionalTransforms: visual final → swapped intermediate
@@ -295,18 +311,20 @@ export function ButtonGrid({
     return inv;
   }, [additionalTransforms]);
 
-  // Storage (col, row) → visual final (col, row)
+  // Storage (col, row) → visual final (col, row).
+  // En custom (disableTransforms=true) no transponemos al pivotar — las
+  // coords de almacenamiento y visuales coinciden 1:1 en ambas orientaciones,
+  // y el grid simplemente recorta los botones que caen fuera de gridCols/Rows.
   const storageToVisual = (sCol: number, sRow: number): { col: number; row: number } => {
-    if (!horizontalMode) return { col: sCol, row: sRow };
+    if (!horizontalMode || disableTransforms) return { col: sCol, row: sRow };
     const swCol = sRow;
     const swRow = (verticalCols - 1) - sCol;
     const t = additionalTransforms[`${swCol},${swRow}`];
     return t ? { col: t.col, row: t.row } : { col: swCol, row: swRow };
   };
 
-  // Visual (col, row) → storage (col, row) — inverse of the above
   const visualToStorage = (vCol: number, vRow: number): { col: number; row: number } => {
-    if (!horizontalMode) return { col: vCol, row: vRow };
+    if (!horizontalMode || disableTransforms) return { col: vCol, row: vRow };
     const inv = inverseAdditionalTransforms[`${vCol},${vRow}`];
     const swCol = inv ? inv.col : vCol;
     const swRow = inv ? inv.row : vRow;
@@ -331,7 +349,9 @@ export function ButtonGrid({
   // Grid dimensions: horizontal mode or vertical
   const gridCols = horizontalMode ? horizontalMode.cols : displayCols;
   const gridRows = horizontalMode ? minRows : displayRows;
-  const cellSize = horizontalMode ? horizontalMode.cellSize : width / displayCols;
+  const cellSize = horizontalMode
+    ? horizontalMode.cellSize
+    : (verticalCellSize ?? width / displayCols);
 
   return (
     <View style={styles.container}>
