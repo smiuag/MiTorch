@@ -14,6 +14,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AnsiSpan } from '../types';
+import { selfVoicingPress } from '../utils/selfVoicingPress';
+import { announceTyping } from '../utils/typingAnnounce';
 
 export interface ChannelMessage {
   id: number;
@@ -35,6 +37,9 @@ interface BlindChannelModalProps {
   onAliasChange: (channel: string, alias: string) => void;
   onOrderChange: (order: string[]) => void;
   fontSize: number;
+  // Self-voicing on (TalkBack desactivado): tap = anuncia label, doble-tap
+  // dentro de 350 ms = ejecuta. Off = comportamiento normal de TouchableOpacity.
+  selfVoicingActive?: boolean;
 }
 
 const DEFAULT_CHANNEL_ORDER = ['chat', 'grupo', 'bando', 'gremio', 'familia', 'clan'];
@@ -62,6 +67,7 @@ export function BlindChannelModal({
   onAliasChange,
   onOrderChange,
   fontSize,
+  selfVoicingActive = false,
 }: BlindChannelModalProps) {
   const [activeChannel, setActiveChannel] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
@@ -168,7 +174,7 @@ export function BlindChannelModal({
   const renderChannelButton = useCallback(({ item: ch }: { item: string }) => (
     <TouchableOpacity
       style={[styles.channelButton, activeChannel === ch && styles.channelButtonActive]}
-      onPress={() => handleSelectChannel(ch)}
+      onPress={() => selfVoicingPress.tap(selfVoicingActive, `channel-${ch}`, `Canal ${ch}`, () => handleSelectChannel(ch))}
       onLongPress={() => {
         setEditingChannel(ch);
         setEditAlias(channelAliases[ch] || ch);
@@ -183,7 +189,7 @@ export function BlindChannelModal({
         {ch}
       </Text>
     </TouchableOpacity>
-  ), [activeChannel, channelAliases, handleSelectChannel]);
+  ), [activeChannel, channelAliases, handleSelectChannel, selfVoicingActive]);
 
   const renderMessage = useCallback(({ item }: { item: ChannelMessage }) => (
     <View style={styles.messageRow}>
@@ -209,12 +215,15 @@ export function BlindChannelModal({
 
   return (
     <Modal visible={true} animationType="slide" onRequestClose={onClose} transparent={false}>
-      <SafeAreaView style={[styles.container, { paddingBottom: keyboardHeight }]}>
+      <SafeAreaView
+        style={[styles.container, { paddingBottom: keyboardHeight }]}
+        importantForAccessibility={selfVoicingActive ? 'no-hide-descendants' : 'auto'}
+      >
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Canales</Text>
           <TouchableOpacity
-            onPress={onClose}
+            onPress={() => selfVoicingPress.tap(selfVoicingActive, 'close-channels', 'Cerrar canales', onClose)}
             accessibilityLabel="Cerrar canales"
             style={styles.closeButton}
           >
@@ -268,7 +277,10 @@ export function BlindChannelModal({
               placeholder="Mensaje..."
               placeholderTextColor="#555"
               value={inputText}
-              onChangeText={setInputText}
+              onChangeText={(text) => {
+                if (selfVoicingActive) announceTyping(inputText, text);
+                setInputText(text);
+              }}
               maxLength={200}
               returnKeyType="send"
               blurOnSubmit={false}
@@ -281,7 +293,7 @@ export function BlindChannelModal({
             />
             <TouchableOpacity
               style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
-              onPress={handleSendMessage}
+              onPress={() => selfVoicingPress.tap(selfVoicingActive, 'channel-send', 'Enviar mensaje', handleSendMessage)}
               disabled={!inputText.trim()}
               accessibilityLabel="Enviar"
               accessibilityRole="button"
@@ -329,7 +341,7 @@ export function BlindChannelModal({
               <View style={styles.editModalButtons}>
                 <TouchableOpacity
                   style={styles.editSaveBtn}
-                  onPress={handleSaveNewAlias}
+                  onPress={() => selfVoicingPress.tap(selfVoicingActive, 'save-new-alias', 'Guardar alias', handleSaveNewAlias)}
                   accessibilityLabel="Guardar"
                 >
                   <Text style={styles.editSaveText}>Guardar</Text>
@@ -371,7 +383,7 @@ export function BlindChannelModal({
                     <Text style={styles.reorderLabel}>Posición:</Text>
                     <TouchableOpacity
                       style={[styles.reorderBtn, !canLeft && styles.reorderBtnDisabled]}
-                      onPress={() => canLeft && moveChannel(editingChannel, 'left')}
+                      onPress={() => selfVoicingPress.tap(selfVoicingActive, 'move-left', 'Mover a la izquierda', () => { if (canLeft) moveChannel(editingChannel, 'left'); })}
                       disabled={!canLeft}
                       accessibilityLabel="Mover a la izquierda"
                       accessibilityRole="button"
@@ -380,7 +392,7 @@ export function BlindChannelModal({
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.reorderBtn, !canRight && styles.reorderBtnDisabled]}
-                      onPress={() => canRight && moveChannel(editingChannel, 'right')}
+                      onPress={() => selfVoicingPress.tap(selfVoicingActive, 'move-right', 'Mover a la derecha', () => { if (canRight) moveChannel(editingChannel, 'right'); })}
                       disabled={!canRight}
                       accessibilityLabel="Mover a la derecha"
                       accessibilityRole="button"
@@ -393,14 +405,14 @@ export function BlindChannelModal({
               <View style={styles.editModalButtons}>
                 <TouchableOpacity
                   style={styles.editCancelBtn}
-                  onPress={() => setEditingChannel(null)}
+                  onPress={() => selfVoicingPress.tap(selfVoicingActive, 'cancel-alias', 'Cancelar', () => setEditingChannel(null))}
                   accessibilityLabel="Cancelar"
                 >
                   <Text style={styles.editCancelText}>Cancelar</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.editSaveBtn}
-                  onPress={handleSaveAlias}
+                  onPress={() => selfVoicingPress.tap(selfVoicingActive, 'save-alias', 'Guardar alias', handleSaveAlias)}
                   accessibilityLabel="Guardar"
                 >
                   <Text style={styles.editSaveText}>Guardar</Text>

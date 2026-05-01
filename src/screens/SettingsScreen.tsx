@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, FlatList, Switch, TextInput, Alert } from 'react-native';
 import { requestNotificationPermission, openNotificationSettings } from '../services/foregroundService';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,13 +13,45 @@ import { LogsMaxLines } from '../storage/settingsStorage';
 import { activeConnection } from '../services/activeConnection';
 import { CANONICAL_PROMPT } from '../services/promptParser';
 import { speechQueue } from '../services/speechQueueService';
+import { buttonRegistry, blindNav, remeasureBus } from '../utils/selfVoicingPress';
+import { SelfVoicingTouchable, SelfVoicingTextInput, SelfVoicingSwitch, SelfVoicingRow, BlindGestureContainer } from '../components/SelfVoicingControls';
+import Tts from 'react-native-tts';
 import { ambientPlayer } from '../services/ambientPlayer';
 import { useSounds } from '../contexts/SoundContext';
 import { VolumeAdjuster } from '../components/VolumeAdjuster';
 
+const SETTINGS_SCOPE = 'settings';
+
 const SPEECH_CHAR_DURATION_MIN = 5;
 const SPEECH_CHAR_DURATION_MAX = 150;
 const SPEECH_CHAR_DURATION_STEP = 5;
+
+// Rangos de TTS con skipTransform=true (rate va directo a Android
+// TextToSpeech.setSpeechRate): 1.0 = normal, 2.0 = doble velocidad, etc.
+// Permitimos hasta 6.0 — Google TTS capea ~4.0-5.0, motores comerciales
+// tipo Vocalizer/Eloquence aguantan más. Por encima del tope del motor el
+// rate se queda en el tope sin error. Pitch sigue convención RNTTS estándar.
+const TTS_RATE_STEP = 0.1;
+const TTS_RATE_MIN = 0.1;
+const TTS_RATE_MAX = 6.0;
+const TTS_PITCH_STEP = 0.1;
+const TTS_PITCH_MIN = 0.5;
+const TTS_PITCH_MAX = 2.0;
+
+interface TtsEngineInfo {
+  name: string;
+  label: string;
+  default: boolean;
+}
+
+interface TtsVoiceInfo {
+  id: string;
+  name: string;
+  language: string;
+  quality?: number;
+  networkConnectionRequired?: boolean;
+  notInstalled?: boolean;
+}
 
 type Props = {
   navigation: NativeStackScreenProps<RootStackParamList, 'Settings'>['navigation'];
@@ -35,11 +67,94 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
   const [encodingModalVisible, setEncodingModalVisible] = useState(false);
   const [gestureModalVisible, setGestureModalVisible] = useState(false);
   const [exportRangeModalVisible, setExportRangeModalVisible] = useState(false);
+  const [ttsEngineModalVisible, setTtsEngineModalVisible] = useState(false);
+  const [ttsVoiceModalVisible, setTtsVoiceModalVisible] = useState(false);
+  const [ttsEngines, setTtsEngines] = useState<TtsEngineInfo[]>([]);
+  const [ttsVoices, setTtsVoices] = useState<TtsVoiceInfo[]>([]);
+  const [ttsAvailable, setTtsAvailable] = useState<boolean>(false);
   const { setEffectsVolume } = useSounds();
 
   useEffect(() => {
     loadSettings().then(setSettings);
   }, []);
+
+  // Self-voicing del SettingsScreen abierto como modal desde Terminal: si
+  // self-voicing está on (uiMode=blind + useSelfVoicing) y venimos del
+  // Terminal, activamos el scope 'settings'. Mientras esté activo, los
+  // botones de Terminal (scope='default') quedan ignorados; solo los
+  // controles del Settings son navegables vía drag-explore.
+  const settingsSelfVoicingActive = settings.useSelfVoicing && settings.uiMode === 'blind' && sourceLocation === 'terminal';
+  useEffect(() => {
+    if (!settingsSelfVoicingActive) return;
+    buttonRegistry.setActiveScope(SETTINGS_SCOPE);
+    return () => buttonRegistry.setActiveScope('default');
+  }, [settingsSelfVoicingActive]);
+
+  // Etiquetas legibles por categoría para anuncios en cambio de setting.
+  const settingLabels: Partial<Record<keyof AppSettings, string>> = {
+    soundsEnabled: 'Sonidos',
+    ambientEnabled: 'Música ambiente',
+    useSelfVoicing: 'Self-voicing TTS',
+    keepAwakeEnabled: 'Pantalla siempre encendida',
+    notificationsEnabled: 'Notificaciones',
+    logsEnabled: 'Logs',
+    gesturesEnabled: 'Gestos',
+    backgroundConnectionEnabled: 'Conexión en segundo plano',
+    uiMode: 'Modo',
+    encoding: 'Codificación',
+    fontSize: 'Tamaño de letra',
+    speechCharDurationMs: 'Velocidad de lectura',
+    ttsRate: 'Velocidad TTS',
+    ttsPitch: 'Tono TTS',
+    ttsVolume: 'Volumen TTS',
+    ttsEngine: 'Motor TTS',
+    ttsVoice: 'Voz TTS',
+    ambientVolume: 'Volumen ambiente',
+    effectsVolume: 'Volumen efectos',
+    logsMaxLines: 'Líneas máximas de log',
+  };
+
+  const announceSettingChange = (key: keyof AppSettings, value: any) => {
+    if (!settingsSelfVoicingActive) return;
+    const label = settingLabels[key] || String(key);
+    let stateText: string;
+    if (typeof value === 'boolean') {
+      stateText = value ? 'activado' : 'desactivado';
+    } else {
+      stateText = String(value);
+    }
+    speechQueue.enqueue(`${label}: ${stateText}`, 'high');
+  };
+
+  // Carga de motores y voces disponibles. Lazy: no bloqueamos render. Si TTS
+  // no inicializa (móvil sin engine, raro), `ttsAvailable` queda false y la
+  // UI lo refleja con un mensaje en vez de listas vacías.
+  useEffect(() => {
+    let mounted = true;
+    Tts.getInitStatus()
+      .then(async () => {
+        if (!mounted) return;
+        setTtsAvailable(true);
+        try {
+          const e = (await Tts.engines()) as TtsEngineInfo[];
+          if (mounted) setTtsEngines(e || []);
+        } catch (_) { /* engines() no soportado en algunas plataformas */ }
+        try {
+          const v = (await Tts.voices()) as TtsVoiceInfo[];
+          if (mounted) setTtsVoices(v || []);
+        } catch (_) { /* voices() puede tirar antes de init completo */ }
+      })
+      .catch(() => { if (mounted) setTtsAvailable(false); });
+    return () => { mounted = false; };
+  }, []);
+
+  // Cuando el motor cambia, refrescar voces (algunas son engine-specific).
+  const refreshVoices = async () => {
+    try {
+      const v = (await Tts.voices()) as TtsVoiceInfo[];
+      setTtsVoices(v || []);
+    } catch (_) { /* tolerar */ }
+  };
 
 
   const updateSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
@@ -53,9 +168,14 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
     setSettings(updated);
     saveSettings(updated);
 
-    if (key === 'speechCharDurationMs') {
-      speechQueue.setCharDurationMs(value as number);
-    }
+    // Push completo a speechQueue: cubre uiMode, useSelfVoicing, tts*,
+    // speechCharDurationMs. Aplica inmediato sin esperar restart.
+    speechQueue.applyConfig(updated);
+
+    // Anuncia el cambio si self-voicing está activo en este Settings.
+    // Cubre todos los Switches + sliders/+/- via su llamada a updateSetting.
+    announceSettingChange(key, value);
+
     // Audio: aplicar inmediato sin esperar a recargar la app.
     if (key === 'ambientEnabled' && typeof value === 'boolean') {
       ambientPlayer.setEnabled(value);
@@ -122,9 +242,58 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
   // and skip the redundant inner header.
   const isInTerminalModal = sourceLocation === 'terminal';
   const Container: React.ComponentType<any> = isInTerminalModal ? View : SafeAreaView;
+  // Self-voicing está activo cuando estamos en blind y el flag está on.
+  // Esconde el árbol a TalkBack para no recibir gestos consumidos por él.
+  // El usuario debe tener TalkBack apagado para que la pantalla sea usable.
+  const selfVoicingActive = settings.useSelfVoicing && settings.uiMode === 'blind';
+
+  // Modelo BlindNav (audiogame-style): la pantalla entera captura gestos
+  // (tap=activar, swipe vert=navegar, swipe horiz=ajustar valor, long-press=
+  // repetir). El ScrollView se deshabilita en self-voicing y el auto-scroll
+  // ocurre en respuesta a los cambios de foco (suscripción al blindNav).
+  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollOffsetRef = useRef(0);
+  const scrollViewLayoutRef = useRef<{ pageY: number; height: number }>({ pageY: 0, height: 0 });
+  const anyModalOpen = encodingModalVisible || gestureModalVisible || exportRangeModalVisible || ttsEngineModalVisible || ttsVoiceModalVisible;
+  const blindNavActive = settingsSelfVoicingActive && !anyModalOpen;
+
+  // Auto-scroll: cuando el foco cambia a un item fuera del viewport, scrollear.
+  useEffect(() => {
+    if (!blindNavActive) return;
+    let lastKey: string | null = null;
+    const interval = setInterval(() => {
+      const key = blindNav.getCurrentKey();
+      if (!key || key === lastKey) return;
+      lastKey = key;
+      const entry = buttonRegistry.getEntry(key);
+      if (!entry) return;
+      const { pageY: svPageY, height: svHeight } = scrollViewLayoutRef.current;
+      if (svHeight <= 0) return;
+      const rectTop = entry.y;
+      const rectBottom = entry.y + entry.h;
+      const margin = 40;
+      let delta = 0;
+      if (rectTop < svPageY + margin) {
+        delta = rectTop - svPageY - margin;
+      } else if (rectBottom > svPageY + svHeight - margin) {
+        delta = rectBottom - svPageY - svHeight + margin;
+      }
+      if (delta !== 0) {
+        const target = Math.max(0, scrollOffsetRef.current + delta);
+        scrollViewRef.current?.scrollTo({ y: target, animated: true });
+        setTimeout(() => remeasureBus.emit(), 150);
+        setTimeout(() => remeasureBus.emit(), 400);
+      }
+    }, 100);
+    return () => clearInterval(interval);
+  }, [blindNavActive]);
+
+  const settingsWelcome = useMemo(() => (
+    'Configuración. Desliza arriba o abajo para cambiar de opción. Toca en cualquier sitio para activar la opción actual. Mantén pulsado para repetir el anuncio. Desliza a los lados para subir o bajar valores cuando se pueda.'
+  ), []);
   const containerProps = isInTerminalModal
-    ? { style: styles.container }
-    : { style: styles.container, edges: ['top', 'left', 'right', 'bottom'] };
+    ? { style: styles.container, importantForAccessibility: selfVoicingActive ? 'no-hide-descendants' : 'auto' }
+    : { style: styles.container, edges: ['top', 'left', 'right', 'bottom'], importantForAccessibility: selfVoicingActive ? 'no-hide-descendants' : 'auto' };
 
   return (
     <Container {...containerProps}>
@@ -151,16 +320,34 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
         </View>
       )}
 
+      <BlindGestureContainer
+        active={blindNavActive}
+        welcomeMessage={settingsWelcome}
+        style={{ flex: 1 }}
+      >
       <ScrollView
+        ref={scrollViewRef}
         style={styles.section}
         contentContainerStyle={styles.sectionContent}
         nestedScrollEnabled={true}
         showsVerticalScrollIndicator={true}
+        scrollEnabled={!blindNavActive}
+        scrollEventThrottle={16}
+        onScroll={(e) => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y; }}
+        onLayout={(e) => {
+          (e.target as any)?.measure?.((_x: number, _y: number, _w: number, h: number, _pageX: number, pageY: number) => {
+            scrollViewLayoutRef.current = { pageY, height: h };
+          });
+        }}
       >
         {/* Mode Buttons - FIRST (only show outside terminal modal) */}
         {sourceLocation !== 'terminal' && (
           <View style={styles.modeButtonsRow}>
-            <TouchableOpacity
+            <SelfVoicingTouchable
+              svActive={settingsSelfVoicingActive}
+              svScope={SETTINGS_SCOPE}
+              svKey="mode-completo"
+              svLabel={`Modo completo${settings.uiMode === 'completo' ? ' seleccionado' : ''}`}
               style={[
                 styles.modeButton,
                 settings.uiMode === 'completo' && styles.modeButtonActive,
@@ -179,9 +366,13 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
               >
                 Normal
               </Text>
-            </TouchableOpacity>
+            </SelfVoicingTouchable>
 
-            <TouchableOpacity
+            <SelfVoicingTouchable
+              svActive={settingsSelfVoicingActive}
+              svScope={SETTINGS_SCOPE}
+              svKey="mode-blind"
+              svLabel={`Modo accesible${settings.uiMode === 'blind' ? ' seleccionado' : ''}`}
               style={[
                 styles.modeButton,
                 settings.uiMode === 'blind' && styles.modeButtonActive,
@@ -200,7 +391,7 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
               >
                 Accesible
               </Text>
-            </TouchableOpacity>
+            </SelfVoicingTouchable>
           </View>
         )}
 
@@ -209,7 +400,9 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
           <Text style={styles.sectionTitle}>Configuración general</Text>
         </View>
 
-        {/* Font Size */}
+        {/* Font Size — irrelevante para invidente total, oculto en
+            self-voicing (uiMode=blind + useSelfVoicing). */}
+        {!settingsSelfVoicingActive && (
         <View style={styles.row}>
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Tamaño de fuente</Text>
@@ -261,6 +454,7 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             </TouchableOpacity>
           </View>
         </View>
+        )}
 
         {/* Encoding Section - Only show outside terminal modal */}
         {sourceLocation !== 'terminal' && (
@@ -271,19 +465,28 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
                 Selecciona la codificación para la conexión
               </Text>
             </View>
-            <TouchableOpacity
+            <SelfVoicingTouchable
+              svActive={settingsSelfVoicingActive}
+              svScope={SETTINGS_SCOPE}
+              svKey="encoding-btn"
+              svLabel={`Codificación: ${settings.encoding === 'utf8' ? 'UTF-8' : (settings.encoding || 'UTF-8').toUpperCase()}`}
               style={styles.encodingBtn}
               onPress={() => setEncodingModalVisible(true)}
             >
               <Text style={styles.encodingBtnText}>
                 {settings.encoding === 'utf8' ? 'UTF-8' : (settings.encoding || 'UTF-8').toUpperCase()}
               </Text>
-            </TouchableOpacity>
+            </SelfVoicingTouchable>
           </View>
         )}
 
-        {/* Gestures Section - Only in complete mode */}
-        {settings.uiMode === 'completo' && (
+        {/* Gestures Section: visible en modo completo SIEMPRE; en modo blind
+            solo si self-voicing está on Y NO estamos en self-voicing modal
+            del Terminal (los gestos del Terminal sí funcionan en self-voicing
+            pero la UI de configurarlos es densa visualmente — el invidente
+            puede dejar los defaults; si quiere personalizar entra al
+            Settings desde fuera del Terminal con TalkBack on). */}
+        {!settingsSelfVoicingActive && (settings.uiMode === 'completo' || (settings.uiMode === 'blind' && settings.useSelfVoicing)) && (
           <View style={styles.row}>
             <View style={styles.rowInfo}>
               <Text style={styles.rowTitle}>Usar atajos de gestos</Text>
@@ -292,7 +495,11 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
               </Text>
             </View>
             {settings.gesturesEnabled && (
-              <TouchableOpacity
+              <SelfVoicingTouchable
+                svActive={settingsSelfVoicingActive}
+                svScope={SETTINGS_SCOPE}
+                svKey="gestures-config"
+                svLabel="Configurar gestos"
                 style={styles.configIconBtn}
                 onPress={() => {
                   let gestures = settings.gestures || [];
@@ -313,9 +520,13 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
                 }}
               >
                 <Text style={styles.configIcon}>✏️</Text>
-              </TouchableOpacity>
+              </SelfVoicingTouchable>
             )}
-            <Switch
+            <SelfVoicingSwitch
+              svActive={settingsSelfVoicingActive}
+              svScope={SETTINGS_SCOPE}
+              svKey="gestures-enabled"
+              svLabel="Gestos"
               value={settings.gesturesEnabled}
               onValueChange={(value) => {
                 updateSetting('gesturesEnabled', value);
@@ -350,7 +561,20 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
         </View>
 
         {/* Sounds Section */}
-        <View style={styles.row}>
+        <SelfVoicingRow
+          svActive={settingsSelfVoicingActive}
+          svScope={SETTINGS_SCOPE}
+          svKey="sounds"
+          svLabel={`Usar sonidos. Kill-switch global. Configura qué sonidos suenan en Triggers. ${settings.soundsEnabled ? 'Activado' : 'Desactivado'}`}
+          onActivate={() => {
+            const value = !settings.soundsEnabled;
+            const updated = { ...settings, soundsEnabled: value };
+            setSettings(updated);
+            saveSettings(updated);
+            if (sourceLocation === 'terminal' && onSoundToggle) onSoundToggle(value);
+          }}
+          style={styles.row}
+        >
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Usar sonidos</Text>
             <Text style={styles.rowDesc}>
@@ -363,17 +587,22 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
               const updated = { ...settings, soundsEnabled: value };
               setSettings(updated);
               saveSettings(updated);
-              if (sourceLocation === 'terminal' && onSoundToggle) {
-                onSoundToggle(value);
-              }
+              if (sourceLocation === 'terminal' && onSoundToggle) onSoundToggle(value);
             }}
             trackColor={{ false: '#333', true: '#0c0' }}
             thumbColor={settings.soundsEnabled ? '#000' : '#666'}
           />
-        </View>
+        </SelfVoicingRow>
 
         {/* Música ambiente (kill-switch + volúmenes) */}
-        <View style={styles.row}>
+        <SelfVoicingRow
+          svActive={settingsSelfVoicingActive}
+          svScope={SETTINGS_SCOPE}
+          svKey="ambient"
+          svLabel={`Música ambiente. Loop de fondo que cambia con el tipo de sala. Asigna sonidos en Mis ambientes. ${settings.ambientEnabled ? 'Activado' : 'Desactivado'}`}
+          onActivate={() => updateSetting('ambientEnabled', !settings.ambientEnabled)}
+          style={styles.row}
+        >
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Música ambiente</Text>
             <Text style={styles.rowDesc}>
@@ -386,23 +615,36 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             trackColor={{ false: '#333', true: '#0c0' }}
             thumbColor={settings.ambientEnabled ? '#000' : '#666'}
           />
-        </View>
+        </SelfVoicingRow>
 
         <View style={styles.audioVolumesBlock}>
           <VolumeAdjuster
             label="Volumen ambiente"
             value={settings.ambientVolume}
             onChange={(v) => updateSetting('ambientVolume', v)}
+            svActive={settingsSelfVoicingActive}
+            svScope={SETTINGS_SCOPE}
+            svKeyPrefix="vol-ambient"
           />
           <VolumeAdjuster
             label="Volumen efectos (triggers)"
             value={settings.effectsVolume}
             onChange={(v) => updateSetting('effectsVolume', v)}
+            svActive={settingsSelfVoicingActive}
+            svScope={SETTINGS_SCOPE}
+            svKeyPrefix="vol-effects"
           />
         </View>
 
         {/* Pantalla encendida */}
-        <View style={styles.row}>
+        <SelfVoicingRow
+          svActive={settingsSelfVoicingActive}
+          svScope={SETTINGS_SCOPE}
+          svKey="keep-awake"
+          svLabel={`Mantener pantalla encendida. Evita que el teléfono se bloquee por inactividad mientras estás conectado a un personaje. ${settings.keepAwakeEnabled ? 'Activado' : 'Desactivado'}`}
+          onActivate={() => updateSetting('keepAwakeEnabled', !settings.keepAwakeEnabled)}
+          style={styles.row}
+        >
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Mantener pantalla encendida</Text>
             <Text style={styles.rowDesc}>
@@ -415,9 +657,13 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             trackColor={{ false: '#333', true: '#0c0' }}
             thumbColor={settings.keepAwakeEnabled ? '#000' : '#666'}
           />
-        </View>
+        </SelfVoicingRow>
 
-        {/* Velocidad de lectura */}
+        {/* Velocidad de lectura — solo aplica al backend TalkBack de
+            speechQueueService. En self-voicing usamos eventos tts-finish
+            (precisos), no timer estimado, así que el setting no tiene
+            efecto y se oculta para evitar confundir al usuario. */}
+        {!(settings.useSelfVoicing && settings.uiMode === 'blind') && (
         <View style={styles.row}>
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Velocidad de lectura</Text>
@@ -515,9 +761,262 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             </TouchableOpacity>
           </View>
         </View>
+        )}
+
+        {/* Voz (modo blind) — self-voicing con TTS propio. Solo visible en
+            modo blind. El usuario debe desactivar TalkBack a mano para que
+            estas opciones tengan efecto real (la app detecta si sigue activo
+            y muestra banner en TerminalScreen). */}
+        {settings.uiMode === 'blind' && (
+          <>
+            <SelfVoicingRow
+              svActive={settingsSelfVoicingActive}
+              svScope={SETTINGS_SCOPE}
+              svKey="use-self-voicing"
+              svLabel={`Self-voicing TTS propio. Atención: función beta en desarrollo, puede tener errores. Hace que TorchZhyla hable con su propio motor TTS en vez de delegar en TalkBack. Para que funcione bien, desactiva TalkBack al jugar usando el atajo de accesibilidad del sistema. Permite gestos rápidos y voz controlada por la app. ${settings.useSelfVoicing ? 'Activado' : 'Desactivado'}`}
+              onActivate={() => updateSetting('useSelfVoicing', !settings.useSelfVoicing)}
+              style={styles.row}
+            >
+              <View style={styles.rowInfo}>
+                <Text style={styles.rowTitle}>Self-voicing (TTS propio) — BETA</Text>
+                <Text style={styles.rowDesc}>
+                  ⚠️ Función beta en desarrollo, puede tener errores. Hace que TorchZhyla hable con su propio motor TTS en vez de delegar en TalkBack. Para que funcione bien, desactiva TalkBack al jugar (usa el atajo de accesibilidad del sistema). Permite gestos rápidos y voz controlada por la app.
+                </Text>
+              </View>
+              <Switch
+                value={settings.useSelfVoicing}
+                onValueChange={(value) => updateSetting('useSelfVoicing', value)}
+                trackColor={{ false: '#333', true: '#0c0' }}
+                thumbColor={settings.useSelfVoicing ? '#000' : '#666'}
+              />
+            </SelfVoicingRow>
+
+            {settings.useSelfVoicing && !ttsAvailable && (
+              <View style={styles.row}>
+                <View style={styles.rowInfo}>
+                  <Text style={[styles.rowTitle, { color: '#f80' }]}>Motor TTS no disponible</Text>
+                  <Text style={styles.rowDesc}>
+                    El sistema no devuelve un motor TTS. Instala uno (Google TTS suele venir preinstalado; si lo desinstalaste, instálalo desde Play Store). Sin motor, self-voicing no puede hablar.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {settings.useSelfVoicing && ttsAvailable && (
+              <>
+                {/* Selector de motor */}
+                <SelfVoicingRow
+                  svActive={settingsSelfVoicingActive}
+                  svScope={SETTINGS_SCOPE}
+                  svKey="tts-engine"
+                  svLabel={`Motor TTS. Engine que produce la voz. El default del sistema usa el motor que Android tenga configurado. Actual: ${settings.ttsEngine ? (ttsEngines.find(e => e.name === settings.ttsEngine)?.label || settings.ttsEngine) : 'Default del sistema'}. Pulsa para cambiar.`}
+                  onActivate={() => setTtsEngineModalVisible(true)}
+                  style={styles.row}
+                >
+                  <View style={styles.rowInfo}>
+                    <Text style={styles.rowTitle}>Motor TTS</Text>
+                    <Text style={styles.rowDesc}>
+                      Engine que produce la voz. El default del sistema (vacío) usa el motor que Android tenga configurado en Ajustes &gt; Accesibilidad &gt; Texto a voz.
+                    </Text>
+                  </View>
+                  <View style={styles.encodingBtn}>
+                    <Text style={styles.encodingBtnText} numberOfLines={1}>
+                      {settings.ttsEngine
+                        ? (ttsEngines.find(e => e.name === settings.ttsEngine)?.label || settings.ttsEngine)
+                        : 'Default'}
+                    </Text>
+                  </View>
+                </SelfVoicingRow>
+
+                {/* Selector de voz */}
+                <SelfVoicingRow
+                  svActive={settingsSelfVoicingActive}
+                  svScope={SETTINGS_SCOPE}
+                  svKey="tts-voice"
+                  svLabel={`Voz. Voz concreta del motor seleccionado. Actual: ${settings.ttsVoice ? (ttsVoices.find(v => v.id === settings.ttsVoice)?.name || settings.ttsVoice) : 'Default'}. Pulsa para cambiar.`}
+                  onActivate={() => setTtsVoiceModalVisible(true)}
+                  style={styles.row}
+                >
+                  <View style={styles.rowInfo}>
+                    <Text style={styles.rowTitle}>Voz</Text>
+                    <Text style={styles.rowDesc}>
+                      Voz concreta del motor seleccionado. Filtramos por voces en español si hay; si no, mostramos todas.
+                    </Text>
+                  </View>
+                  <View style={styles.encodingBtn}>
+                    <Text style={styles.encodingBtnText} numberOfLines={1}>
+                      {settings.ttsVoice
+                        ? (ttsVoices.find(v => v.id === settings.ttsVoice)?.name || settings.ttsVoice)
+                        : 'Default'}
+                    </Text>
+                  </View>
+                </SelfVoicingRow>
+
+                {/* Velocidad TTS */}
+                <SelfVoicingRow
+                  svActive={settingsSelfVoicingActive}
+                  svScope={SETTINGS_SCOPE}
+                  svKey="tts-rate-row"
+                  svLabel={`Velocidad TTS. 1.0 normal, 2.0 doble, 5.0 quíntuple. Valor actual: ${settings.ttsRate.toFixed(1)}. Desliza a los lados para subir o bajar.`}
+                  onAdjust={(dir) => {
+                    if (dir === 'inc' && settings.ttsRate < TTS_RATE_MAX) {
+                      updateSetting('ttsRate', Math.min(TTS_RATE_MAX, +(settings.ttsRate + TTS_RATE_STEP).toFixed(1)));
+                    } else if (dir === 'dec' && settings.ttsRate > TTS_RATE_MIN) {
+                      updateSetting('ttsRate', Math.max(TTS_RATE_MIN, +(settings.ttsRate - TTS_RATE_STEP).toFixed(1)));
+                    }
+                  }}
+                  style={styles.row}
+                >
+                  <View style={styles.rowInfo}>
+                    <Text style={styles.rowTitle}>Velocidad TTS</Text>
+                    <Text style={styles.rowDesc}>
+                      1.0 = velocidad normal, 2.0 = doble, 5.0 = quíntuple. Google TTS suele capear ~4.0-5.0; motores comerciales (Vocalizer, Eloquence) aguantan más. Si subes y no notas diferencia, tu motor llegó al tope.
+                    </Text>
+                  </View>
+                  <View style={styles.fontSizeControls}>
+                    <TouchableOpacity
+                      style={[styles.fontBtn, settings.ttsRate <= TTS_RATE_MIN && styles.fontBtnDisabled]}
+                      disabled={settings.ttsRate <= TTS_RATE_MIN}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Bajar velocidad TTS: ${settings.ttsRate.toFixed(1)}`}
+                      onPress={() => {
+                        if (settings.ttsRate > TTS_RATE_MIN) {
+                          updateSetting('ttsRate', Math.max(TTS_RATE_MIN, +(settings.ttsRate - TTS_RATE_STEP).toFixed(1)));
+                        }
+                      }}
+                    >
+                      <Text style={[styles.fontBtnText, settings.ttsRate <= TTS_RATE_MIN && styles.fontBtnTextDisabled]}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.fontSizeValue}>{settings.ttsRate.toFixed(1)}</Text>
+                    <TouchableOpacity
+                      style={[styles.fontBtn, settings.ttsRate >= TTS_RATE_MAX && styles.fontBtnDisabled]}
+                      disabled={settings.ttsRate >= TTS_RATE_MAX}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Subir velocidad TTS: ${settings.ttsRate.toFixed(1)}`}
+                      onPress={() => {
+                        if (settings.ttsRate < TTS_RATE_MAX) {
+                          updateSetting('ttsRate', Math.min(TTS_RATE_MAX, +(settings.ttsRate + TTS_RATE_STEP).toFixed(1)));
+                        }
+                      }}
+                    >
+                      <Text style={[styles.fontBtnText, settings.ttsRate >= TTS_RATE_MAX && styles.fontBtnTextDisabled]}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </SelfVoicingRow>
+
+                {/* Tono TTS */}
+                <SelfVoicingRow
+                  svActive={settingsSelfVoicingActive}
+                  svScope={SETTINGS_SCOPE}
+                  svKey="tts-pitch-row"
+                  svLabel={`Tono TTS. 0.5 grave, 1.0 normal, 2.0 muy agudo. Valor actual: ${settings.ttsPitch.toFixed(1)}. Desliza a los lados para subir o bajar.`}
+                  onAdjust={(dir) => {
+                    if (dir === 'inc' && settings.ttsPitch < TTS_PITCH_MAX) {
+                      updateSetting('ttsPitch', Math.min(TTS_PITCH_MAX, +(settings.ttsPitch + TTS_PITCH_STEP).toFixed(1)));
+                    } else if (dir === 'dec' && settings.ttsPitch > TTS_PITCH_MIN) {
+                      updateSetting('ttsPitch', Math.max(TTS_PITCH_MIN, +(settings.ttsPitch - TTS_PITCH_STEP).toFixed(1)));
+                    }
+                  }}
+                  style={styles.row}
+                >
+                  <View style={styles.rowInfo}>
+                    <Text style={styles.rowTitle}>Tono TTS</Text>
+                    <Text style={styles.rowDesc}>
+                      Pitch del motor (0.5 grave, 1.0 normal, 2.0 muy agudo).
+                    </Text>
+                  </View>
+                  <View style={styles.fontSizeControls}>
+                    <TouchableOpacity
+                      style={[styles.fontBtn, settings.ttsPitch <= TTS_PITCH_MIN && styles.fontBtnDisabled]}
+                      disabled={settings.ttsPitch <= TTS_PITCH_MIN}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Bajar tono TTS: ${settings.ttsPitch.toFixed(1)}`}
+                      onPress={() => {
+                        if (settings.ttsPitch > TTS_PITCH_MIN) {
+                          updateSetting('ttsPitch', Math.max(TTS_PITCH_MIN, +(settings.ttsPitch - TTS_PITCH_STEP).toFixed(1)));
+                        }
+                      }}
+                    >
+                      <Text style={[styles.fontBtnText, settings.ttsPitch <= TTS_PITCH_MIN && styles.fontBtnTextDisabled]}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.fontSizeValue}>{settings.ttsPitch.toFixed(1)}</Text>
+                    <TouchableOpacity
+                      style={[styles.fontBtn, settings.ttsPitch >= TTS_PITCH_MAX && styles.fontBtnDisabled]}
+                      disabled={settings.ttsPitch >= TTS_PITCH_MAX}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Subir tono TTS: ${settings.ttsPitch.toFixed(1)}`}
+                      onPress={() => {
+                        if (settings.ttsPitch < TTS_PITCH_MAX) {
+                          updateSetting('ttsPitch', Math.min(TTS_PITCH_MAX, +(settings.ttsPitch + TTS_PITCH_STEP).toFixed(1)));
+                        }
+                      }}
+                    >
+                      <Text style={[styles.fontBtnText, settings.ttsPitch >= TTS_PITCH_MAX && styles.fontBtnTextDisabled]}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </SelfVoicingRow>
+
+                {/* Volumen TTS — usa el VolumeAdjuster existente (0..1). */}
+                <View style={styles.audioVolumesBlock}>
+                  <VolumeAdjuster
+                    label="Volumen TTS"
+                    value={settings.ttsVolume}
+                    onChange={(v) => updateSetting('ttsVolume', v)}
+                    svActive={settingsSelfVoicingActive}
+                    svScope={SETTINGS_SCOPE}
+                    svKeyPrefix="vol-tts"
+                  />
+                </View>
+
+                {/* Probar voz */}
+                <SelfVoicingRow
+                  svActive={settingsSelfVoicingActive}
+                  svScope={SETTINGS_SCOPE}
+                  svKey="probar-voz"
+                  svLabel="Probar voz. Reproduce una frase corta con la configuración actual. No depende de TalkBack, usa siempre el TTS propio."
+                  onActivate={() => speechQueue.preview('Hola, esta es la voz de TorchZhyla en modo blind.')}
+                  style={styles.row}
+                >
+                  <View style={styles.rowInfo}>
+                    <Text style={styles.rowTitle}>Probar voz</Text>
+                    <Text style={styles.rowDesc}>
+                      Reproduce una frase corta con la configuración actual. No depende de TalkBack — usa siempre el TTS propio.
+                    </Text>
+                  </View>
+                  <View style={styles.encodingBtn}>
+                    <Text style={styles.encodingBtnText}>Probar</Text>
+                  </View>
+                </SelfVoicingRow>
+
+              </>
+            )}
+          </>
+        )}
 
         {/* Notifications Section */}
-        <View style={styles.row}>
+        <SelfVoicingRow
+          svActive={settingsSelfVoicingActive}
+          svScope={SETTINGS_SCOPE}
+          svKey="notifications"
+          svLabel={`Usar notificaciones. Permite que los triggers disparen notificaciones del sistema. Solo se muestran cuando la app no está en primer plano. Configura las notificaciones concretas en Triggers. ${settings.notificationsEnabled ? 'Activado' : 'Desactivado'}`}
+          onActivate={async () => {
+            const value = !settings.notificationsEnabled;
+            if (value) {
+              const result = await requestNotificationPermission();
+              if (result === 'blocked') {
+                Alert.alert('Permiso necesario', 'Has denegado el permiso de notificaciones. Para recibir avisos, ábrelo en los ajustes del sistema.', [{ text: 'Cancelar', style: 'cancel' }, { text: 'Abrir ajustes', onPress: () => openNotificationSettings() }]);
+              } else if (result === 'denied') {
+                Alert.alert('Permiso denegado', 'Sin permiso de notificaciones no podremos mostrarte avisos.');
+              }
+            }
+            const updated = value
+              ? { ...settings, notificationsEnabled: true, backgroundConnectionEnabled: true }
+              : { ...settings, notificationsEnabled: false };
+            setSettings(updated);
+            saveSettings(updated);
+          }}
+          style={styles.row}
+        >
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Usar notificaciones</Text>
             <Text style={styles.rowDesc}>
@@ -554,10 +1053,17 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             trackColor={{ false: '#333', true: '#0c0' }}
             thumbColor={settings.notificationsEnabled ? '#000' : '#666'}
           />
-        </View>
+        </SelfVoicingRow>
 
         {/* Background connection */}
-        <View style={styles.row}>
+        <SelfVoicingRow
+          svActive={settingsSelfVoicingActive}
+          svScope={SETTINGS_SCOPE}
+          svKey="background-connection"
+          svLabel={`Conexión en segundo plano. Mantiene el MUD conectado aunque la pantalla se bloquee o la app pase a segundo plano. Necesario para que los triggers sigan procesando líneas y para que las notificaciones lleguen. ${settings.backgroundConnectionEnabled ? 'Activado' : 'Desactivado'}`}
+          onActivate={() => updateSetting('backgroundConnectionEnabled', !settings.backgroundConnectionEnabled)}
+          style={styles.row}
+        >
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Conexión en segundo plano</Text>
             <Text style={styles.rowDesc}>
@@ -570,14 +1076,27 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             trackColor={{ false: '#333', true: '#0c0' }}
             thumbColor={settings.backgroundConnectionEnabled ? '#000' : '#666'}
           />
-        </View>
+        </SelfVoicingRow>
 
         {/* Logs Section */}
         <View style={[styles.sectionHeader, styles.marginTop]}>
           <Text style={styles.sectionTitle}>Logs</Text>
         </View>
 
-        <View style={styles.row}>
+        <SelfVoicingRow
+          svActive={settingsSelfVoicingActive}
+          svScope={SETTINGS_SCOPE}
+          svKey="logs-enabled"
+          svLabel={`Guardar logs para soporte. Captura la actividad del terminal para exportarla como HTML, útil para compartir con soporte o subir a deathlogs.com. Desactivar borra todos los logs. ${settings.logsEnabled ? 'Activado' : 'Desactivado'}`}
+          onActivate={() => {
+            const value = !settings.logsEnabled;
+            const updated = { ...settings, logsEnabled: value };
+            setSettings(updated);
+            saveSettings(updated);
+            logService.configure(value, updated.logsMaxLines);
+          }}
+          style={styles.row}
+        >
           <View style={styles.rowInfo}>
             <Text style={styles.rowTitle}>Guardar logs para soporte</Text>
             <Text style={styles.rowDesc}>
@@ -595,88 +1114,154 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             trackColor={{ false: '#333', true: '#0c0' }}
             thumbColor={settings.logsEnabled ? '#000' : '#666'}
           />
-        </View>
+        </SelfVoicingRow>
 
         {settings.logsEnabled && (
           <>
-            <View style={styles.row}>
-              <View style={styles.rowInfo}>
-                <Text style={styles.rowTitle}>Tamaño máximo</Text>
-                <Text style={styles.rowDesc}>
-                  Cuántas líneas como máximo guarda el log. Al superar el tope se borran las más antiguas.
-                </Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
-                  {([5000, 10000, 20000, 50000, 100000] as LogsMaxLines[]).map((n) => {
-                    const active = settings.logsMaxLines === n;
-                    const labelMB = n <= 5000 ? '~1 MB' : n <= 10000 ? '~2 MB' : n <= 20000 ? '~4 MB' : n <= 50000 ? '~10 MB' : '~20 MB';
-                    return (
-                      <TouchableOpacity
-                        key={n}
-                        style={[styles.logSizeBtn, active && styles.logSizeBtnActive]}
-                        onPress={() => {
-                          const updated = { ...settings, logsMaxLines: n };
-                          setSettings(updated);
-                          saveSettings(updated);
-                          logService.configure(true, n);
-                        }}
-                        accessible={true}
-                        accessibilityRole="radio"
-                        accessibilityState={{ selected: active }}
-                        accessibilityLabel={`${n.toLocaleString('es')} líneas ${labelMB}`}
-                      >
-                        <Text style={[styles.logSizeText, active && styles.logSizeTextActive]}>
-                          {n.toLocaleString('es')}
-                        </Text>
-                        <Text style={[styles.logSizeSubtext, active && styles.logSizeTextActive]}>
-                          {labelMB}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+            {/* Tamaño máximo — radio de 5 opciones, oculto en self-voicing
+                (UI compleja sin envolver). El usuario blind se queda con el
+                default; si necesita cambiarlo abre Settings desde fuera del
+                Terminal con TalkBack normal. */}
+            {!settingsSelfVoicingActive && (
+              <View style={styles.row}>
+                <View style={styles.rowInfo}>
+                  <Text style={styles.rowTitle}>Tamaño máximo</Text>
+                  <Text style={styles.rowDesc}>
+                    Cuántas líneas como máximo guarda el log. Al superar el tope se borran las más antiguas.
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
+                    {([5000, 10000, 20000, 50000, 100000] as LogsMaxLines[]).map((n) => {
+                      const active = settings.logsMaxLines === n;
+                      const labelMB = n <= 5000 ? '~1 MB' : n <= 10000 ? '~2 MB' : n <= 20000 ? '~4 MB' : n <= 50000 ? '~10 MB' : '~20 MB';
+                      return (
+                        <TouchableOpacity
+                          key={n}
+                          style={[styles.logSizeBtn, active && styles.logSizeBtnActive]}
+                          onPress={() => {
+                            const updated = { ...settings, logsMaxLines: n };
+                            setSettings(updated);
+                            saveSettings(updated);
+                            logService.configure(true, n);
+                          }}
+                          accessible={true}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected: active }}
+                          accessibilityLabel={`${n.toLocaleString('es')} líneas ${labelMB}`}
+                        >
+                          <Text style={[styles.logSizeText, active && styles.logSizeTextActive]}>
+                            {n.toLocaleString('es')}
+                          </Text>
+                          <Text style={[styles.logSizeSubtext, active && styles.logSizeTextActive]}>
+                            {labelMB}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
                 </View>
               </View>
-            </View>
+            )}
 
-            <View style={styles.row}>
-              <TouchableOpacity
-                style={styles.logActionBtn}
-                onPress={() => setExportRangeModalVisible(true)}
-                accessible={true}
-                accessibilityLabel="Exportar log"
-                accessibilityRole="button"
-              >
-                <Text style={styles.logActionBtnText}>Exportar log</Text>
-              </TouchableOpacity>
+            {/* Exportar / Borrar logs: en modo no-self-voicing van como dos
+                botones lado a lado en una row. En self-voicing van como dos
+                rows independientes, navegables por separado. */}
+            {settingsSelfVoicingActive ? (
+              <>
+                <SelfVoicingRow
+                  svActive={settingsSelfVoicingActive}
+                  svScope={SETTINGS_SCOPE}
+                  svKey="export-log"
+                  svLabel="Exportar log. Genera un archivo HTML con la actividad capturada del terminal para compartirlo con soporte o subirlo a deathlogs.com."
+                  onActivate={() => setExportRangeModalVisible(true)}
+                  style={styles.row}
+                >
+                  <View style={styles.rowInfo}>
+                    <Text style={styles.rowTitle}>Exportar log</Text>
+                    <Text style={styles.rowDesc}>
+                      Genera un HTML con la actividad capturada para compartir con soporte.
+                    </Text>
+                  </View>
+                  <View style={styles.logActionBtn}>
+                    <Text style={styles.logActionBtnText}>Exportar</Text>
+                  </View>
+                </SelfVoicingRow>
 
-              <TouchableOpacity
-                style={[styles.logActionBtn, styles.logActionBtnDanger]}
-                onPress={() => {
-                  Alert.alert(
-                    'Borrar todos los logs',
-                    '¿Seguro que quieres borrar todos los logs guardados? No se puede deshacer.',
-                    [
-                      { text: 'Cancelar', style: 'cancel' },
-                      {
-                        text: 'Borrar',
-                        style: 'destructive',
-                        onPress: async () => {
-                          await logService.clearAll();
+                <SelfVoicingRow
+                  svActive={settingsSelfVoicingActive}
+                  svScope={SETTINGS_SCOPE}
+                  svKey="clear-logs"
+                  svLabel="Borrar todos los logs guardados. Acción destructiva, pide confirmación antes de borrar."
+                  onActivate={() => {
+                    Alert.alert(
+                      'Borrar todos los logs',
+                      '¿Seguro que quieres borrar todos los logs guardados? No se puede deshacer.',
+                      [
+                        { text: 'Cancelar', style: 'cancel' },
+                        {
+                          text: 'Borrar',
+                          style: 'destructive',
+                          onPress: async () => { await logService.clearAll(); },
                         },
-                      },
-                    ]
-                  );
-                }}
-                accessible={true}
-                accessibilityLabel="Borrar todos los logs"
-                accessibilityRole="button"
-              >
-                <Text style={styles.logActionBtnText}>Borrar logs</Text>
-              </TouchableOpacity>
-            </View>
+                      ]
+                    );
+                  }}
+                  style={styles.row}
+                >
+                  <View style={styles.rowInfo}>
+                    <Text style={styles.rowTitle}>Borrar logs</Text>
+                    <Text style={styles.rowDesc}>
+                      Elimina todos los logs guardados. Pide confirmación antes.
+                    </Text>
+                  </View>
+                  <View style={[styles.logActionBtn, styles.logActionBtnDanger]}>
+                    <Text style={styles.logActionBtnText}>Borrar</Text>
+                  </View>
+                </SelfVoicingRow>
+              </>
+            ) : (
+              <View style={styles.row}>
+                <TouchableOpacity
+                  style={styles.logActionBtn}
+                  onPress={() => setExportRangeModalVisible(true)}
+                  accessible={true}
+                  accessibilityLabel="Exportar log"
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.logActionBtnText}>Exportar log</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.logActionBtn, styles.logActionBtnDanger]}
+                  onPress={() => {
+                    Alert.alert(
+                      'Borrar todos los logs',
+                      '¿Seguro que quieres borrar todos los logs guardados? No se puede deshacer.',
+                      [
+                        { text: 'Cancelar', style: 'cancel' },
+                        {
+                          text: 'Borrar',
+                          style: 'destructive',
+                          onPress: async () => { await logService.clearAll(); },
+                        },
+                      ]
+                    );
+                  }}
+                  accessible={true}
+                  accessibilityLabel="Borrar todos los logs"
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.logActionBtnText}>Borrar logs</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </>
         )}
 
-        {/* Triggers Section */}
+        {/* Triggers Section — entera oculta en self-voicing porque las
+            pantallas que abre (Triggers, MySounds, MyAmbients, etc.) aún no
+            están adaptadas al modelo BlindNav. Se reactivará en Fase 4. */}
+        {!settingsSelfVoicingActive && (
+        <>
         <View style={[styles.sectionHeader, styles.marginTop]}>
           <Text style={styles.sectionTitle}>Triggers</Text>
         </View>
@@ -770,9 +1355,18 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             <Text style={styles.encodingBtnText}>Abrir</Text>
           </TouchableOpacity>
         </View>
+        </>
+        )}
 
         {sourceLocation === 'terminal' && (
-          <View style={styles.row}>
+          <SelfVoicingRow
+            svActive={settingsSelfVoicingActive}
+            svScope={SETTINGS_SCOPE}
+            svKey="apply-prompt"
+            svLabel="Aplicar prompt TorchZhyla. Configura el prompt del MUD para este personaje. Necesario para que las variables como vida, energía y salidas se capturen y puedan usarse en triggers."
+            onActivate={handleApplyPrompt}
+            style={styles.row}
+          >
             <View style={styles.rowInfo}>
               <Text style={styles.rowTitle}>Aplicar prompt TorchZhyla</Text>
               <Text style={styles.rowDesc}>
@@ -789,10 +1383,11 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             >
               <Text style={styles.encodingBtnText}>Aplicar</Text>
             </TouchableOpacity>
-          </View>
+          </SelfVoicingRow>
         )}
 
       </ScrollView>
+      </BlindGestureContainer>
 
       {/* Export Range Modal */}
       <Modal
@@ -868,19 +1463,22 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             contentContainerStyle={styles.gestureListContent}
             renderItem={({ item, index }) => {
               const gestureSymbols: Record<string, string> = {
-                'doubletap': '✌️',
                 'swipe_up': '↑', 'swipe_down': '↓', 'swipe_left': '←', 'swipe_right': '→',
                 'swipe_up_right': '↗', 'swipe_up_left': '↖', 'swipe_down_right': '↘', 'swipe_down_left': '↙',
                 'twofingers_up': '↑', 'twofingers_down': '↓', 'twofingers_left': '←', 'twofingers_right': '→',
                 'twofingers_up_right': '↗', 'twofingers_up_left': '↖', 'twofingers_down_right': '↘', 'twofingers_down_left': '↙',
                 'pinch_in': '→ ←', 'pinch_out': '← →',
+                'doubletap_hold_swipe_up': '↑', 'doubletap_hold_swipe_down': '↓',
+                'doubletap_hold_swipe_left': '←', 'doubletap_hold_swipe_right': '→',
+                'doubletap_hold_swipe_up_right': '↗', 'doubletap_hold_swipe_up_left': '↖',
+                'doubletap_hold_swipe_down_right': '↘', 'doubletap_hold_swipe_down_left': '↙',
               };
 
               const getSection = (type: string) => {
-                if (type === 'doubletap') return 'Doble tap';
                 if (type.startsWith('swipe_')) return '1 dedo';
                 if (type.startsWith('twofingers_')) return '2 dedos';
                 if (type.startsWith('pinch_')) return 'Pinch';
+                if (type.startsWith('doubletap_hold_swipe_')) return 'Doble tap + arrastrar';
                 return '';
               };
 
@@ -890,7 +1488,6 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
 
               const symbol = gestureSymbols[item.type] || '';
               const isPinch = item.type.startsWith('pinch_');
-              const isDoubleTap = item.type === 'doubletap';
 
               return (
                 <View>
@@ -1042,6 +1639,107 @@ export function SettingsScreen({ navigation, sourceLocation = 'serverlist', onFo
             <TouchableOpacity
               style={styles.encodingModalCloseBtn}
               onPress={() => setEncodingModalVisible(false)}
+            >
+              <Text style={styles.encodingModalCloseBtnText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* TTS Engine Selector Modal */}
+      <Modal
+        visible={ttsEngineModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTtsEngineModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.encodingModalContent}>
+            <Text style={styles.encodingModalTitle}>Selecciona motor TTS</Text>
+            <FlatList
+              data={[{ name: '', label: 'Default del sistema', default: true } as TtsEngineInfo, ...ttsEngines]}
+              keyExtractor={(item) => item.name || 'default'}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.encodingOption,
+                    settings.ttsEngine === item.name && styles.encodingOptionSelected,
+                  ]}
+                  onPress={async () => {
+                    updateSetting('ttsEngine', item.name);
+                    setTtsEngineModalVisible(false);
+                    // Cambiar engine puede cambiar las voces disponibles.
+                    await refreshVoices();
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.encodingOptionText,
+                      settings.ttsEngine === item.name && styles.encodingOptionTextSelected,
+                    ]}
+                  >
+                    {item.label}{item.default ? ' (sistema)' : ''}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              scrollEnabled={true}
+              nestedScrollEnabled={true}
+            />
+            <TouchableOpacity
+              style={styles.encodingModalCloseBtn}
+              onPress={() => setTtsEngineModalVisible(false)}
+            >
+              <Text style={styles.encodingModalCloseBtnText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* TTS Voice Selector Modal */}
+      <Modal
+        visible={ttsVoiceModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTtsVoiceModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.encodingModalContent}>
+            <Text style={styles.encodingModalTitle}>Selecciona voz</Text>
+            <FlatList
+              // Filtramos voces por idioma español si hay alguna; si no, todas.
+              // Idioma viene como BCP-47 (ej: "es-ES", "es-MX", "en-US").
+              data={(() => {
+                const all = ttsVoices.filter(v => !v.notInstalled);
+                const spanish = all.filter(v => v.language?.toLowerCase().startsWith('es'));
+                const list = spanish.length > 0 ? spanish : all;
+                return [{ id: '', name: 'Default del motor', language: '' } as TtsVoiceInfo, ...list];
+              })()}
+              keyExtractor={(item) => item.id || 'default'}
+              renderItem={({ item }) => {
+                const isSelected = settings.ttsVoice === item.id;
+                const subtitle = item.language ? `${item.language}` : '';
+                return (
+                  <TouchableOpacity
+                    style={[styles.encodingOption, isSelected && styles.encodingOptionSelected]}
+                    onPress={() => {
+                      updateSetting('ttsVoice', item.id);
+                      setTtsVoiceModalVisible(false);
+                    }}
+                  >
+                    <Text style={[styles.encodingOptionText, isSelected && styles.encodingOptionTextSelected]}>
+                      {item.name || item.id || 'Default'}
+                      {subtitle ? `  ·  ${subtitle}` : ''}
+                      {item.networkConnectionRequired ? '  ·  online' : ''}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              }}
+              scrollEnabled={true}
+              nestedScrollEnabled={true}
+            />
+            <TouchableOpacity
+              style={styles.encodingModalCloseBtn}
+              onPress={() => setTtsVoiceModalVisible(false)}
             >
               <Text style={styles.encodingModalCloseBtnText}>Cerrar</Text>
             </TouchableOpacity>

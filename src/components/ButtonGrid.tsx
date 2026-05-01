@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import { LayoutButton } from '../storage/layoutStorage';
 import { NORMAL_MODE, BLIND_MODE } from '../config/gridConfig';
+import { speechQueue } from '../services/speechQueueService';
+import { selfVoicingPress, buttonRegistry } from '../utils/selfVoicingPress';
 
 export const GRID_COLS = NORMAL_MODE.vertical.cols;
 export const GRID_ROWS = NORMAL_MODE.vertical.rows;
@@ -28,6 +30,11 @@ interface ButtonGridProps {
   onSwapButtons?: (targetCol: number, targetRow: number) => void;
   horizontalMode?: { cols: number; cellSize: number };
   uiMode?: 'completo' | 'blind';
+  // Self-voicing on (TalkBack desactivado por el usuario): tap = anuncia
+  // label, doble-tap = primary, drag-1-finger = secondary, long-press = edit.
+  // Off: comportamiento legacy (TalkBack maneja tap/double-tap, drag-2-finger
+  // = secondary, long-press = edit).
+  selfVoicingActive?: boolean;
   minimalista?: boolean;
   minCols?: number;
   minRows?: number;
@@ -42,6 +49,7 @@ function ButtonCell({
   isSource,
   horizontalMode,
   uiMode,
+  selfVoicingActive,
   onSendCommand,
   onAddTextButton,
   onShowFloating,
@@ -57,6 +65,7 @@ function ButtonCell({
   isSource?: boolean;
   horizontalMode?: any;
   uiMode?: 'completo' | 'blind';
+  selfVoicingActive?: boolean;
   onSendCommand: (command: string) => void;
   onAddTextButton: (command: string) => void;
   onShowFloating?: (text: string) => void;
@@ -68,6 +77,60 @@ function ButtonCell({
   const startPosRef = useRef({ x: 0, y: 0 });
   const isDraggingRef = useRef(false);
   const isLongPressTriggeredRef = useRef(false);
+  const cellViewRef = useRef<View>(null);
+  // Key estable para el registro global usado por drag-explore. Prefijo
+  // `default:` indica que pertenece al scope principal del Terminal — los
+  // modales (ButtonEditModal, SettingsScreen) usan otros prefijos para
+  // evitar colisiones y filtrarse correctamente cuando ese modal está
+  // activo (`buttonRegistry.activeScope`).
+  const registryKey = button ? `default:cell-${col}-${row}-${button.label || button.command || ''}` : null;
+
+  // Registro/desregistro en buttonRegistry para que el drag-explore del
+  // SafeAreaView del TerminalScreen pueda anunciar este botón al pasar el
+  // dedo encima. Solo registramos si self-voicing está activo Y la celda
+  // tiene botón. measureInWindow da coordenadas absolutas de pantalla.
+  useEffect(() => {
+    if (!selfVoicingActive || !registryKey || !button) return;
+    return () => buttonRegistry.unregister(registryKey);
+  }, [selfVoicingActive, registryKey, button]);
+
+  const handleLayoutForRegistry = useCallback(() => {
+    if (!selfVoicingActive || !registryKey || !button) return;
+    // Usamos `measure` y los valores `pageX/pageY` que devuelve, no
+    // `measureInWindow`. Los `pageX/pageY` están documentados para
+    // coincidir con los del MotionEvent (`evt.nativeEvent.pageX/pageY`)
+    // que recibe el `onTouchMove` del SafeAreaView. `measureInWindow`
+    // puede divergir en Android con la status bar oculta o flag
+    // translúcido — coordenadas window vs page no son idénticas.
+    cellViewRef.current?.measure((_x, _y, w, h, pageX, pageY) => {
+      // Pasamos `onEditButton` como `onLongPress` (a no ser que el botón
+      // sea fixed) para que el SafeAreaView pueda disparar longpress por
+      // hover-hold sobre este botón cuando el usuario llega vía drag y se
+      // queda quieto sobre él 800 ms.
+      const longPressAction = !button.fixed ? () => onEditButton() : undefined;
+      buttonRegistry.register(
+        registryKey,
+        { x: pageX, y: pageY, w, h },
+        button.label || button.command || '',
+        longPressAction,
+        'default',
+      );
+    });
+  }, [selfVoicingActive, registryKey, button, onEditButton]);
+
+  // Suscripción al foco para dibujar borde amarillo cuando esta celda tiene
+  // foco. Solo aplica en self-voicing — en otros modos el estado es siempre
+  // false y no se renderea el borde.
+  const [hasSelfVoicingFocus, setHasSelfVoicingFocus] = useState(false);
+  useEffect(() => {
+    if (!selfVoicingActive || !registryKey) {
+      setHasSelfVoicingFocus(false);
+      return;
+    }
+    const update = (key: string | null) => setHasSelfVoicingFocus(key === registryKey);
+    update(selfVoicingPress.getFocusedKey());
+    return selfVoicingPress.subscribe(update);
+  }, [selfVoicingActive, registryKey]);
 
   const panResponder = useMemo(
     () =>
@@ -83,31 +146,50 @@ function ButtonCell({
           isLongPressTriggeredRef.current = false;
 
           longPressTimerRef.current = setTimeout(() => {
+            // 800 ms cumplidos: ARMAMOS el longpress. NO abrimos el editor
+            // todavía — el editor se abre en `onPanResponderRelease` solo
+            // si el usuario suelta sin haberse movido. Si se mueve antes de
+            // soltar, en `onPanResponderMove` se cancela el flag.
             isLongPressTriggeredRef.current = true;
-            // Don't allow editing fixed buttons
-            if (!button?.fixed) {
-              onEditButton();
+            // Audio cue del cruce del umbral: el usuario sabe que ya puede
+            // soltar para confirmar (o moverse para cancelar).
+            if (selfVoicingActive) {
+              if (registryKey && button) {
+                selfVoicingPress.setFocusFromHover(registryKey, button.label || button.command || '');
+                speechQueue.enqueue(`Suelta para editar ${button.label || button.command || ''}`, 'high');
+              } else {
+                speechQueue.enqueue('Suelta para crear botón nuevo', 'high');
+              }
             }
           }, 800);
         },
         onPanResponderMove: (evt) => {
-          if (isLongPressTriggeredRef.current) return;
-
-          // In blind mode: drag only with 2+ fingers (allow longpress with 1 finger)
-          if (uiMode === 'blind' && evt.nativeEvent.touches?.length < 2) {
-            return;
-          }
-
+          // Si el dedo se mueve más allá del umbral, cancelamos tanto el
+          // timer (no llega a disparar) como el flag (si ya disparó —
+          // queremos que el editor NO se abra al soltar). El usuario está
+          // arrastrando, no manteniendo. Aplicable en ambos modos.
           const dx = evt.nativeEvent.pageX - startPosRef.current.x;
           const dy = evt.nativeEvent.pageY - startPosRef.current.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
+          const distance = Math.hypot(dx, dy);
+          const moveThreshold = selfVoicingActive ? 12 : 8;
 
-          if (distance > 8) {
-            isDraggingRef.current = true;
+          if (distance > moveThreshold) {
             if (longPressTimerRef.current) {
               clearTimeout(longPressTimerRef.current);
               longPressTimerRef.current = null;
             }
+            isLongPressTriggeredRef.current = false;
+
+            if (selfVoicingActive) {
+              isDraggingRef.current = true;
+              return;
+            }
+            // Modo no-self-voicing: blind+TalkBack requiere 2 dedos para
+            // drag (TalkBack consume 1-dedo); completo permite 1 dedo.
+            if (uiMode === 'blind' && evt.nativeEvent.touches?.length < 2) {
+              return;
+            }
+            isDraggingRef.current = true;
           }
         },
         onPanResponderRelease: () => {
@@ -117,35 +199,64 @@ function ButtonCell({
           }
 
           if (isLongPressTriggeredRef.current) {
-            // Long press already triggered edit, do nothing
+            // Longpress confirmado: el timer disparó el flag y el dedo no
+            // se movió antes del release. Abrir el editor AHORA, en el
+            // release. Anuncio + foco visual ya se hicieron en el timer.
+            isLongPressTriggeredRef.current = false;
+            if (!button?.fixed) {
+              onEditButton();
+            }
             return;
           }
 
           if (isDraggingRef.current) {
-            // Drag gesture - execute secondary command
+            // En self-voicing el drag es para explore — no disparar el
+            // secondary command ni la lógica de tap. El foco ya se quedó
+            // en el último botón hovered vía `setFocusFromHover` desde el
+            // SafeAreaView padre. Saltamos sin hacer nada más.
+            if (selfVoicingActive) {
+              return;
+            }
+            // Modo completo / blind+TalkBack: drag = secondary command.
             const secondaryCmd = button?.secondaryCommand || button?.alternativeCommands?.[0];
             if (secondaryCmd) {
               onSecondaryCommand(secondaryCmd);
             }
           } else {
-            // Tap - execute primary command or moveMode swap
-            if (moveMode && onSwapButtons && !button?.locked) {
-              onSwapButtons();
-            } else if (button?.command) {
-              // In blind mode: execute primary command directly (longpress for config)
-              // In completo mode: execute primary command (drag handles secondary)
-              if (button.kind === 'floating') {
-                onShowFloating?.(button.command);
-              } else if (button.addText) {
-                onAddTextButton(button.command);
-              } else {
-                onSendCommand(button.command);
+            // Tap path. En self-voicing: emulamos modelo TalkBack — primer
+            // tap anuncia el label (atropellando con prioridad alta), segundo
+            // tap dentro de 350 ms ejecuta el primary. Sin self-voicing
+            // (modo legacy con TalkBack o modo completo): tap = primary
+            // directo, ya que en completo no hay anuncio y en blind+TalkBack
+            // el propio TalkBack maneja el anuncio + delega doble-tap.
+            const executePrimary = () => {
+              if (moveMode && onSwapButtons && !button?.locked) {
+                onSwapButtons();
+              } else if (button?.command) {
+                if (button.kind === 'floating') {
+                  onShowFloating?.(button.command);
+                } else if (button.addText) {
+                  onAddTextButton(button.command);
+                } else {
+                  onSendCommand(button.command);
+                }
               }
+            };
+
+            // Modelo de foco: tap en botón sin foco da foco + anuncia;
+            // tap en botón con foco ejecuta. El doble-tap rápido cae como
+            // primer tap (foco) + segundo tap (ejecuta) automáticamente.
+            // El foco también se mueve por drag-explore (ver buttonRegistry
+            // y onTouchMove del SafeAreaView de TerminalScreen).
+            if (selfVoicingActive && button && registryKey) {
+              selfVoicingPress.tap(true, registryKey, button.label || button.command || '', executePrimary);
+            } else {
+              executePrimary();
             }
           }
         },
       }),
-    [col, row, button, moveMode, horizontalMode, uiMode, onSendCommand, onAddTextButton, onShowFloating, onEditButton, onSwapButtons, onSecondaryCommand]
+    [col, row, button, moveMode, horizontalMode, uiMode, selfVoicingActive, onSendCommand, onAddTextButton, onShowFloating, onEditButton, onSwapButtons, onSecondaryCommand]
   );
 
   const handleAccessibilityAction = (event: AccessibilityActionEvent) => {
@@ -189,6 +300,8 @@ function ButtonCell({
 
   return (
     <View
+      ref={cellViewRef}
+      onLayout={handleLayoutForRegistry}
       {...panResponder.panHandlers}
       style={[
         styles.cell,
@@ -196,8 +309,12 @@ function ButtonCell({
           width: cellSize,
           height: cellSize,
           backgroundColor: button ? button.color : '#222',
-          borderWidth: isSource ? 3 : 1,
-          borderColor: isSource ? '#ffff00' : '#444',
+          // Prioridad de borde:
+          //   - moveMode source (amarillo grueso) > self-voicing focus (cian
+          //     grueso) > default. Cian para no chocar con el amarillo del
+          //     moveMode (no son estados que se solapen, pero por claridad).
+          borderWidth: isSource || hasSelfVoicingFocus ? 3 : 1,
+          borderColor: isSource ? '#ffff00' : (hasSelfVoicingFocus ? '#00ffff' : '#444'),
         },
       ]}
       accessible={!!button}
@@ -234,6 +351,7 @@ export function ButtonGrid({
   onSwapButtons,
   horizontalMode,
   uiMode,
+  selfVoicingActive,
   minimalista = false,
   minCols = GRID_COLS,
   minRows = GRID_ROWS,
@@ -352,6 +470,7 @@ export function ButtonGrid({
                 isSource={isSource}
                 horizontalMode={horizontalMode}
                 uiMode={uiMode}
+                selfVoicingActive={selfVoicingActive}
                 onSendCommand={onSendCommand}
                 onAddTextButton={onAddTextButton}
                 onShowFloating={onShowFloating}

@@ -1,5 +1,4 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo } from 'react-native';
 import { FloatingMessageLevel } from '../types';
 import { speechQueue } from '../services/speechQueueService';
 
@@ -33,21 +32,6 @@ export const FLOATING_FADE_OUT_MS = 220;
 export function FloatingMessagesProvider({ children }: { children: React.ReactNode }) {
   const [messages, setMessages] = useState<FloatingMessage[]>([]);
   const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>[]>>(new Map());
-  // Cached screen-reader state. announceForAccessibility is a no-op when
-  // TalkBack/VoiceOver is off, but it's still a JNI bridge call. Skipping
-  // it for users without a screen reader is a small correctness/clarity
-  // win (we're only "announcing" when there's actually a listener).
-  const screenReaderEnabledRef = useRef<boolean>(false);
-
-  useEffect(() => {
-    AccessibilityInfo.isScreenReaderEnabled().then((enabled) => {
-      screenReaderEnabledRef.current = enabled;
-    });
-    const sub = AccessibilityInfo.addEventListener('screenReaderChanged', (enabled) => {
-      screenReaderEnabledRef.current = enabled;
-    });
-    return () => sub.remove();
-  }, []);
 
   const push = useCallback(
     (text: string, level: FloatingMessageLevel = 'info', durationMs: number = DEFAULT_DURATION_MS, colors?: FloatingColors) => {
@@ -55,9 +39,14 @@ export function FloatingMessagesProvider({ children }: { children: React.ReactNo
       if (!trimmed) return;
       const id = nextId++;
       setMessages((prev) => [...prev, { id, text: trimmed, level, leaving: false, fg: colors?.fg, bg: colors?.bg }]);
-      if (screenReaderEnabledRef.current) {
-        speechQueue.enqueue(trimmed);
-      }
+      // Delegamos en speechQueue la decisión de hablar o no — gatea
+      // internamente según backend activo (TalkBack o TTS propio). Antes
+      // teníamos un cache local de `screenReaderEnabled` para evitar el
+      // JNI bridge, pero rompía self-voicing: con TalkBack off el cache
+      // era false y los floatings nunca se anunciaban aunque el TTS
+      // estuviera disponible. Coste de una llamada en frío: trim + early
+      // return = trivial.
+      speechQueue.enqueue(trimmed);
 
       // Two-phase removal: flag `leaving` first so FloatingItem can fade out,
       // then drop from the array so the LayoutAnimation slides remaining

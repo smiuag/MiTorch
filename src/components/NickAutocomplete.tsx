@@ -1,13 +1,15 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { selfVoicingPress } from '../utils/selfVoicingPress';
 
 interface Props {
   visible: boolean;
   suggestions: string[];
   onSelect: (nick: string) => void;
+  selfVoicingActive?: boolean;
 }
 
-export function NickAutocomplete({ visible, suggestions, onSelect }: Props) {
+export function NickAutocomplete({ visible, suggestions, onSelect, selfVoicingActive = false }: Props) {
   if (!visible || suggestions.length === 0) return null;
 
   // Rendered inline (non-absolute) so it lives in the flex flow right above
@@ -27,14 +29,14 @@ export function NickAutocomplete({ visible, suggestions, onSelect }: Props) {
         contentContainerStyle={styles.scrollContent}
       >
         {suggestions.map((nick) => (
-          <Chip key={nick} nick={nick} onSelect={onSelect} />
+          <Chip key={nick} nick={nick} onSelect={onSelect} selfVoicingActive={selfVoicingActive} />
         ))}
       </ScrollView>
     </View>
   );
 }
 
-function Chip({ nick, onSelect }: { nick: string; onSelect: (nick: string) => void }) {
+function Chip({ nick, onSelect, selfVoicingActive }: { nick: string; onSelect: (nick: string) => void; selfVoicingActive: boolean }) {
   // Intentionally NOT using TouchableOpacity: on Android it steals focus
   // from the TextInput, which hides the soft keyboard. A plain View with
   // touch responder handlers dispatches the tap without blurring the input.
@@ -42,7 +44,7 @@ function Chip({ nick, onSelect }: { nick: string; onSelect: (nick: string) => vo
     <View
       style={styles.chip}
       onStartShouldSetResponder={() => true}
-      onResponderRelease={() => onSelect(nick)}
+      onResponderRelease={() => selfVoicingPress.tap(selfVoicingActive, `nick-${nick}`, nick, () => onSelect(nick))}
       accessible
       accessibilityLabel={nick}
       accessibilityRole="button"

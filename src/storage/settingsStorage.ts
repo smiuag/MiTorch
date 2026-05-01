@@ -28,6 +28,23 @@ export interface AppSettings {
   ambientEnabled: boolean;
   ambientVolume: number;
   effectsVolume: number;
+  // Self-voicing (modo blind sin TalkBack). Cuando `useSelfVoicing` es true Y
+  // `uiMode === 'blind'`, la app desactiva su árbol de accesibilidad para
+  // TalkBack y usa react-native-tts directamente. Los anuncios siguen
+  // pasando por `speechQueueService`, que cambia su backend según este flag.
+  // El usuario debe desactivar TalkBack a mano (atajo OS) — la app detecta
+  // si sigue activo y muestra banner de aviso. Ver SELFVOICING.md.
+  // ttsEngine: package name del motor (vacío = motor por defecto del OS).
+  // ttsVoice: voice id de TTS.Voice (vacío = primera voz del motor).
+  // ttsRate: 0.1..6.0 (1.0 = normal, 2.0 = doble, etc). Pitch: 0.5..2 (1 = normal).
+  // ttsVolume: 0..1, separado de ambient/effects (las tres categorías
+  //   son ducking-independientes).
+  useSelfVoicing: boolean;
+  ttsEngine: string;
+  ttsVoice: string;
+  ttsRate: number;
+  ttsPitch: number;
+  ttsVolume: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -46,8 +63,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ambientEnabled: true,
   ambientVolume: 0.4,
   effectsVolume: 0.7,
+  useSelfVoicing: false,
+  ttsEngine: '',
+  ttsVoice: '',
+  ttsRate: 1.0,
+  ttsPitch: 1.0,
+  ttsVolume: 1.0,
   gestures: [
-    { type: 'doubletap', enabled: true, command: 'responder ', opensKeyboard: true },
     { type: 'swipe_up', enabled: true, command: 'norte', opensKeyboard: false },
     { type: 'swipe_down', enabled: true, command: 'sur', opensKeyboard: false },
     { type: 'swipe_left', enabled: true, command: 'oeste', opensKeyboard: false },
@@ -66,6 +88,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
     { type: 'twofingers_down_left', enabled: false, command: 'sudoeste', opensKeyboard: false },
     { type: 'pinch_in', enabled: true, command: 'dentro', opensKeyboard: false },
     { type: 'pinch_out', enabled: true, command: 'fuera', opensKeyboard: false },
+    { type: 'doubletap_hold_swipe_up', enabled: false, command: '', opensKeyboard: false },
+    { type: 'doubletap_hold_swipe_down', enabled: false, command: '', opensKeyboard: false },
+    { type: 'doubletap_hold_swipe_left', enabled: false, command: '', opensKeyboard: false },
+    { type: 'doubletap_hold_swipe_right', enabled: false, command: '', opensKeyboard: false },
+    { type: 'doubletap_hold_swipe_up_right', enabled: false, command: '', opensKeyboard: false },
+    { type: 'doubletap_hold_swipe_up_left', enabled: false, command: '', opensKeyboard: false },
+    { type: 'doubletap_hold_swipe_down_right', enabled: false, command: '', opensKeyboard: false },
+    { type: 'doubletap_hold_swipe_down_left', enabled: false, command: '', opensKeyboard: false },
   ],
 };
 
@@ -74,9 +104,20 @@ export async function loadSettings(): Promise<AppSettings> {
   if (!json) return { ...DEFAULT_SETTINGS };
   // Strip the obsolete enabledSounds field (replaced by per-trigger.enabled in
   // the seeded "Sonidos del MUD" pack) so it doesn't linger in saved state.
-  const parsed = JSON.parse(json) as Partial<AppSettings> & { enabledSounds?: unknown };
+  const parsed = JSON.parse(json) as Partial<AppSettings> & { enabledSounds?: unknown; typingVerbosity?: unknown; typingAnnounce?: unknown };
   delete parsed.enabledSounds;
-  return { ...DEFAULT_SETTINGS, ...parsed };
+  delete parsed.typingVerbosity;
+  delete parsed.typingAnnounce;
+  const merged = { ...DEFAULT_SETTINGS, ...parsed };
+  // Purga tipos de gestos obsoletos (p.ej. `doubletap` que se eliminó al
+  // introducir doubletap_hold_swipe). Y pasa por rebuildGestures para
+  // asegurar que toda la lista del default esté presente con los valores
+  // guardados aplicados encima — útil cuando se añaden tipos nuevos en una
+  // versión sin que el usuario tenga que hacer nada.
+  if (Array.isArray(merged.gestures)) {
+    return rebuildGestures(merged);
+  }
+  return merged;
 }
 
 export function rebuildGestures(settings: AppSettings): AppSettings {

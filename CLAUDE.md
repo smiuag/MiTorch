@@ -164,7 +164,7 @@ Idea general: loop de música que cambia con el **tipo de sala** (17 categorías
 
 ## Temas Pendientes
 
-- **Acceso rápido a comandos en blind mode / rework self-voicing** (planteado 2026-05-01, en discusión). Problema: en MUD el usuario blind necesita 8-12 comandos accesibles en <1 s sin pasar por menús; el lector OS (TalkBack) intercepta gestos y atropella anuncios, hay un techo de UX mientras juguemos dentro de su modelo. Brainstorm de opciones dentro del modelo OS (zona doble-tap-hold + drag direccional, Volume keys, botón voz, shake) y alternativa arquitectónica de **self-voicing** (TTS propio + `importantForAccessibility="no-hide-descendants"`, ~12 settings para paridad con TalkBack, ~1.5-2 semanas) documentados en **`SELFVOICING.md`** (no se carga automáticamente). Pendiente validación con usuario blind objetivo + spike técnico de 1-2 h antes de cerrar diseño.
+- **Self-voicing en blind mode** (rework: 2026-05-01). Primera iteración completa (Fases 0-7 de SELFVOICING.md): `react-native-tts` integrado, `speechQueueService` con dos backends (TalkBack / TTS propio), botones blind con doble-tap-para-activar via `selfVoicingPress` util, gestos del PanResponder habilitados en blind+selfVoicing reusando `GestureConfig` existente, `importantForAccessibility="no-hide-descendants"` en root para esconder de TalkBack, banner de aviso si TalkBack sigue activo, ducking automático del TTS sobre música ambiente. Setting `useSelfVoicing` (default OFF). **Pendiente Fase 8**: test en móvil real con usuario blind objetivo — latencia de gestos, claridad TTS, recuperación de errores, validación del modelo doble-tap. Doctrina y simplificaciones tomadas en **`SELFVOICING.md`**.
 
 ## Desarrollos por ahora no necesarios
 

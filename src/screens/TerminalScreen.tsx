@@ -15,6 +15,7 @@ import {
   Keyboard,
   BackHandler,
   Pressable,
+  AccessibilityInfo,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -47,6 +48,8 @@ import { playerStatsService } from '../services/playerStatsService';
 import { promptParser } from '../services/promptParser';
 import { userVariablesService } from '../services/userVariablesService';
 import { speechQueue } from '../services/speechQueueService';
+import { selfVoicingPress, buttonRegistry } from '../utils/selfVoicingPress';
+import { announceTyping } from '../utils/typingAnnounce';
 import { ambientPlayer } from '../services/ambientPlayer';
 import { categorizeRoom } from '../services/roomCategorizer';
 import { expandVars } from '../utils/expandVars';
@@ -117,7 +120,25 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [selectionTargetId, setSelectionTargetId] = useState<number | null>(null);
   const [fontSize, setFontSize] = useState(14);
   const [uiMode, setUiMode] = useState<'completo' | 'blind'>('completo');
+  // Self-voicing en blind: TTS propio + esconder árbol de TalkBack +
+  // habilitar gestos del PanResponder en el área del terminal. Solo tiene
+  // efecto cuando `uiMode === 'blind'`. Usuario debe desactivar TalkBack a
+  // mano (atajo OS); la app no puede hacerlo. Ver SELFVOICING.md.
+  const [useSelfVoicing, setUseSelfVoicing] = useState(false);
+  // Estado runtime: TalkBack/lector de pantalla activo en el OS. Se usa
+  // SOLO para mostrar un banner de aviso cuando el usuario está en
+  // self-voicing pero olvidó desactivar TalkBack — en ese estado los
+  // gestos no llegan a la app y la voz se solapa. Se actualiza vía
+  // AccessibilityInfo events en useEffect más abajo.
+  const [screenReaderOn, setScreenReaderOn] = useState(false);
   const [encoding, setEncoding] = useState('utf8');
+  // Active cuando estamos en blind y el usuario activó self-voicing. En este
+  // estado: hide del árbol de TalkBack, doble-tap para activar, gestos
+  // libres del PanResponder, long-press del terminal abre editor de gestos.
+  const selfVoicingActive = uiMode === 'blind' && useSelfVoicing;
+  // Los gestos del área del terminal disparan en modo completo SIEMPRE; en
+  // blind solo si self-voicing está on (sin TalkBack interceptando).
+  const gesturesAvailable = uiMode === 'completo' || selfVoicingActive;
   const [buttonLayout, setButtonLayout] = useState<ButtonLayout | null>(null);
   const [editButtonVisible, setEditButtonVisible] = useState(false);
   const [editButtonCol, setEditButtonCol] = useState(0);
@@ -212,6 +233,28 @@ export function TerminalScreen({ route, navigation }: Props) {
   const twoFingersStartRef = useRef({ x: 0, y: 0 });
   const twoFingersActiveRef = useRef(false);
   const twoFingersMovedRef = useRef(false);
+  // Sticky: se enciende cuando vemos ≥2 dedos en algún momento del gesto y
+  // se mantiene encendido hasta que el PanResponder se libera. Sirve para
+  // que el manejador de release del PanResponder NO dispare un swipe de
+  // 1-dedo cuando en realidad fue un gesto multi-touch (de lo contrario
+  // se solapan y se mandan DOS comandos: el twofingers_X correcto y el
+  // swipe_X que sigue al dedo primario). `twoFingersActiveRef` no sirve
+  // porque se resetea en cada onTouchEnd individual.
+  const multiTouchGestureRef = useRef(false);
+  // Sticky: se enciende cuando llega el 2º tap dentro de 300 ms del 1º. Si
+  // ese 2º tap se mueve > 15 px antes de soltar, el PanResponder release
+  // dispara `doubletap_hold_swipe_X`. Si se suelta sin moverse, no dispara
+  // nada (eliminamos el doubletap-simple del sistema). Reset en release.
+  const doubleTapHoldRef = useRef(false);
+  // Hover-hold: longpress disparado por drag-explore. El usuario arrastra
+  // hasta un botón y se queda quieto sobre él 800 ms — al cumplir el
+  // umbral, ARMAMOS un callback en `pendingHoverLongPressRef` y damos un
+  // aviso de audio. El editor se abre solo cuando el usuario LEVANTA el
+  // dedo (en `onTouchEnd`), no mientras todavía mantiene. Si antes de
+  // soltar el foco cambia o el dedo sale a zona vacía, se cancela el
+  // pending — no se abre nada.
+  const hoverHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingHoverLongPressRef = useRef<(() => void) | null>(null);
   const scrollStartRef = useRef({ y: 0, offset: 0 });
   const scrollVelocityRef = useRef(0);
   const scrollMomentumRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -311,6 +354,9 @@ export function TerminalScreen({ route, navigation }: Props) {
     if (settings.uiMode) {
       setUiMode(settings.uiMode);
     }
+    if (settings.useSelfVoicing !== undefined) {
+      setUseSelfVoicing(settings.useSelfVoicing);
+    }
     if (settings.encoding) {
       setEncoding(settings.encoding);
     }
@@ -353,6 +399,47 @@ export function TerminalScreen({ route, navigation }: Props) {
       return () => clearInterval(historyResetInterval);
     }, [syncSettingsToLocal])
   );
+
+  // Tracking de TalkBack/lector de pantalla. Si el usuario activó
+  // self-voicing pero TalkBack sigue on, queremos avisarle (banner) porque
+  // el doble-tap se duplica con el de TalkBack y los gestos no llegan al
+  // PanResponder. La app no puede desactivar TalkBack — el atajo es del OS.
+  useEffect(() => {
+    AccessibilityInfo.isScreenReaderEnabled().then(setScreenReaderOn);
+    const sub = AccessibilityInfo.addEventListener('screenReaderChanged', setScreenReaderOn);
+    return () => sub.remove();
+  }, []);
+
+  // Registro del input de comandos en `buttonRegistry` para que el drag-
+  // explore lo anuncie ("Input de comandos") al pasar el dedo por encima.
+  // El input está en dos layouts (vertical + horizontal), pero solo uno
+  // se renderiza a la vez — usan el mismo `textInputRef`. La key es la
+  // misma en ambos; al re-medir en cada onLayout, el rect refleja el
+  // layout actual.
+  const registerInputRect = () => {
+    if (!selfVoicingActive) return;
+    textInputRef.current?.measure?.((_x, _y, w, h, pageX, pageY) => {
+      buttonRegistry.register(
+        'default:cmd-input',
+        { x: pageX, y: pageY, w, h },
+        'Input de comandos',
+        undefined,
+        'default',
+      );
+    });
+  };
+  const handleInputFocus = () => {
+    setInputFocused(true);
+    if (selfVoicingActive) {
+      speechQueue.enqueue(
+        `Input de comandos${inputText ? ': ' + inputText : ''}`,
+        'high',
+      );
+    }
+  };
+  useEffect(() => {
+    return () => buttonRegistry.unregister('default:cmd-input');
+  }, []);
 
   // Re-sync when the Settings modal closes. The modal lives inside this
   // screen so useFocusEffect doesn't refire on close — without this hook,
@@ -1271,6 +1358,13 @@ export function TerminalScreen({ route, navigation }: Props) {
   }, [pushFloating]);
 
   const sendCommand = useCallback((command: string, skipHistory?: boolean) => {
+    // Cualquier comando del usuario hacia el MUD (o intercept interno tipo
+    // locate/parar/panel switch) descarta los anuncios pendientes y corta
+    // el TTS en curso. Lo viejo deja de importar — la nueva respuesta del
+    // MUD entra en cola limpia. En backend talkback solo vacía la cola
+    // interna (no hay API para cortar TalkBack en curso).
+    speechQueue.clear();
+
     // Expand ${var} (system + user vars) before any intercept logic so
     // intercepts can match against the resolved string. No-op when the
     // command has no ${ placeholders. expandVars never resolves $1/$old/$new.
@@ -1650,7 +1744,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   };
 
   const triggerGesture = (type: GestureType) => {
-    if (!gesturesEnabledRef.current || uiMode !== 'completo') return;
+    if (!gesturesEnabledRef.current || !gesturesAvailable) return;
     const gesture = gesturesRef.current.find(g => g.type === type && g.enabled);
     if (!gesture || !gesture.command) return;
 
@@ -1663,16 +1757,22 @@ export function TerminalScreen({ route, navigation }: Props) {
   };
 
   const handleDoubleTap = (touchCount: number) => {
-    if (!gesturesEnabledRef.current || uiMode !== 'completo' || touchCount !== 1) {
+    if (!gesturesEnabledRef.current || !gesturesAvailable || touchCount !== 1) {
       lastTapRef.current = 0;
+      doubleTapHoldRef.current = false;
       return;
     }
     const now = Date.now();
     if (now - lastTapRef.current < 300) {
-      triggerGesture('doubletap');
+      // 2º tap dentro de la ventana → armamos el flag de doubletap-hold.
+      // No disparamos nada todavía: el PanResponder release decidirá si
+      // hubo arrastre (→ doubletap_hold_swipe_X) o no (→ nada, ya no hay
+      // doubletap-simple).
+      doubleTapHoldRef.current = true;
       lastTapRef.current = 0;
     } else {
       lastTapRef.current = now;
+      doubleTapHoldRef.current = false;
     }
   };
 
@@ -1706,14 +1806,14 @@ export function TerminalScreen({ route, navigation }: Props) {
       };
     },
     onMoveShouldSetPanResponder: (_, gs) => {
-      if (uiMode !== 'completo') return false;
+      if (!gesturesAvailable) return false;
       const isHorizontal = Math.abs(gs.dx) > Math.abs(gs.dy) && Math.abs(gs.dx) > 30;
       const isFastVertical = Math.abs(gs.dy) > Math.abs(gs.dx) && Math.abs(gs.vy) > 0.8 && Math.abs(gs.dy) > 50;
       const isSlowVertical = Math.abs(gs.dy) > Math.abs(gs.dx) && Math.abs(gs.dy) > 10;
       return isHorizontal || isFastVertical || isSlowVertical;
     },
     onPanResponderMove: (_, gs) => {
-      if (uiMode !== 'completo') return;
+      if (!gesturesAvailable) return;
       const isSlowVertical = Math.abs(gs.dy) > Math.abs(gs.dx) && Math.abs(gs.dy) > 10;
       if (isSlowVertical && Math.abs(gs.vy) < 0.5) {
         // FlatList is inverted: dragging finger down (gs.dy > 0) reveals older
@@ -1726,13 +1826,39 @@ export function TerminalScreen({ route, navigation }: Props) {
       }
     },
     onPanResponderRelease: (evt, gs) => {
+      // Si el gesto pasó por 2 dedos en algún momento, el handler de
+      // twofingers/pinch ya disparó (o decidió no disparar). Saltar la
+      // detección de swipe-1-dedo para no mandar DOS comandos.
+      if (multiTouchGestureRef.current) {
+        multiTouchGestureRef.current = false;
+        doubleTapHoldRef.current = false;
+        return;
+      }
+
+      const absX = Math.abs(gs.dx), absY = Math.abs(gs.dy);
+
+      // Doubletap-hold-swipe: si veníamos de un 2º tap rápido y el dedo se
+      // movió > 15 px, disparamos el gesto direccional con prefijo
+      // `doubletap_hold_swipe_`. Si se soltó sin moverse, no se dispara
+      // nada (eliminamos el doubletap-simple). En cualquier caso, NO se
+      // dispara también el swipe-1-dedo normal — ese es para tap-y-drag
+      // sin el primer tap previo.
+      if (doubleTapHoldRef.current) {
+        doubleTapHoldRef.current = false;
+        if (absX > 15 || absY > 15) {
+          const dir = detectSwipeDirection(gs.dx, gs.dy);
+          const gestureType = dir.replace('swipe_', 'doubletap_hold_swipe_') as GestureType;
+          triggerGesture(gestureType);
+        }
+        return;
+      }
+
       const { x0, y0 } = gs;
       const screenWidth = Dimensions.get('window').width;
       if (x0 > screenWidth - 200 && y0 < 200) {
         return;
       }
 
-      const absX = Math.abs(gs.dx), absY = Math.abs(gs.dy);
       const isSlowVertical = absY > absX && absY > 10 && Math.abs(gs.vy) < 0.5;
 
       if (gesturesEnabledRef.current && !isSlowVertical && (absX > 15 || absY > 15)) {
@@ -1740,7 +1866,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         triggerGesture(swipeDirection as GestureType);
       }
     },
-  }), [uiMode, applyScrollMomentum]);
+  }), [uiMode, useSelfVoicing, gesturesAvailable, applyScrollMomentum]);
 
   const isHorizontal = width > height;
   const availableHeight = height - insets.top - insets.bottom;
@@ -1789,7 +1915,89 @@ export function TerminalScreen({ route, navigation }: Props) {
   const horizontalTerminalWidth = width - horizontalRightPanelWidth - insets.left - insets.right;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    // En self-voicing: ocultamos todo el árbol a TalkBack para que no
+    // anuncie ni intercepte gestos. Si el usuario tuvo TalkBack on por
+    // error, queda como zona muerta — que es exactamente lo que queremos
+    // (el banner detector + el TTS propio toman el control). Sin self-
+    // voicing, la prop está en su default ('auto') y los accessibilityLabel
+    // se respetan normalmente.
+    <SafeAreaView
+      style={styles.safeArea}
+      importantForAccessibility={selfVoicingActive ? 'no-hide-descendants' : 'auto'}
+      // Drag-explore: en self-voicing detectamos qué botón hay bajo el dedo
+      // y movemos el foco al cruzar. `pageX/Y` son coordenadas absolutas de
+      // pantalla — los rects en `buttonRegistry` están en el mismo sistema
+      // (registrados con `measureInWindow`). onTouchMove fluye aunque
+      // children grabraran el responder, así que no chocamos con
+      // PanResponders existentes. Además gestiona el hover-hold timer:
+      // 800 ms quieto sobre un botón después de drag = longpress.
+      onTouchMove={selfVoicingActive ? (evt) => {
+        // Si hay un modal abierto que NO migró todavía a scopes, el
+        // `buttonRegistry.activeScope` sigue siendo 'default' y los
+        // botones del Terminal se anunciarían bajo el modal (no son
+        // visibles). Lo bloqueamos. Modales que SÍ migraron (ButtonEdit,
+        // Settings) cambian `activeScope` y este check pasa — el drag-
+        // explore navega correctamente sus controles.
+        const anyUnmigratedModal = (blindChannelModalVisible || searchVisible) && buttonRegistry.getActiveScope() === 'default';
+        if (anyUnmigratedModal) {
+          if (hoverHoldTimerRef.current) {
+            clearTimeout(hoverHoldTimerRef.current);
+            hoverHoldTimerRef.current = null;
+          }
+          pendingHoverLongPressRef.current = null;
+          return;
+        }
+        const t = evt.nativeEvent.touches?.[0];
+        if (!t) return;
+        const hit = buttonRegistry.findAtPoint(t.pageX, t.pageY);
+        if (hit) {
+          const focusChanged = selfVoicingPress.getFocusedKey() !== hit.key;
+          selfVoicingPress.setFocusFromHover(hit.key, hit.label);
+          if (focusChanged) {
+            // Cambio de botón: cancelar el timer y el pending del botón
+            // anterior, arrancar uno nuevo para el actual (si tiene
+            // onLongPress).
+            if (hoverHoldTimerRef.current) clearTimeout(hoverHoldTimerRef.current);
+            pendingHoverLongPressRef.current = null;
+            const cb = hit.onLongPress;
+            const hitLabel = hit.label;
+            if (cb) {
+              hoverHoldTimerRef.current = setTimeout(() => {
+                // 800 ms en el mismo botón: ARMAMOS pending. Editor se
+                // abre en touchEnd. Audio cue: el usuario sabe que ya
+                // puede soltar.
+                pendingHoverLongPressRef.current = cb;
+                speechQueue.enqueue(`Suelta para editar ${hitLabel}`, 'high');
+                hoverHoldTimerRef.current = null;
+              }, 800);
+            } else {
+              hoverHoldTimerRef.current = null;
+            }
+          }
+        } else {
+          // Dedo sobre zona vacía: cancelar timer + pending. El usuario
+          // se salió de los botones — no debería abrirse nada al soltar.
+          if (hoverHoldTimerRef.current) {
+            clearTimeout(hoverHoldTimerRef.current);
+            hoverHoldTimerRef.current = null;
+          }
+          pendingHoverLongPressRef.current = null;
+        }
+      } : undefined}
+      onTouchEnd={selfVoicingActive ? () => {
+        if (hoverHoldTimerRef.current) {
+          clearTimeout(hoverHoldTimerRef.current);
+          hoverHoldTimerRef.current = null;
+        }
+        // Si el pending estaba armado (= 800 ms cumplidos sobre el botón
+        // con foco), abrir el editor AHORA al soltar.
+        if (pendingHoverLongPressRef.current) {
+          const cb = pendingHoverLongPressRef.current;
+          pendingHoverLongPressRef.current = null;
+          cb();
+        }
+      } : undefined}
+    >
       {!isHorizontal ? (
       // VERTICAL LAYOUT
       <View style={styles.container}>
@@ -1810,8 +2018,11 @@ export function TerminalScreen({ route, navigation }: Props) {
               handleDoubleTap(1);
             } else {
               lastTapRef.current = 0;
+              // Sticky: bloquea el swipe de 1-dedo del PanResponder al
+              // soltar. Se resetea en onPanResponderRelease.
+              multiTouchGestureRef.current = true;
             }
-            if (!gesturesEnabledRef.current || uiMode !== 'completo') return;
+            if (!gesturesEnabledRef.current || !gesturesAvailable) return;
             if (touchCount === 2) {
               const [t1, t2] = evt.nativeEvent.touches;
               const dx = t2.pageX - t1.pageX;
@@ -1872,14 +2083,28 @@ export function TerminalScreen({ route, navigation }: Props) {
                 <Pressable
                   key={item.id}
                   onLongPress={uiMode === 'completo' ? () => handleLineLongPress(item.id) : undefined}
-                  onPress={selectionMode ? () => handleLineTap(item.id) : undefined}
+                  onPress={
+                    selectionMode
+                      ? () => handleLineTap(item.id)
+                      : selfVoicingActive
+                        ? () => {
+                            // Tap a línea = re-leer en voz alta. Prioridad
+                            // alta para atropellar cualquier anuncio en
+                            // curso. Los swipes siguen llegando al
+                            // PanResponder antes que el onPress (movement
+                            // gana sobre tap), así que no se solapan.
+                            const text = item.spans.map(s => s.text).join('').trim();
+                            if (text) speechQueue.enqueue(text, 'high');
+                          }
+                        : undefined
+                  }
                   style={[styles.lineContainer, isSelected && styles.lineSelected]}
                 >
                   <AnsiText spans={item.spans} fontSize={fontSize} lineId={item.id} />
                 </Pressable>
               );
             }}
-            scrollEnabled={uiMode === 'blind'}
+            scrollEnabled={uiMode === 'blind' && !selfVoicingActive}
             scrollEventThrottle={16}
             onScroll={handleFlatListScroll}
             onScrollEndDrag={handleFlatListScroll}
@@ -1892,7 +2117,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           {showScrollToBottom && (
             <TouchableOpacity
               style={styles.scrollToBottomButton}
-              onPress={handleScrollToBottom}
+              onPress={() => selfVoicingPress.tap(selfVoicingActive, 'scroll-bottom', 'Ir al final', handleScrollToBottom)}
               accessible={true}
               accessibilityLabel="Ir al final"
               accessibilityRole="button"
@@ -1912,10 +2137,10 @@ export function TerminalScreen({ route, navigation }: Props) {
             >
               <TouchableOpacity
                 style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
-                onPress={() => {
+                onPress={() => selfVoicingPress.tap(selfVoicingActive, 'login-retry', 'Reintentar login', () => {
                   setLoginFailed(false);
                   autoLoginRef.current = 'pending';
-                }}
+                })}
                 accessible={true}
                 accessibilityLabel="Reintentar login"
                 accessibilityHint="Intenta enviar nuevamente las credenciales"
@@ -1975,7 +2200,20 @@ export function TerminalScreen({ route, navigation }: Props) {
           visible={uiMode === 'blind' && inputFocused}
           suggestions={nickSuggestions}
           onSelect={handleSelectNickSuggestion}
+          selfVoicingActive={selfVoicingActive}
         />
+
+        {/* Banner: self-voicing on PERO TalkBack sigue activo. UX rota — la
+            app está doblada (TalkBack + nuestro TTS) y los gestos no llegan
+            al PanResponder. El usuario debe usar el atajo OS (típicamente
+            Volumen Arriba + Volumen Abajo 3 segundos) para desactivarlo. */}
+        {selfVoicingActive && screenReaderOn && (
+          <View style={styles.selfVoicingWarning}>
+            <Text style={styles.selfVoicingWarningText}>
+              ⚠ TalkBack sigue activo. Desactívalo con el atajo de accesibilidad del sistema (Vol+ y Vol- 3 s) para que self-voicing funcione bien.
+            </Text>
+          </View>
+        )}
 
         {/* Input Row */}
         <View style={[styles.inputSection, { height: inputHeight }, uiMode === 'completo' && { marginTop: 2 }]}>
@@ -1984,7 +2222,7 @@ export function TerminalScreen({ route, navigation }: Props) {
               {uiMode === 'blind' && globalSoundsEnabled && (
                 <TouchableOpacity
                   style={[styles.sendButton, { flex: 0.4, backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
-                  onPress={toggleSilentMode}
+                  onPress={() => selfVoicingPress.tap(selfVoicingActive, 'silent', `Modo Silencio ${silentModeEnabled ? 'activado' : 'desactivado'}`, toggleSilentMode)}
                   accessible={true}
                   accessibilityLabel={`Modo Silencio ${silentModeEnabled ? 'activado' : 'desactivado'}`}
                   accessibilityRole="button"
@@ -1997,7 +2235,7 @@ export function TerminalScreen({ route, navigation }: Props) {
               {uiMode === 'blind' && globalAmbientEnabled && (
                 <TouchableOpacity
                   style={[styles.sendButton, { flex: 0.4, backgroundColor: ambientEnabled ? '#3a5a3a' : '#666666' }]}
-                  onPress={toggleAmbient}
+                  onPress={() => selfVoicingPress.tap(selfVoicingActive, 'ambient', `Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`, toggleAmbient)}
                   accessible={true}
                   accessibilityLabel={`Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`}
                   accessibilityRole="button"
@@ -2010,7 +2248,7 @@ export function TerminalScreen({ route, navigation }: Props) {
               {uiMode === 'blind' && (
                 <TouchableOpacity
                   style={[styles.sendButton, { flex: 0.4, backgroundColor: '#336699' }]}
-                  onPress={() => setBlindChannelModalVisible(true)}
+                  onPress={() => selfVoicingPress.tap(selfVoicingActive, 'channels', 'Abrir canales', () => setBlindChannelModalVisible(true))}
                   accessible={true}
                   accessibilityLabel="Abrir canales"
                   accessibilityRole="button"
@@ -2050,11 +2288,13 @@ export function TerminalScreen({ route, navigation }: Props) {
                 value={inputText}
                 selection={inputSelection}
                 onChangeText={(text) => {
+                  if (selfVoicingActive) announceTyping(inputText, text);
                   setInputText(text);
                   setHistoryIndex(-1);
                 }}
                 onSelectionChange={(e) => setInputSelection(e.nativeEvent.selection)}
-                onFocus={() => setInputFocused(true)}
+                onLayout={registerInputRect}
+                onFocus={handleInputFocus}
                 onBlur={() => setInputFocused(false)}
                 onSubmitEditing={handleSendInput}
                 blurOnSubmit={false}
@@ -2072,7 +2312,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                   styles.sendButton,
                   uiMode === 'blind' && { flex: 0.4 }
                 ]}
-                onPress={handleSendInput}
+                onPress={() => selfVoicingPress.tap(selfVoicingActive, 'send', 'Enviar comando', handleSendInput)}
                 accessible={true}
                 accessibilityLabel="Enviar comando"
                 accessibilityRole="button"
@@ -2128,7 +2368,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                   { backgroundColor: '#663366' },
                   uiMode === 'blind' && styles.blindTextButton,
                 ]}
-                onPress={() => setSettingsModalVisible(true)}
+                onPress={() => selfVoicingPress.tap(selfVoicingActive, 'settings', 'Configuración', () => setSettingsModalVisible(true))}
                 accessible={true}
                 accessibilityLabel="Configuración"
                 accessibilityRole="button"
@@ -2142,7 +2382,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           ) : (
             <TouchableOpacity
               style={[styles.input, styles.reconnectButton, connecting && { opacity: 0.5 }]}
-              onPress={handleReconnect}
+              onPress={() => selfVoicingPress.tap(selfVoicingActive, 'reconnect', connecting ? 'Conectando' : 'Reconectar', handleReconnect)}
               disabled={connecting}
               accessible={true}
               accessibilityLabel={connecting ? 'Conectando' : 'Reconectar'}
@@ -2169,6 +2409,7 @@ export function TerminalScreen({ route, navigation }: Props) {
               sourceRow={sourceRow}
               onSwapButtons={handleSwapButtons}
               uiMode={uiMode}
+              selfVoicingActive={selfVoicingActive}
               minimalista={isMinimalista}
               minCols={gridCols}
               minRows={gridRows}
@@ -2197,8 +2438,11 @@ export function TerminalScreen({ route, navigation }: Props) {
                 handleDoubleTap(1);
               } else {
                 lastTapRef.current = 0;
+                // Sticky para bloquear el swipe-1-dedo al release; ver
+                // comentario en `multiTouchGestureRef`.
+                multiTouchGestureRef.current = true;
               }
-              if (!gesturesEnabledRef.current || uiMode !== 'completo') return;
+              if (!gesturesEnabledRef.current || !gesturesAvailable) return;
               if (touchCount === 2) {
                 const [t1, t2] = evt.nativeEvent.touches;
                 const dx = t2.pageX - t1.pageX;
@@ -2251,11 +2495,18 @@ export function TerminalScreen({ route, navigation }: Props) {
               inverted
               keyExtractor={item => String(item.id)}
               renderItem={({ item }) => (
-                <View style={styles.lineContainer} key={item.id}>
+                <Pressable
+                  key={item.id}
+                  style={styles.lineContainer}
+                  onPress={selfVoicingActive ? () => {
+                    const text = item.spans.map(s => s.text).join('').trim();
+                    if (text) speechQueue.enqueue(text, 'high');
+                  } : undefined}
+                >
                   <AnsiText spans={item.spans} fontSize={fontSize} lineId={item.id} />
-                </View>
+                </Pressable>
               )}
-              scrollEnabled={uiMode === 'blind'}
+              scrollEnabled={uiMode === 'blind' && !selfVoicingActive}
               scrollEventThrottle={16}
               onScroll={handleFlatListScroll}
               onScrollEndDrag={handleFlatListScroll}
@@ -2305,7 +2556,16 @@ export function TerminalScreen({ route, navigation }: Props) {
             visible={uiMode === 'blind' && inputFocused}
             suggestions={nickSuggestions}
             onSelect={handleSelectNickSuggestion}
+            selfVoicingActive={selfVoicingActive}
           />
+
+          {selfVoicingActive && screenReaderOn && (
+            <View style={styles.selfVoicingWarning}>
+              <Text style={styles.selfVoicingWarningText}>
+                ⚠ TalkBack sigue activo. Desactívalo con el atajo de accesibilidad del sistema (Vol+ y Vol- 3 s).
+              </Text>
+            </View>
+          )}
 
           {/* Input Row - Horizontal */}
           <View style={[styles.inputSection, { height: inputHeight }]}>
@@ -2314,7 +2574,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 {uiMode === 'blind' && globalSoundsEnabled && (
                   <TouchableOpacity
                     style={[styles.sendButton, { flex: 0.4, backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
-                    onPress={toggleSilentMode}
+                    onPress={() => selfVoicingPress.tap(selfVoicingActive, 'silent', `Modo Silencio ${silentModeEnabled ? 'activado' : 'desactivado'}`, toggleSilentMode)}
                     accessible={true}
                     accessibilityLabel={`Modo Silencio ${silentModeEnabled ? 'activado' : 'desactivado'}`}
                     accessibilityRole="button"
@@ -2327,7 +2587,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 {uiMode === 'blind' && globalAmbientEnabled && (
                   <TouchableOpacity
                     style={[styles.sendButton, { flex: 0.4, backgroundColor: ambientEnabled ? '#3a5a3a' : '#666666' }]}
-                    onPress={toggleAmbient}
+                    onPress={() => selfVoicingPress.tap(selfVoicingActive, 'ambient', `Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`, toggleAmbient)}
                     accessible={true}
                     accessibilityLabel={`Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`}
                     accessibilityRole="button"
@@ -2340,7 +2600,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 {uiMode === 'blind' && (
                   <TouchableOpacity
                     style={[styles.sendButton, { flex: 0.4, backgroundColor: '#336699' }]}
-                    onPress={() => setBlindChannelModalVisible(true)}
+                    onPress={() => selfVoicingPress.tap(selfVoicingActive, 'channels', 'Abrir canales', () => setBlindChannelModalVisible(true))}
                     accessible={true}
                     accessibilityLabel="Abrir canales"
                     accessibilityRole="button"
@@ -2380,11 +2640,13 @@ export function TerminalScreen({ route, navigation }: Props) {
                   value={inputText}
                   selection={inputSelection}
                   onChangeText={(text) => {
+                    if (selfVoicingActive) announceTyping(inputText, text);
                     setInputText(text);
                     setHistoryIndex(-1);
                   }}
                   onSelectionChange={(e) => setInputSelection(e.nativeEvent.selection)}
-                  onFocus={() => setInputFocused(true)}
+                  onLayout={registerInputRect}
+                  onFocus={handleInputFocus}
                   onBlur={() => setInputFocused(false)}
                   onSubmitEditing={handleSendInput}
                   blurOnSubmit={false}
@@ -2460,7 +2722,7 @@ export function TerminalScreen({ route, navigation }: Props) {
             ) : (
               <TouchableOpacity
                 style={[styles.input, styles.reconnectButton, connecting && { opacity: 0.5 }]}
-                onPress={handleReconnect}
+                onPress={() => selfVoicingPress.tap(selfVoicingActive, 'reconnect', connecting ? 'Conectando' : 'Reconectar', handleReconnect)}
                 disabled={connecting}
                 accessible={true}
                 accessibilityLabel={connecting ? 'Conectando' : 'Reconectar'}
@@ -2504,6 +2766,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 onSwapButtons={handleSwapButtons}
                 horizontalMode={{cols: horizontalGridCols, cellSize: horizontalCellSize}}
                 uiMode={uiMode}
+                selfVoicingActive={selfVoicingActive}
                 minimalista={isMinimalista}
                 minCols={gridCols}
                 minRows={horizontalGridRows}
@@ -2534,6 +2797,7 @@ export function TerminalScreen({ route, navigation }: Props) {
             onMove={handleMoveButton}
             onClose={() => setEditButtonVisible(false)}
             uiMode={uiMode}
+            selfVoicingActive={selfVoicingActive}
           />
         );
       })()}
@@ -2562,6 +2826,7 @@ export function TerminalScreen({ route, navigation }: Props) {
             saveChannelOrder(server.id, order);
           }}
           fontSize={fontSize}
+          selfVoicingActive={selfVoicingActive}
         />
       )}
 
@@ -2715,6 +2980,21 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#0a0a0a',
+  },
+  selfVoicingWarning: {
+    backgroundColor: '#5a3a00',
+    borderTopWidth: 1,
+    borderTopColor: '#ff8800',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ff8800',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  selfVoicingWarningText: {
+    color: '#ffcc66',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    textAlign: 'center',
   },
   container: {
     flex: 1,

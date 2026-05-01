@@ -199,12 +199,19 @@ export interface FloatingLayout {
 }
 
 export type GestureType =
-  | 'doubletap'
   | 'swipe_up' | 'swipe_down' | 'swipe_left' | 'swipe_right'
   | 'swipe_up_right' | 'swipe_up_left' | 'swipe_down_right' | 'swipe_down_left'
   | 'twofingers_up' | 'twofingers_down' | 'twofingers_left' | 'twofingers_right'
   | 'twofingers_up_right' | 'twofingers_up_left' | 'twofingers_down_right' | 'twofingers_down_left'
-  | 'pinch_in' | 'pinch_out';
+  | 'pinch_in' | 'pinch_out'
+  // Doble-tap-hold-swipe: tap-tap-mantener-y-arrastrar. El segundo tap se
+  // mantiene > 200 ms y el dedo se mueve > 15 px en la dirección. Permite
+  // 8 acciones extra sin chocar con el doble-tap rápido (que aquí se
+  // elimina completamente — solo existe la variante con hold).
+  | 'doubletap_hold_swipe_up' | 'doubletap_hold_swipe_down'
+  | 'doubletap_hold_swipe_left' | 'doubletap_hold_swipe_right'
+  | 'doubletap_hold_swipe_up_right' | 'doubletap_hold_swipe_up_left'
+  | 'doubletap_hold_swipe_down_right' | 'doubletap_hold_swipe_down_left';
 
 export interface GestureConfig {
   type: GestureType;
