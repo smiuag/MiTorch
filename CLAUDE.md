@@ -164,14 +164,7 @@ Idea general: loop de música que cambia con el **tipo de sala** (17 categorías
 
 ## Temas Pendientes
 
-- **Acceso rápido a comandos en blind mode** (planteado 2026-05-01, en discusión). Problema: en MUD el usuario blind necesita 8-12 comandos accesibles en <1 s sin pasar por menús ni doble-tap-explorar. Botones pequeños con `accessibilityActions` son demasiado lentos. Opciones contempladas hasta ahora:
-  - **Zona doble-tap-hold + drag direccional** (candidato técnico). Una `View` grande tipo "Zona de gestos rápidos" enfocada por TalkBack como un único elemento. El usuario hace doble-tap manteniendo el segundo dedo (gesto estándar de Android para drag/slider) — TalkBack cede el touch a la app durante todo el gesto. Detectamos `dx/dy` del PanResponder al soltar y disparamos el comando configurado para esa dirección (8 sectores: 4 cardinales + 4 diagonales). Ergonomía: rápido, sin precisión, 8-10 comandos por gesto. Limpio dentro del SDK accesible, sin permisos ni ajustes OS. Coste estimado: ~3-4 h para prototipo + settings de 8 slots.
-  - **Volume Up/Down a nivel `KeyEvent`** (TalkBack no los consume): 2 atajos extra "duros".
-  - **Botón "voz"** (`@react-native-voice/voice`): para comandos no comunes tipo "dar llave a Pepe". 1-3 s por comando.
-  - **Shake** (acelerómetro): 1-2 atajos extremos tipo "huir".
-  - Descartadas: `accessibilityRole="adjustable"` (solo up/down), servicio de accesibilidad propio (permisos elevados, frágil, Android-only), instruir al usuario a desactivar explore-by-touch (afecta todo el OS).
-  
-  Pendiente de seguir lluvia de ideas antes de cerrar diseño y dimensionar.
+- **Acceso rápido a comandos en blind mode / rework self-voicing** (planteado 2026-05-01, en discusión). Problema: en MUD el usuario blind necesita 8-12 comandos accesibles en <1 s sin pasar por menús; el lector OS (TalkBack) intercepta gestos y atropella anuncios, hay un techo de UX mientras juguemos dentro de su modelo. Brainstorm de opciones dentro del modelo OS (zona doble-tap-hold + drag direccional, Volume keys, botón voz, shake) y alternativa arquitectónica de **self-voicing** (TTS propio + `importantForAccessibility="no-hide-descendants"`, ~12 settings para paridad con TalkBack, ~1.5-2 semanas) documentados en **`SELFVOICING.md`** (no se carga automáticamente). Pendiente validación con usuario blind objetivo + spike técnico de 1-2 h antes de cerrar diseño.
 
 ## Desarrollos por ahora no necesarios
 
