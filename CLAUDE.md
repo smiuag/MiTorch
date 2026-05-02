@@ -162,6 +162,32 @@ Doctrina del reproductor de fondo en **`AMBIENT.md`** (no se carga automáticame
 
 Idea general: loop de música que cambia con el **tipo de sala** (17 categorías, clasificadas por keywords sobre el nombre). Sin wavs bundleados — el usuario los aporta. Crossfade 1.5s entre categorías.
 
+## Sistema de Mapas (biblioteca por servidor)
+
+**Modelo (post-2026-05-02):** los mapas son recursos independientes que viven en una "biblioteca" de la app. Cada `ServerProfile` puede tener un `mapId?` que apunta a una entrada de la biblioteca. Esto desacopla mapa↔personaje: un mismo mapa puede compartirse entre varios characters del mismo MUD, y el cliente sirve a múltiples MUDs distintos.
+
+**Almacenamiento:**
+- Contenido: `${Paths.document}/maps/{mapId}.json` (formato optimizado interno).
+- Índice: AsyncStorage `aljhtar_map_library` con `[{id, name, roomCount, importedAt, builtin?}]`.
+- Mapa de Reinos sigue **bundleado** en `src/assets/map-reinos.json` y aparece como entrada virtual `id='reinos-bundled'` en la biblioteca (no editable, no borrable). Se carga vía `require()`, NO se copia al filesystem.
+
+**Importación (Mudlet → optimizado):** entrada acepta el JSON que produce Mudlet con `lua saveJsonMap(...)`. Pipeline en `src/services/mudletMapParser.ts`:
+- Aplana áreas (Mudlet anida `areas[].rooms[]`; nuestro formato es flat `{rooms: {id: room}}`).
+- Por sala: `name` "X: Y [n,se]" → `n` ("X: Y") + `fn` (full); `coordinates` → `x/y/z`; `environment` → resolver vía `customEnvColors` → `c` hex; `userData` se descarta.
+- Direcciones traducidas según preset elegido al importar:
+  - **`spanish` (default)**: north/south/east/west → n/s/e/w; up/down → ar/ab; in/out → de/fu. Salidas especiales (Mudlet guarda el comando verbatim que tecleó el jugador) se mantienen tal cual.
+  - **`english`**: up/down → u/d; in/out → in/out. El resto igual.
+- `nameIndex` se regenera desde los nombres optimizados.
+
+**Reglas no derivables:**
+- Sin export. Decisión deliberada (2026-05-02): el caso de uso es importar lo que ya tienes en Mudlet, no compartir entre instalaciones de TorchZhyla.
+- Si un server no tiene `mapId`, MapService queda inactivo (no se carga nada — no hay default global). El bundleado de Reinos solo se monta si el server lo referencia explícitamente.
+- Migración one-shot al actualizar: servidores cuyo host contenga `reinosdeleyenda.es` y no tengan `mapId` → se les pone `mapId='reinos-bundled'`. Flag `aljhtar_map_migration_v1` en AsyncStorage para no repetir.
+- Parsear el JSON de Mudlet (~28 MB para Reinos) tarda varios segundos en RN. UI muestra spinner durante import.
+- La biblioteca vive en sandbox privado: si el usuario desinstala la app pierde los mapas importados (el bundleado de Reinos se reconstruye al reinstalar). Aceptado.
+
+**Archivos:** `src/services/mudletMapParser.ts` (parser puro), `src/storage/mapLibraryStorage.ts` (CRUD biblioteca), `src/screens/MapLibraryScreen.tsx` ("Mis mapas"), `src/services/mapService.ts` (acepta mapa cargado en lugar de hacer `require` directo).
+
 ## Temas Pendientes
 
 - **Self-voicing en blind mode** (rework: 2026-05-01). Primera iteración completa (Fases 0-7 de SELFVOICING.md): `react-native-tts` integrado, `speechQueueService` con dos backends (TalkBack / TTS propio), botones blind con doble-tap-para-activar via `selfVoicingPress` util, gestos del PanResponder habilitados en blind+selfVoicing reusando `GestureConfig` existente, `importantForAccessibility="no-hide-descendants"` en root para esconder de TalkBack, banner de aviso si TalkBack sigue activo, ducking automático del TTS sobre música ambiente. Setting `useSelfVoicing` (default OFF). **Pendiente Fase 8**: test en móvil real con usuario blind objetivo — latencia de gestos, claridad TTS, recuperación de errores, validación del modelo doble-tap. Doctrina y simplificaciones tomadas en **`SELFVOICING.md`**.

@@ -26,9 +26,8 @@ import TorchZhylaForeground, { addWalkStepListener, addWalkDoneListener } from '
 import { fireNotification, stripAnsi } from '../services/notificationService';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList, MudLine, GestureConfig, GestureType } from '../types';
+import { RootStackParamList, MudLine, GestureConfig, GestureType, GestureAction } from '../types';
 import { TelnetService, TelnetEventHandler } from '../services/telnetService';
-import { SettingsScreen } from './SettingsScreen';
 import { parseAnsi } from '../utils/ansiParser';
 import { AnsiText } from '../components/AnsiText';
 import { MiniMap, MiniMapHandle } from '../components/MiniMap';
@@ -39,6 +38,7 @@ import { PanelManagementModal } from '../components/PanelManagementModal';
 import { RoomSearchResults } from '../components/RoomSearchResults';
 import { loadSettings } from '../storage/settingsStorage';
 import { MapService, MapRoom } from '../services/mapService';
+import { loadMapContent } from '../storage/mapLibraryStorage';
 import { ButtonLayout, LayoutButton, createDefaultLayout, createBlindModeLayout, createCustomLayout, createPanelButtons, loadLayout, saveLayout, loadServerLayout, saveServerLayout } from '../storage/layoutStorage';
 import { loadServers, saveServers } from '../storage/serverStorage';
 import { getTriggersForServer, loadPacks } from '../storage/triggerStorage';
@@ -64,6 +64,9 @@ import { BlindChannelModal, ChannelMessage, nextMsgId } from '../components/Blin
 import { loadChannelAliases, saveChannelAliases, loadChannelOrder, saveChannelOrder } from '../storage/channelStorage';
 import { loadNicks, recordNickSeen, filterNicks } from '../storage/nickStorage';
 import { NickAutocomplete } from '../components/NickAutocomplete';
+import { GesturePickerModal } from '../components/GesturePickerModal';
+import { resolvePickOptions, pickActionTitle, parseTellSender, pushRecentTell } from '../utils/gesturePickSources';
+import { loadRecentTells, saveRecentTells } from '../storage/recentTellsStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Terminal'>;
 
@@ -103,6 +106,15 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [server, setServer] = useState(initialServer);
   const [lines, setLines] = useState<MudLine[]>([]);
   const [inputText, setInputText] = useState('');
+  // Estado del GesturePickerModal. Se abre desde `triggerGesture` cuando un
+  // gesto tiene action.kind==='pick'. `onPick` se construye al abrir
+  // capturando prefix/suffix/autoSend del gesto en cierre.
+  const [gesturePickerState, setGesturePickerState] = useState<{
+    visible: boolean;
+    title: string;
+    options: string[];
+    onPick: (option: string) => void;
+  }>({ visible: false, title: '', options: [], onPick: () => {} });
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [keepAwakeEnabled, setKeepAwakeEnabled] = useState(true);
@@ -172,7 +184,6 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [blindChannelModalVisible, setBlindChannelModalVisible] = useState(false);
   const [currentBlindPanel, setCurrentBlindPanel] = useState(1);
   const [currentCompletoPanel, setCurrentCompletoPanel] = useState(1);
-  const [settingsModalVisible, setSettingsModalVisible] = useState(false);
   const [inputSelection, setInputSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [inputFocused, setInputFocused] = useState(false);
@@ -222,6 +233,10 @@ export function TerminalScreen({ route, navigation }: Props) {
   const silentModeEnabledRef = useRef(false);
   const gesturesEnabledRef = useRef(false);
   const gesturesRef = useRef<GestureConfig[]>([]);
+  // Ring buffer de remitentes recientes de telepatía. Lo escribimos en
+  // `processingAndAddLine` cuando una línea matchea el patrón de tell, y lo
+  // leemos cuando un gesto `pick` con source==='recentTells' se dispara.
+  const recentTellsRef = useRef<string[]>([]);
   const notificationsEnabledRef = useRef(false);
   const appStateRef = useRef(AppState.currentState);
   const exitPendingRef = useRef(false);
@@ -236,6 +251,12 @@ export function TerminalScreen({ route, navigation }: Props) {
   const twoFingersStartRef = useRef({ x: 0, y: 0 });
   const twoFingersActiveRef = useRef(false);
   const twoFingersMovedRef = useRef(false);
+  // Detección del doble-tap con 2 dedos. `tapStart` se setea al apoyar 2
+  // dedos y se invalida (=0) si llega a haber pinch o swipe. Al levantar el
+  // último dedo, si el tap fue corto y sin movimiento se mira contra
+  // `lastTap` para decidir doubletap (otro tap dentro de 300ms y < 80px).
+  const twoFingersTapStartRef = useRef(0);
+  const lastTwoFingersTapRef = useRef<{ time: number; x: number; y: number } | null>(null);
   // Sticky: se enciende cuando vemos ≥2 dedos en algún momento del gesto y
   // se mantiene encendido hasta que el PanResponder se libera. Sirve para
   // que el manejador de release del PanResponder NO dispare un swipe de
@@ -444,17 +465,10 @@ export function TerminalScreen({ route, navigation }: Props) {
     return () => buttonRegistry.unregister('default:cmd-input');
   }, []);
 
-  // Re-sync when the Settings modal closes. The modal lives inside this
-  // screen so useFocusEffect doesn't refire on close — without this hook,
-  // toggles changed inside the modal stay stale in Terminal's state/refs
-  // until the user navigates away and back.
-  const prevSettingsModalRef = useRef(settingsModalVisible);
-  useEffect(() => {
-    if (prevSettingsModalRef.current && !settingsModalVisible) {
-      syncSettingsToLocal();
-    }
-    prevSettingsModalRef.current = settingsModalVisible;
-  }, [settingsModalVisible, syncSettingsToLocal]);
+  // Settings vive ahora como ruta navegable (no modal). El sync se hace
+  // automáticamente cuando Terminal recupera el foco vía `useFocusEffect`
+  // arriba — al volver de Settings (o de cualquier sub-pantalla) los
+  // toggles cambiados se reflejan inmediatamente.
 
   const confirmExit = useCallback(() => {
     if (exitToastTimeoutRef.current) {
@@ -485,7 +499,6 @@ export function TerminalScreen({ route, navigation }: Props) {
           return true;
         }
         if (
-          settingsModalVisible ||
           editButtonVisible ||
           blindChannelModalVisible ||
           searchVisible
@@ -517,7 +530,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         }
         exitPendingRef.current = false;
       };
-    }, [uiMode, confirmExit, settingsModalVisible, editButtonVisible, blindChannelModalVisible, searchVisible])
+    }, [uiMode, confirmExit, editButtonVisible, blindChannelModalVisible, searchVisible])
   );
 
 
@@ -586,8 +599,10 @@ export function TerminalScreen({ route, navigation }: Props) {
       const order = await loadChannelOrder(server.id);
       setChannelOrder(order);
 
-      // Load map for locate command
-      await mapServiceRef.current.load();
+      // Load map asignado a este servidor (si lo tiene). Sin mapId el
+      // MapService queda inactivo: ni minimap ni búsqueda de salas.
+      const mapData = server.mapId ? await loadMapContent(server.mapId) : null;
+      await mapServiceRef.current.load(mapData);
     })();
   }, [server, uiMode]);
 
@@ -882,7 +897,8 @@ export function TerminalScreen({ route, navigation }: Props) {
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
     (async () => {
-      await mapServiceRef.current.load();
+      // El map.load() lo hace el otro useEffect (depende de server.mapId).
+      // Aquí solo iniciamos el ambient y nos suscribimos a cambios de sala.
       // Inicializa el ambient antes de suscribirse — `init` carga settings
       // y mappings persistidos. Si el toggle está OFF, el subscribe sigue
       // notificando cambios de sala pero `setCategory` se descarta dentro.
@@ -976,6 +992,18 @@ export function TerminalScreen({ route, navigation }: Props) {
     playSoundRef.current = playSound;
   }, [playSound]);
 
+  // Carga el ring buffer de tells recientes desde AsyncStorage al cambiar de
+  // servidor. Es per-server: cada personaje tiene su lista. Se persiste cada
+  // vez que llega un tell (ver processingAndAddLine).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const list = await loadRecentTells(server.id);
+      if (!cancelled) recentTellsRef.current = list;
+    })();
+    return () => { cancelled = true; };
+  }, [server.id]);
+
   // Load triggers for the active server. Reloads when the server changes or
   // when the settings modal closes (user may have edited triggers from there).
   // Also wires userVariablesService: switches server (loads declared vars
@@ -1007,7 +1035,7 @@ export function TerminalScreen({ route, navigation }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [server.id, server.username, settingsModalVisible]);
+  }, [server.id, server.username]);
 
   useEffect(() => {
     const handler: TelnetEventHandler = {
@@ -1045,6 +1073,16 @@ export function TerminalScreen({ route, navigation }: Props) {
               const dmMatch = clean.match(/([A-Za-zÀ-ÿ'][A-Za-zÀ-ÿ'0-9]+)\s+te\s+(?:dice|pregunta|exclama|susurra|grita|responde)\b/i);
               if (dmMatch) {
                 recordNickSeen(dmMatch[1]);
+              }
+              // Captura específica para tells (telepatía): alimenta el ring
+              // buffer que usan los gestos `pick` con source==='recentTells'.
+              // Se persiste tras cada tell para sobrevivir al cierre de la
+              // app — el writeback es fire-and-forget; si falla, la versión
+              // en memoria sigue funcionando hasta el siguiente save.
+              const tellSender = parseTellSender(clean);
+              if (tellSender) {
+                recentTellsRef.current = pushRecentTell(recentTellsRef.current, tellSender);
+                saveRecentTells(server.id, recentTellsRef.current);
               }
 
               // Check if we're locating and found the room
@@ -1758,16 +1796,114 @@ export function TerminalScreen({ route, navigation }: Props) {
     return 'swipe_up_right';
   };
 
+  // Cierre del flujo del 2-finger doubletap. Llamar al levantar el último
+  // dedo (touches.length === 0). Decide tap simple vs doubletap mirando el
+  // ref `lastTwoFingersTapRef`. Devuelve true si disparó el gesto (para que
+  // el caller pueda silenciar otros efectos colaterales si quisiera).
+  const TWOFINGER_TAP_MAX_DURATION = 250;       // ms
+  const TWOFINGER_DOUBLETAP_WINDOW = 300;       // ms entre taps
+  const TWOFINGER_DOUBLETAP_RADIUS = 80;        // px entre centroides
+  const handleTwoFingersTouchEnd = (): void => {
+    const tapStart = twoFingersTapStartRef.current;
+    twoFingersTapStartRef.current = 0;
+    if (!tapStart) return;
+    if (twoFingersMovedRef.current) return;
+    const duration = Date.now() - tapStart;
+    if (duration > TWOFINGER_TAP_MAX_DURATION) return;
+    const cx = twoFingersStartRef.current.x;
+    const cy = twoFingersStartRef.current.y;
+    const last = lastTwoFingersTapRef.current;
+    const now = Date.now();
+    if (last && now - last.time < TWOFINGER_DOUBLETAP_WINDOW
+        && Math.hypot(cx - last.x, cy - last.y) < TWOFINGER_DOUBLETAP_RADIUS) {
+      // Doubletap: dispara y limpia para no encadenar un tercer tap como
+      // doubletap implícito.
+      lastTwoFingersTapRef.current = null;
+      triggerGesture('twofingers_doubletap');
+    } else {
+      lastTwoFingersTapRef.current = { time: now, x: cx, y: cy };
+    }
+  };
+
+  const applyGestureText = (text: string, autoSend: boolean) => {
+    if (!text) return;
+    if (autoSend) {
+      telnetRef.current?.send(text);
+      return;
+    }
+    // Cuando se prepara (sin enviar) añadimos siempre un espacio final para
+    // que el usuario pueda continuar tecleando lo siguiente sin tener que
+    // teclear el separador. Normalizamos por si el caller dejó trailing
+    // spaces — queremos exactamente UNO al final. Cursor tras ese espacio.
+    const padded = `${text.replace(/\s+$/, '')} `;
+    setInputText(padded);
+    setTimeout(() => {
+      textInputRef.current?.focus();
+      textInputRef.current?.setNativeProps({
+        selection: { start: padded.length, end: padded.length },
+      });
+    }, 100);
+  };
+
+  const openGesturePicker = async (action: Extract<GestureAction, { kind: 'pick' }>) => {
+    // OJO: leemos de mapServiceRef directamente, NO del state `currentRoom`.
+    // El PanResponder que dispara triggerGesture se memoiza con deps que no
+    // incluyen currentRoom — su closure captura el valor inicial (null) y
+    // nunca se refresca al cambiar de sala. mapServiceRef.current.getCurrentRoom()
+    // es siempre live.
+    const liveRoom = mapServiceRef.current?.getCurrentRoom() ?? null;
+    const options = await resolvePickOptions(action.source, {
+      currentRoom: liveRoom,
+      recentTells: recentTellsRef.current,
+      customList: action.customList,
+    });
+    if (options.length === 0) {
+      // Sin opciones: feedback en ambos modos. Voz para blind (que es el
+      // target principal de pick) y floating para modo completo. Damos
+      // floating también en blind porque a veces el TTS está silenciado o
+      // el usuario está mirando — no cuesta nada y no molesta.
+      const msg = 'Sin opciones disponibles para este gesto';
+      if (uiMode === 'blind') speechQueue.enqueue(msg, 'high');
+      pushFloating('Sin opciones', 'warning', 2000);
+      return;
+    }
+    setGesturePickerState({
+      visible: true,
+      title: pickActionTitle(action),
+      options,
+      onPick: (option: string) => {
+        // prefix + " " + option. Trim del trailing del prefix para evitar
+        // doble espacio si el usuario lo metió con espacio. Si autoSend
+        // está OFF, applyGestureText añade además el espacio final.
+        const prefix = action.prefix.replace(/\s+$/, '');
+        const finalText = prefix ? `${prefix} ${option}` : option;
+        setGesturePickerState((s) => ({ ...s, visible: false }));
+        applyGestureText(finalText, action.autoSend);
+      },
+    });
+  };
+
+  const closeGesturePicker = () => {
+    setGesturePickerState((s) => ({ ...s, visible: false }));
+  };
+
   const triggerGesture = (type: GestureType) => {
     if (!gesturesEnabledRef.current || !gesturesAvailable) return;
     const gesture = gesturesRef.current.find(g => g.type === type && g.enabled);
-    if (!gesture || !gesture.command) return;
-
-    if (gesture.opensKeyboard) {
-      setInputText(gesture.command);
-      setTimeout(() => textInputRef.current?.focus(), 100);
-    } else {
-      telnetRef.current?.send(gesture.command);
+    if (!gesture) return;
+    const action = gesture.action;
+    if (action.kind === 'send') {
+      if (!action.text) return;
+      applyGestureText(action.text, true);
+      return;
+    }
+    if (action.kind === 'prepare') {
+      if (!action.text) return;
+      applyGestureText(action.text, false);
+      return;
+    }
+    if (action.kind === 'pick') {
+      openGesturePicker(action);
     }
   };
 
@@ -2134,6 +2270,7 @@ export function TerminalScreen({ route, navigation }: Props) {
               pinchActiveRef.current = true;
               twoFingersActiveRef.current = true;
               twoFingersMovedRef.current = false;
+              twoFingersTapStartRef.current = Date.now();
             }
           }}
           onTouchMove={(evt) => {
@@ -2154,14 +2291,23 @@ export function TerminalScreen({ route, navigation }: Props) {
               triggerGesture(gestureType);
               pinchActiveRef.current = false;
               twoFingersMovedRef.current = true;
+              twoFingersTapStartRef.current = 0;
             } else if (pinchDelta > 40 && !twoFingersMovedRef.current) {
               const pinchType = newDist > pinchStartDistanceRef.current ? 'pinch_out' : 'pinch_in';
               triggerGesture(pinchType);
               pinchActiveRef.current = false;
               twoFingersMovedRef.current = true;
+              twoFingersTapStartRef.current = 0;
             }
           }}
-          onTouchEnd={() => {
+          onTouchEnd={(evt) => {
+            // `onTouchEnd` se dispara por cada dedo que se levanta. Solo
+            // contamos el tap cuando ya no hay dedos en pantalla — si vamos
+            // de 2→1, el segundo dedo aún sigue presionado y la lógica de
+            // doubletap se evalúa en la última liberación.
+            if (evt.nativeEvent.touches.length === 0) {
+              handleTwoFingersTouchEnd();
+            }
             pinchActiveRef.current = false;
             twoFingersActiveRef.current = false;
             twoFingersMovedRef.current = false;
@@ -2466,7 +2612,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                   { backgroundColor: '#663366' },
                   uiMode === 'blind' && styles.blindTextButton,
                 ]}
-                onPress={() => selfVoicingPress.tap(selfVoicingActive, 'settings', 'Configuración', () => setSettingsModalVisible(true))}
+                onPress={() => selfVoicingPress.tap(selfVoicingActive, 'settings', 'Configuración', () => navigation.navigate('Settings', { sourceLocation: 'terminal' }))}
                 accessible={true}
                 accessibilityLabel="Configuración"
                 accessibilityRole="button"
@@ -2556,6 +2702,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 pinchActiveRef.current = true;
                 twoFingersActiveRef.current = true;
                 twoFingersMovedRef.current = false;
+                twoFingersTapStartRef.current = Date.now();
               }
             }}
             onTouchMove={(evt) => {
@@ -2576,14 +2723,19 @@ export function TerminalScreen({ route, navigation }: Props) {
                 triggerGesture(gestureType);
                 pinchActiveRef.current = false;
                 twoFingersMovedRef.current = true;
+                twoFingersTapStartRef.current = 0;
               } else if (pinchDelta > 40 && !twoFingersMovedRef.current) {
                 const pinchType = newDist > pinchStartDistanceRef.current ? 'pinch_out' : 'pinch_in';
                 triggerGesture(pinchType);
                 pinchActiveRef.current = false;
                 twoFingersMovedRef.current = true;
+                twoFingersTapStartRef.current = 0;
               }
             }}
-            onTouchEnd={() => {
+            onTouchEnd={(evt) => {
+              if (evt.nativeEvent.touches.length === 0) {
+                handleTwoFingersTouchEnd();
+              }
               pinchActiveRef.current = false;
               twoFingersActiveRef.current = false;
               twoFingersMovedRef.current = false;
@@ -2808,7 +2960,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                     { backgroundColor: '#663366' },
                     uiMode === 'blind' && styles.blindTextButton,
                   ]}
-                  onPress={() => setSettingsModalVisible(true)}
+                  onPress={() => navigation.navigate('Settings', { sourceLocation: 'terminal' })}
                   accessible={true}
                   accessibilityLabel="Configuración"
                   accessibilityRole="button"
@@ -2915,6 +3067,16 @@ export function TerminalScreen({ route, navigation }: Props) {
       />
 
 
+      {/* Gesture pick modal */}
+      <GesturePickerModal
+        visible={gesturePickerState.visible}
+        title={gesturePickerState.title}
+        options={gesturePickerState.options}
+        selfVoicingActive={selfVoicingActive}
+        onPick={gesturePickerState.onPick}
+        onCancel={closeGesturePicker}
+      />
+
       {/* Channel Modal */}
       {(uiMode === 'blind' || uiMode === 'completo') && (
         <BlindChannelModal
@@ -2941,48 +3103,6 @@ export function TerminalScreen({ route, navigation }: Props) {
           selfVoicingActive={selfVoicingActive}
         />
       )}
-
-      {/* Settings Modal */}
-      <Modal
-        visible={settingsModalVisible}
-        animationType="slide"
-        onRequestClose={() => setSettingsModalVisible(false)}
-      >
-        <View
-          style={{
-            width: width,
-            height: height,
-            backgroundColor: '#000',
-            paddingTop: insets.top,
-            paddingBottom: insets.bottom,
-            paddingLeft: insets.left,
-            paddingRight: insets.right,
-          }}
-        >
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#111', borderBottomWidth: 1, borderBottomColor: '#333' }}>
-            <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#00cc00', fontFamily: 'monospace' }}>
-              Configuración
-            </Text>
-            <TouchableOpacity
-              onPress={() => setSettingsModalVisible(false)}
-              accessible={true}
-              accessibilityLabel="Cerrar configuración"
-              accessibilityRole="button"
-            >
-              <Text style={{ fontSize: 24, color: '#00cc00' }}>✕</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={{ flex: 1, minHeight: 0 }}>
-            <SettingsScreen
-              navigation={navigation as unknown as NativeStackScreenProps<RootStackParamList, 'Settings'>['navigation']}
-              sourceLocation="terminal"
-              onFontSizeChange={setFontSize}
-              onSoundToggle={(enabled) => setGlobalSoundsEnabled(enabled)}
-              onGesturesEnabledChange={(enabled) => gesturesEnabledRef.current = enabled}
-            />
-          </View>
-        </View>
-      </Modal>
 
       {/* Room Search Results */}
       <RoomSearchResults

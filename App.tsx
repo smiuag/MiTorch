@@ -9,10 +9,15 @@ import { RootStackParamList } from './src/types';
 import { ServerListScreen } from './src/screens/ServerListScreen';
 import { TerminalScreen } from './src/screens/TerminalScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { SettingsGeneralScreen } from './src/screens/settings/SettingsGeneralScreen';
+import { SettingsAdvancedScreen } from './src/screens/settings/SettingsAdvancedScreen';
+import { SettingsSystemScreen } from './src/screens/settings/SettingsSystemScreen';
+import { SettingsGesturesScreen } from './src/screens/settings/SettingsGesturesScreen';
 import { TriggersScreen } from './src/screens/TriggersScreen';
 import { TriggerEditorScreen } from './src/screens/TriggerEditorScreen';
 import { MySoundsScreen } from './src/screens/MySoundsScreen';
 import { MyAmbientsScreen } from './src/screens/MyAmbientsScreen';
+import { MapLibraryScreen } from './src/screens/MapLibraryScreen';
 import { ConfigBackupScreen } from './src/screens/ConfigBackupScreen';
 import { UserVariablesScreen } from './src/screens/UserVariablesScreen';
 import { SoundProvider } from './src/contexts/SoundContext';
@@ -70,10 +75,27 @@ function App() {
           <Stack.Screen
             name="Settings"
             component={SettingsScreen}
-            options={{
-              headerShown: false,
-              title: 'Settings',
-            }}
+            options={{ headerShown: false, title: 'Settings' }}
+          />
+          <Stack.Screen
+            name="SettingsGeneral"
+            component={SettingsGeneralScreen}
+            options={{ headerShown: false, title: 'General' }}
+          />
+          <Stack.Screen
+            name="SettingsAdvanced"
+            component={SettingsAdvancedScreen}
+            options={{ headerShown: false, title: 'Avanzado' }}
+          />
+          <Stack.Screen
+            name="SettingsSystem"
+            component={SettingsSystemScreen}
+            options={{ headerShown: false, title: 'Sistema' }}
+          />
+          <Stack.Screen
+            name="SettingsGestures"
+            component={SettingsGesturesScreen}
+            options={{ headerShown: false, title: 'Configurar gestos' }}
           />
           <Stack.Screen
             name="Triggers"
@@ -99,6 +121,11 @@ function App() {
             name="MyAmbients"
             component={MyAmbientsScreen}
             options={{ headerShown: false, title: 'Mis ambientes' }}
+          />
+          <Stack.Screen
+            name="MyMaps"
+            component={MapLibraryScreen}
+            options={{ headerShown: false, title: 'Mis mapas' }}
           />
           <Stack.Screen
             name="ConfigBackup"

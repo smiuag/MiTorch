@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import { Paths, File, Directory } from 'expo-file-system';
-import { AmbientMappings, RoomCategory, ServerProfile, Trigger, TriggerAction, TriggerPack } from '../types';
+import { AmbientMappings, GestureConfig, RoomCategory, ServerProfile, Trigger, TriggerAction, TriggerPack } from '../types';
 import {
   loadCustomSounds,
   addCustomSoundFromBytes,
@@ -241,9 +241,13 @@ function rewriteActionSoundRef(
 const BACKUP_FORMAT = 'torchzhyla-config-backup';
 const BACKUP_FORMAT_LEGACY = 'torchzhyla-trigger-backup';
 const ACCEPTED_BACKUP_FORMATS = new Set([BACKUP_FORMAT, BACKUP_FORMAT_LEGACY]);
+// v4: gestos extraídos a campo top-level `gestures` (antes viajaban dentro
+// del blob de settings, sin granularidad). En exports v4 el blob `settings`
+// ya NO contiene `gestures`/`gesturesEnabled` — siempre se serializan en
+// `gestures` aparte si el usuario marca el check.
 // v3: añadidos servers, layouts, channelAliases, channelOrder, settings
 // (todos opcionales). v2 añadió ambientMappings. v1 solo packs+sounds.
-const BACKUP_VERSION = 3;
+const BACKUP_VERSION = 4;
 
 interface ExportedBackupPack {
   name: string;
@@ -267,7 +271,11 @@ interface ExportedBackupJson {
   layouts?: Record<string, ButtonLayout>;
   channelAliases?: Record<string, Record<string, string>>;
   channelOrder?: Record<string, string[]>;
-  settings?: AppSettings;
+  // Settings sin `gestures`/`gesturesEnabled` desde v4 — esos viajan en
+  // `gestures` aparte para permitir granularidad import/export.
+  settings?: Omit<AppSettings, 'gestures' | 'gesturesEnabled'>;
+  // v4: bloque dedicado para los gestos del terminal.
+  gestures?: { gesturesEnabled: boolean; gestures: GestureConfig[] };
 }
 
 // ---- Export ---------------------------------------------------------------
@@ -282,6 +290,9 @@ export interface ExportConfigOptions {
   // aliases per-server + channel order per-server. Todo o nada.
   includeServers: boolean;
   includeSettings: boolean;
+  // Gestos del terminal — desde v4 viajan aparte de settings para que el
+  // usuario pueda traerse/llevarse solo los gestos sin tocar el resto.
+  includeGestures: boolean;
 }
 
 // Recolecta refs únicas a custom sounds de packs Y de mappings de ambient.
@@ -343,9 +354,19 @@ export async function exportConfigToZip(options: ExportConfigOptions): Promise<s
     }
   }
 
-  let settings: AppSettings | null = null;
-  if (options.includeSettings) {
-    settings = await loadSettings();
+  // Cargamos settings una sola vez si se necesitan para alguno de los dos
+  // bloques (settings o gestures), y luego serializamos cada uno por separado.
+  let settingsBlob: Omit<AppSettings, 'gestures' | 'gesturesEnabled'> | null = null;
+  let gesturesBlob: { gesturesEnabled: boolean; gestures: GestureConfig[] } | null = null;
+  if (options.includeSettings || options.includeGestures) {
+    const all = await loadSettings();
+    if (options.includeSettings) {
+      const { gestures: _g, gesturesEnabled: _ge, ...rest } = all;
+      settingsBlob = rest;
+    }
+    if (options.includeGestures) {
+      gesturesBlob = { gesturesEnabled: all.gesturesEnabled, gestures: all.gestures };
+    }
   }
 
   // Bundle de wavs: solo los referenciados por las secciones incluidas.
@@ -402,8 +423,11 @@ export async function exportConfigToZip(options: ExportConfigOptions): Promise<s
     if (Object.keys(channelAliases!).length > 0) exported.channelAliases = channelAliases!;
     if (Object.keys(channelOrder!).length > 0) exported.channelOrder = channelOrder!;
   }
-  if (settings) {
-    exported.settings = settings;
+  if (settingsBlob) {
+    exported.settings = settingsBlob;
+  }
+  if (gesturesBlob) {
+    exported.gestures = gesturesBlob;
   }
   zip.file('backup.json', JSON.stringify(exported, null, 2));
 
@@ -430,6 +454,8 @@ export interface ImportManifest {
   hasServers: boolean;
   serverCount: number;
   hasSettings: boolean;
+  hasGestures: boolean;
+  enabledGestureCount: number;
   totalSoundCount: number;
   _data: {
     zip: JSZip;
@@ -443,6 +469,7 @@ export interface ImportSelections {
   importAmbient: boolean;
   importServers: boolean;
   importSettings: boolean;
+  importGestures: boolean;
 }
 
 export interface ImportApplyResult {
@@ -452,6 +479,7 @@ export interface ImportApplyResult {
   ambientCategoriesApplied: number;
   importedServerCount: number;
   importedSettingsApplied: boolean;
+  importedGesturesApplied: boolean;
   newlyDeclaredVarNames: string[];
 }
 
@@ -527,6 +555,18 @@ export async function readImportManifest(zipUri: string): Promise<ImportManifest
     }
   }
 
+  const hasGestures = !!parsed.gestures && Array.isArray(parsed.gestures.gestures);
+  // "Activo" = habilitado y con algo realmente disparable. Para send/prepare,
+  // que su `text` no esté vacío; para pick, que el prefix tenga contenido.
+  const enabledGestureCount = hasGestures
+    ? parsed.gestures!.gestures.filter((g) => {
+        if (!g.enabled) return false;
+        const a = g.action;
+        if (a.kind === 'pick') return a.prefix.trim().length > 0;
+        return a.text.trim().length > 0;
+      }).length
+    : 0;
+
   return {
     version: parsed.version,
     packs: (parsed.packs ?? []).map((p) => ({
@@ -538,6 +578,8 @@ export async function readImportManifest(zipUri: string): Promise<ImportManifest
     hasServers: !!parsed.servers && parsed.servers.length > 0,
     serverCount: parsed.servers?.length ?? 0,
     hasSettings: !!parsed.settings,
+    hasGestures,
+    enabledGestureCount,
     totalSoundCount: parsed.soundsManifest?.length ?? 0,
     _data: { zip, parsed },
   };
@@ -709,14 +751,40 @@ export async function applyImport(
     }
   }
 
-  // Settings: replace blob completo. Si el usuario marcó este checkbox
-  // está pidiendo "tráeme la config del otro móvil"; merge parcial sería
-  // confuso (qué se hace con campos nuevos? con defaults?). El blob
-  // sustituye al actual.
+  // Settings y gestos: bloques independientes desde v4. El usuario puede
+  // marcar uno, otro o ambos. Calculamos el blob final una sola vez para
+  // evitar dos saves consecutivos (que dispararían dos rebuilds en quien
+  // observe la key).
+  //
+  // - Solo Settings: el blob del ZIP sustituye al actual; los gestos
+  //   actuales se conservan tal cual (campo no presente en parsed.settings).
+  // - Solo Gestos: settings actuales intactos; gestos sustituidos por los
+  //   del ZIP.
+  // - Ambos: settings + gestos del ZIP.
   let importedSettingsApplied = false;
-  if (selections.importSettings && parsed.settings) {
-    await saveSettings(parsed.settings);
-    importedSettingsApplied = true;
+  let importedGesturesApplied = false;
+  const wantSettings = selections.importSettings && !!parsed.settings;
+  const wantGestures = selections.importGestures && !!parsed.gestures;
+  if (wantSettings || wantGestures) {
+    const current = await loadSettings();
+    let next: AppSettings = current;
+    if (wantSettings) {
+      next = {
+        ...parsed.settings!,
+        gestures: current.gestures,
+        gesturesEnabled: current.gesturesEnabled,
+      };
+      importedSettingsApplied = true;
+    }
+    if (wantGestures) {
+      next = {
+        ...next,
+        gestures: parsed.gestures!.gestures,
+        gesturesEnabled: parsed.gestures!.gesturesEnabled,
+      };
+      importedGesturesApplied = true;
+    }
+    await saveSettings(next);
   }
 
   return {
@@ -726,6 +794,7 @@ export async function applyImport(
     ambientCategoriesApplied,
     importedServerCount,
     importedSettingsApplied,
+    importedGesturesApplied,
     newlyDeclaredVarNames,
   };
 }

@@ -335,6 +335,13 @@ export const MiniMap = forwardRef<MiniMapHandle, MiniMapProps>(function MiniMap(
     setZOffset(0);
   };
 
+  // Sin mapa cargado en absoluto (server sin mapId, o biblioteca vacía):
+  // ocultamos el toggle entero — no hay nada que mostrar y la M flotando
+  // sin función desconcierta.
+  if (!mapService.isLoaded) {
+    return null;
+  }
+
   if (!visible || !currentRoom || !mapContent) {
     return (
       <View style={styles.wrapperClosed}>

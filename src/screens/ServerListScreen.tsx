@@ -13,13 +13,12 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList, ServerProfile } from '../types';
+import { RootStackParamList, ServerProfile, MapLibraryEntry } from '../types';
 import { loadServers, saveServers } from '../storage/serverStorage';
 import { loadSettings, saveSettings } from '../storage/settingsStorage';
 import { loadServerLayout, saveServerLayout } from '../storage/layoutStorage';
 import { autoAssignNewCharacterToPacks } from '../storage/triggerStorage';
-import { activeConnection } from '../services/activeConnection';
-import { CANONICAL_PROMPT } from '../services/promptParser';
+import { listLibrary as listMapLibrary } from '../storage/mapLibraryStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ServerList'>;
 
@@ -40,6 +39,11 @@ export function ServerListScreen({ navigation }: Props) {
   // tras creación; el modal de editar no muestra estos campos).
   const [formLayoutKind, setFormLayoutKind] = useState<'standard' | 'custom'>('standard');
   const [formCustomGridSize, setFormCustomGridSize] = useState<5 | 7 | 9>(9);
+  // Mapa asignado al server. Editable en cualquier momento — al cambiar
+  // surte efecto en la próxima conexión (no se afecta una sesión activa).
+  const [formMapId, setFormMapId] = useState<string | undefined>(undefined);
+  const [mapLibrary, setMapLibrary] = useState<MapLibraryEntry[]>([]);
+  const [mapPickerVisible, setMapPickerVisible] = useState(false);
   const [helpModalVisible, setHelpModalVisible] = useState(false);
   const [welcomeModalVisible, setWelcomeModalVisible] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState(true);
@@ -63,10 +67,15 @@ export function ServerListScreen({ navigation }: Props) {
   useFocusEffect(
     useCallback(() => {
       (async () => {
-        const [loadedServers, settings] = await Promise.all([loadServers(), loadSettings()]);
+        const [loadedServers, settings, library] = await Promise.all([
+          loadServers(),
+          loadSettings(),
+          listMapLibrary(),
+        ]);
         setServers(loadedServers);
         setOnboardingDone(settings.onboardingDone);
         setAppUiMode(settings.uiMode || 'completo');
+        setMapLibrary(library);
         if (!settings.onboardingDone) {
           setWelcomeModalVisible(true);
         }
@@ -90,6 +99,9 @@ export function ServerListScreen({ navigation }: Props) {
     setFormPassword('');
     setFormLayoutKind('standard');
     setFormCustomGridSize(9);
+    // Default razonable: si crean un personaje en rlmud.org, asumir Reinos.
+    // Si cambian el host a otra cosa, el usuario reasigna manualmente.
+    setFormMapId('reinos-bundled');
     setModalVisible(true);
   };
 
@@ -100,6 +112,7 @@ export function ServerListScreen({ navigation }: Props) {
     setFormPort(String(server.port));
     setFormUsername(server.username || '');
     setFormPassword(server.password || '');
+    setFormMapId(server.mapId);
     setModalVisible(true);
   };
 
@@ -120,6 +133,7 @@ export function ServerListScreen({ navigation }: Props) {
               port,
               username: formUsername.trim() || undefined,
               password: formPassword.trim() || undefined,
+              mapId: formMapId,
             }
           : s
       );
@@ -134,6 +148,7 @@ export function ServerListScreen({ navigation }: Props) {
         layoutKind: formLayoutKind,
         customGridSize: formLayoutKind === 'custom' ? formCustomGridSize : undefined,
         panels: [1, 2],
+        mapId: formMapId,
       };
       updated = [...servers, newServer];
       createdServerId = newServer.id;
@@ -155,36 +170,6 @@ export function ServerListScreen({ navigation }: Props) {
     const updated = servers.filter(s => s.id !== server.id);
     setServers(updated);
     await saveServers(updated);
-  };
-
-  const handleApplyPrompt = (server: ServerProfile) => {
-    if (!activeConnection.isConnectedTo(server.id)) {
-      Alert.alert(
-        'No estás conectado',
-        'Conéctate primero a este personaje desde la lista, vuelve a abrir la edición y entonces podrás aplicar el prompt.',
-      );
-      return;
-    }
-    Alert.alert(
-      'Aplicar prompt TorchZhyla',
-      'Esto sobrescribirá tu prompt actual en el MUD para este personaje. Es necesario para que las variables (vida, energía, salidas, ...) se capturen correctamente y puedan usarse en triggers. ¿Continuar?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Aplicar',
-          onPress: () => {
-            const ok =
-              activeConnection.send(server.id, `prompt ${CANONICAL_PROMPT}`) &&
-              activeConnection.send(server.id, `promptcombate ${CANONICAL_PROMPT}`);
-            if (ok) {
-              Alert.alert('Prompt aplicado', 'El MUD recibió el nuevo prompt. A partir de ahora capturaremos las variables.');
-            } else {
-              Alert.alert('No se pudo enviar', 'La conexión se ha perdido. Reconéctate y vuelve a intentarlo.');
-            }
-          },
-        },
-      ],
-    );
   };
 
   const handleDuplicate = async (server: ServerProfile) => {
@@ -447,6 +432,29 @@ export function ServerListScreen({ navigation }: Props) {
               accessibilityHint="Ingresa tu contraseña para auto-login"
             />
 
+            <Text style={[styles.label, { marginTop: 20 }]}>Mapa asignado</Text>
+            <Text style={styles.helperText}>
+              Define qué mapa se usa para el minimap, irsala y locate al conectar este personaje. Importa más mapas desde Settings → Mis mapas.
+            </Text>
+            <TouchableOpacity
+              style={styles.mapPickerBtn}
+              onPress={() => setMapPickerVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel={`Mapa asignado: ${
+                formMapId
+                  ? mapLibrary.find((e) => e.id === formMapId)?.name ?? '(no encontrado)'
+                  : 'sin mapa'
+              }`}
+              accessibilityHint="Pulsa para elegir otro mapa de la biblioteca"
+            >
+              <Text style={styles.mapPickerBtnText}>
+                {formMapId
+                  ? mapLibrary.find((e) => e.id === formMapId)?.name ?? '(mapa borrado)'
+                  : 'Sin mapa'}
+              </Text>
+              <Text style={styles.mapPickerBtnChevron}>▾</Text>
+            </TouchableOpacity>
+
             {!editingServer && appUiMode !== 'blind' && (
               <>
                 <Text style={[styles.label, { marginTop: 20 }]}>Tipo de botonera</Text>
@@ -503,25 +511,6 @@ export function ServerListScreen({ navigation }: Props) {
               </>
             )}
 
-            {editingServer && (
-              <>
-                <Text style={[styles.label, { marginTop: 20 }]}>Triggers</Text>
-                <TouchableOpacity
-                  style={styles.applyPromptBtn}
-                  onPress={() => handleApplyPrompt(editingServer)}
-                  accessible={true}
-                  accessibilityRole="button"
-                  accessibilityLabel="Aplicar prompt TorchZhyla"
-                  accessibilityHint="Configura el prompt del MUD para que las variables se capturen y puedan usarse en triggers. Solo funciona si estás conectado a este personaje."
-                >
-                  <Text style={styles.applyPromptBtnText}>Aplicar prompt TorchZhyla</Text>
-                  <Text style={styles.applyPromptBtnHint}>
-                    Configura el prompt del MUD para capturar variables (vida, energía, salidas…). Necesario si vas a usar triggers de variable.
-                  </Text>
-                </TouchableOpacity>
-              </>
-            )}
-
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={styles.cancelBtn}
@@ -545,6 +534,59 @@ export function ServerListScreen({ navigation }: Props) {
               </TouchableOpacity>
             </View>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={mapPickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMapPickerVisible(false)}
+      >
+        <View style={[styles.modalOverlay, overlayInsetStyle]}>
+          <View style={styles.mapPickerModal}>
+            <Text style={styles.modalTitle}>Elegir mapa</Text>
+            <ScrollView style={styles.mapPickerList}>
+              <TouchableOpacity
+                style={[styles.mapPickerRow, !formMapId && styles.mapPickerRowActive]}
+                onPress={() => {
+                  setFormMapId(undefined);
+                  setMapPickerVisible(false);
+                }}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: !formMapId }}
+                accessibilityLabel="Sin mapa"
+              >
+                <Text style={styles.mapPickerRowName}>Sin mapa</Text>
+                <Text style={styles.mapPickerRowMeta}>Sin minimap, sin irsala</Text>
+              </TouchableOpacity>
+              {mapLibrary.map((entry) => (
+                <TouchableOpacity
+                  key={entry.id}
+                  style={[styles.mapPickerRow, formMapId === entry.id && styles.mapPickerRowActive]}
+                  onPress={() => {
+                    setFormMapId(entry.id);
+                    setMapPickerVisible(false);
+                  }}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: formMapId === entry.id }}
+                  accessibilityLabel={`${entry.name}, ${entry.roomCount} salas`}
+                >
+                  <Text style={styles.mapPickerRowName}>
+                    {entry.name}
+                    {entry.builtin ? ' (incluido)' : ''}
+                  </Text>
+                  <Text style={styles.mapPickerRowMeta}>{entry.roomCount} salas</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => setMapPickerVisible(false)}
+            >
+              <Text style={styles.cancelText}>Cerrar</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -598,6 +640,11 @@ export function ServerListScreen({ navigation }: Props) {
                 • Tap en una sala del mapa también dispara auto-walk.{'\n'}
                 • `parar` o `stop` cancelan en cualquier momento.{'\n'}
                 • Si tecleas un comando de movimiento manual (norte, sur, sigilar...) mientras camina, el auto-walk se cancela. Otros comandos (chat, atacar, ojear...) NO interrumpen.
+              </Text>
+
+              <Text style={styles.helpModalSectionTitle}>Prompt del MUD</Text>
+              <Text style={styles.helpModalText}>
+                Para que la app capture vida, energía, salidas y otras variables que usan triggers y minimap, el MUD tiene que mandar un prompt con un formato concreto. Conéctate al personaje y, en Settings → Terminal, pulsa "Aplicar prompt TorchZhyla". Eso sobrescribe tu prompt actual en el MUD para ese personaje. Una vez por personaje basta.
               </Text>
 
               <Text style={styles.helpModalSectionTitle}>Plantillas de triggers</Text>
@@ -1081,27 +1128,6 @@ const styles = StyleSheet.create({
   saveTextDisabled: {
     color: '#666',
   },
-  applyPromptBtn: {
-    backgroundColor: '#0a2a3a',
-    borderWidth: 1,
-    borderColor: '#0099ff',
-    borderRadius: 6,
-    padding: 12,
-    marginTop: 4,
-  },
-  applyPromptBtnText: {
-    color: '#0099ff',
-    fontSize: 14,
-    fontWeight: 'bold',
-    fontFamily: 'monospace',
-  },
-  applyPromptBtnHint: {
-    color: '#888',
-    fontSize: 11,
-    fontFamily: 'monospace',
-    marginTop: 4,
-    lineHeight: 14,
-  },
   helperText: {
     color: '#888',
     fontSize: 11,
@@ -1141,5 +1167,59 @@ const styles = StyleSheet.create({
   },
   layoutKindBtnTextActive: {
     color: '#fff',
+  },
+  mapPickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginTop: 4,
+  },
+  mapPickerBtnText: {
+    flex: 1,
+    color: '#ccc',
+    fontSize: 14,
+    fontFamily: 'monospace',
+  },
+  mapPickerBtnChevron: {
+    color: '#888',
+    fontSize: 14,
+    fontFamily: 'monospace',
+  },
+  mapPickerModal: {
+    backgroundColor: '#1a1a1a',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 10,
+    padding: 16,
+    maxHeight: '80%',
+  },
+  mapPickerList: {
+    maxHeight: 400,
+    marginVertical: 12,
+  },
+  mapPickerRow: {
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
+  },
+  mapPickerRowActive: {
+    backgroundColor: '#0a2a0a',
+  },
+  mapPickerRowName: {
+    color: '#fff',
+    fontSize: 14,
+    fontFamily: 'monospace',
+  },
+  mapPickerRowMeta: {
+    color: '#666',
+    fontSize: 11,
+    fontFamily: 'monospace',
+    marginTop: 3,
   },
 });

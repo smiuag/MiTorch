@@ -29,6 +29,7 @@ import { userVariablesService } from '../services/userVariablesService';
 import { ambientPlayer } from '../services/ambientPlayer';
 import { triggerEngine } from '../services/triggerEngine';
 import { loadCustomSounds, removeCustomSound } from '../storage/customSoundsStorage';
+import { DEFAULT_SETTINGS, loadSettings, saveSettings } from '../storage/settingsStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ConfigBackup'>;
 
@@ -60,6 +61,7 @@ export function ConfigBackupScreen({ navigation }: Props) {
   const [exportAmbient, setExportAmbient] = useState(true);
   const [exportServers, setExportServers] = useState(false);
   const [exportSettings, setExportSettings] = useState(false);
+  const [exportGestures, setExportGestures] = useState(false);
   const [exportModalVisible, setExportModalVisible] = useState(false);
 
   // Stats descriptivos en la cabecera ("X plantillas, Y categorías…").
@@ -75,6 +77,7 @@ export function ConfigBackupScreen({ navigation }: Props) {
   const [importAmbient, setImportAmbient] = useState(false);
   const [importServers, setImportServers] = useState(false);
   const [importSettings, setImportSettings] = useState(false);
+  const [importGestures, setImportGestures] = useState(false);
 
   // ----- Estado de operaciones largas ------------------------------------
   const [busy, setBusy] = useState(false);
@@ -106,9 +109,9 @@ export function ConfigBackupScreen({ navigation }: Props) {
   // ----- Helpers de selección -------------------------------------------
   const allPacksSelected = packs.length > 0 && packs.every((p) => selectedPackIds.has(p.id));
   const anySectionOn =
-    selectedPackIds.size > 0 || exportAmbient || exportServers || exportSettings;
+    selectedPackIds.size > 0 || exportAmbient || exportServers || exportSettings || exportGestures;
   const allSectionsOn =
-    allPacksSelected && exportAmbient && exportServers && exportSettings;
+    allPacksSelected && exportAmbient && exportServers && exportSettings && exportGestures;
 
   const togglePack = (id: string) => {
     setSelectedPackIds((prev) => {
@@ -125,11 +128,13 @@ export function ConfigBackupScreen({ navigation }: Props) {
       setExportAmbient(false);
       setExportServers(false);
       setExportSettings(false);
+      setExportGestures(false);
     } else {
       setSelectedPackIds(new Set(packs.map((p) => p.id)));
       setExportAmbient(true);
       setExportServers(true);
       setExportSettings(true);
+      setExportGestures(true);
     }
   };
 
@@ -143,7 +148,8 @@ export function ConfigBackupScreen({ navigation }: Props) {
     allImportPacksSelected &&
     (!importManifest.hasAmbient || importAmbient) &&
     (!importManifest.hasServers || importServers) &&
-    (!importManifest.hasSettings || importSettings);
+    (!importManifest.hasSettings || importSettings) &&
+    (!importManifest.hasGestures || importGestures);
 
   const toggleImportPack = (i: number) => {
     setImportPackIndices((prev) => {
@@ -161,11 +167,13 @@ export function ConfigBackupScreen({ navigation }: Props) {
       setImportAmbient(false);
       setImportServers(false);
       setImportSettings(false);
+      setImportGestures(false);
     } else {
       setImportPackIndices(new Set(importManifest.packs.map((_, i) => i)));
       setImportAmbient(importManifest.hasAmbient);
       setImportServers(importManifest.hasServers);
       setImportSettings(importManifest.hasSettings);
+      setImportGestures(importManifest.hasGestures);
     }
   };
 
@@ -180,6 +188,7 @@ export function ConfigBackupScreen({ navigation }: Props) {
     setExportAmbient(true);
     setExportServers(true);
     setExportSettings(true);
+    setExportGestures(true);
     setExportModalVisible(true);
   };
 
@@ -197,6 +206,7 @@ export function ConfigBackupScreen({ navigation }: Props) {
         includeAmbient: exportAmbient,
         includeServers: exportServers,
         includeSettings: exportSettings,
+        includeGestures: exportGestures,
       });
       // expo-sharing en lugar del Share API de RN (el de RN en Android
       // manda como texto cuando le pasas `url`; expo-sharing adjunta el
@@ -240,6 +250,7 @@ export function ConfigBackupScreen({ navigation }: Props) {
       setImportAmbient(manifest.hasAmbient);
       setImportServers(manifest.hasServers);
       setImportSettings(manifest.hasSettings);
+      setImportGestures(manifest.hasGestures);
       // Setear el manifest activa el modal de import.
       setImportManifest(manifest);
     } catch (e: any) {
@@ -252,7 +263,11 @@ export function ConfigBackupScreen({ navigation }: Props) {
   const handleApplyImport = async () => {
     if (busy || !importManifest) return;
     const noneSelected =
-      importPackIndices.size === 0 && !importAmbient && !importServers && !importSettings;
+      importPackIndices.size === 0 &&
+      !importAmbient &&
+      !importServers &&
+      !importSettings &&
+      !importGestures;
     if (noneSelected) {
       Alert.alert('Nada seleccionado', 'Marca al menos una sección antes de importar.');
       return;
@@ -265,6 +280,7 @@ export function ConfigBackupScreen({ navigation }: Props) {
         importAmbient,
         importServers,
         importSettings,
+        importGestures,
       });
       if (result.ambientCategoriesApplied > 0) {
         await ambientPlayer.reloadMappings();
@@ -288,6 +304,9 @@ export function ConfigBackupScreen({ navigation }: Props) {
       }
       if (result.importedSettingsApplied) {
         parts.push('settings de la app');
+      }
+      if (result.importedGesturesApplied) {
+        parts.push('gestos');
       }
       if (result.importedSoundCount > 0) {
         parts.push(
@@ -344,13 +363,14 @@ export function ConfigBackupScreen({ navigation }: Props) {
   };
 
   // ----- Borrado total --------------------------------------------------
-  // Borra plantillas + ambient + sonidos + user vars. NO toca servidores
-  // ni layouts ni settings. Puede usarse antes de un import limpio.
+  // Borra todo lo importable: plantillas + ambient + sonidos + user vars +
+  // gestos. NO toca servidores, layouts ni settings (esos van por su cuenta
+  // en el import). Puede usarse antes de un import limpio.
   const handleDeleteAll = () => {
     if (busy) return;
     Alert.alert(
       'Borrar configuración importable',
-      'Esto va a borrar TODAS tus plantillas de triggers, mappings de ambiente, sonidos personalizados y variables de usuario.\n\nNO toca servidores, layouts de botones ni settings de la app.\n\n¿Continuar? No se puede deshacer.',
+      'Esto va a borrar TODAS tus plantillas de triggers, mappings de ambiente, sonidos personalizados, variables de usuario y gestos del terminal.\n\nNO toca servidores, layouts de botones ni settings de la app.\n\n¿Continuar? No se puede deshacer.',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -377,10 +397,19 @@ export function ConfigBackupScreen({ navigation }: Props) {
               for (const s of sounds) {
                 await removeCustomSound(s.uuid);
               }
+              // Reset de gestos: vuelven al default (todos disabled+vacíos).
+              // Mantenemos el master `gesturesEnabled` como el default actual
+              // — apagarlo escondería el editor entero, lo cual sorprende.
+              const current = await loadSettings();
+              await saveSettings({
+                ...current,
+                gestures: DEFAULT_SETTINGS.gestures,
+                gesturesEnabled: DEFAULT_SETTINGS.gesturesEnabled,
+              });
               await refresh();
               Alert.alert(
                 'Configuración borrada',
-                `Eliminados: ${declared.length} variables, ${sounds.length} sonidos y todas las plantillas y mappings de ambiente.`,
+                `Eliminados: ${declared.length} variables, ${sounds.length} sonidos, todas las plantillas, mappings de ambiente y gestos.`,
               );
             } catch (e: any) {
               Alert.alert('Error al borrar', e?.message ?? String(e));
@@ -458,8 +487,15 @@ export function ConfigBackupScreen({ navigation }: Props) {
             <Checkbox
               checked={exportSettings}
               label="Settings de la app"
-              desc="Tema, fuente, gestos, volúmenes, kill-switches… Sustituyen los settings del móvil destino al importar."
+              desc="Tema, fuente, volúmenes, kill-switches… Sustituyen los settings del móvil destino al importar. Los gestos van en su propia casilla."
               onToggle={() => setExportSettings((v) => !v)}
+              indented
+            />
+            <Checkbox
+              checked={exportGestures}
+              label="Gestos"
+              desc="Comandos asociados a swipes, pinch y doble-tap del terminal."
+              onToggle={() => setExportGestures((v) => !v)}
               indented
             />
           </ScrollView>
@@ -546,7 +582,8 @@ export function ConfigBackupScreen({ navigation }: Props) {
 
                 {(importManifest.hasAmbient ||
                   importManifest.hasServers ||
-                  importManifest.hasSettings) && (
+                  importManifest.hasSettings ||
+                  importManifest.hasGestures) && (
                   <Text style={styles.subSection}>Otros</Text>
                 )}
                 {importManifest.hasAmbient && (
@@ -571,8 +608,17 @@ export function ConfigBackupScreen({ navigation }: Props) {
                   <Checkbox
                     checked={importSettings}
                     label="Settings de la app"
-                    desc="Sustituye TODOS tus settings actuales por los del archivo. Tema, fuente, volúmenes, etc."
+                    desc="Sustituye TODOS tus settings actuales por los del archivo. Tema, fuente, volúmenes, etc. Los gestos NO se incluyen aquí."
                     onToggle={() => setImportSettings((v) => !v)}
+                    indented
+                  />
+                )}
+                {importManifest.hasGestures && (
+                  <Checkbox
+                    checked={importGestures}
+                    label="Gestos"
+                    desc={`${importManifest.enabledGestureCount} gesto${importManifest.enabledGestureCount === 1 ? '' : 's'} activo${importManifest.enabledGestureCount === 1 ? '' : 's'}. Sustituyen tus gestos actuales del terminal.`}
+                    onToggle={() => setImportGestures((v) => !v)}
                     indented
                   />
                 )}
@@ -656,8 +702,8 @@ export function ConfigBackupScreen({ navigation }: Props) {
             🗑 Borrar configuración importable
           </Text>
           <Text style={styles.actionDesc}>
-            Elimina plantillas, mappings de ambiente, sonidos y user vars. NO
-            toca personajes, layouts ni settings.
+            Elimina plantillas, mappings de ambiente, sonidos, user vars y
+            gestos. NO toca personajes, layouts ni settings.
           </Text>
         </TouchableOpacity>
 

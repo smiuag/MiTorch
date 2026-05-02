@@ -28,6 +28,25 @@ export interface ServerProfile {
   // dos primeros no se pueden eliminar. Los IDs no necesitan ser
   // consecutivos (al borrar uno y añadir otro, se usa max+1).
   panels?: number[];
+  // Referencia a una entrada de la biblioteca de mapas. Sin valor → MapService
+  // inactivo (sin minimap ni irsala). Valor especial 'reinos-bundled' carga el
+  // mapa que viaja en el APK; cualquier otro string es un id generado al
+  // importar un JSON de Mudlet desde "Mis mapas".
+  mapId?: string;
+}
+
+// Entrada de la biblioteca de mapas (índice en AsyncStorage). El contenido
+// real (rooms, nameIndex) vive en `${Paths.document}/maps/{id}.json` para los
+// mapas importados, y en `src/assets/map-reinos.json` (bundleado) para la
+// entrada virtual 'reinos-bundled'.
+export interface MapLibraryEntry {
+  id: string;
+  name: string;
+  roomCount: number;
+  importedAt: number;
+  // Marca la entrada virtual del mapa de Reinos bundleado: no se puede
+  // renombrar ni borrar (no hay archivo en filesystem que tocar).
+  builtin?: boolean;
 }
 
 export interface AnsiSpan {
@@ -44,15 +63,25 @@ export interface MudLine {
   spans: AnsiSpan[];
 }
 
+// `sourceLocation` propaga si la pantalla se abrió desde el MUD (Terminal) o
+// desde fuera (ServerList). Algunas opciones se ocultan dentro del MUD
+// (codificación, modo de la app), otras solo aparecen ahí (aplicar prompt).
+export type SettingsStackParams = { sourceLocation?: 'terminal' | 'serverlist' };
+
 export type RootStackParamList = {
   ServerList: undefined;
   Terminal: { server: ServerProfile };
-  Settings: undefined;
+  Settings: SettingsStackParams | undefined;
+  SettingsGeneral: SettingsStackParams | undefined;
+  SettingsAdvanced: SettingsStackParams | undefined;
+  SettingsSystem: SettingsStackParams | undefined;
+  SettingsGestures: SettingsStackParams | undefined;
   Triggers: undefined;
   TriggerEditor: { packId: string; autoOpenTriggerId?: string };
   MySounds: undefined;
   UserVariables: undefined;
   MyAmbients: undefined;
+  MyMaps: undefined;
   ConfigBackup: undefined;
 };
 
@@ -233,12 +262,46 @@ export type GestureType =
   | 'doubletap_hold_swipe_up' | 'doubletap_hold_swipe_down'
   | 'doubletap_hold_swipe_left' | 'doubletap_hold_swipe_right'
   | 'doubletap_hold_swipe_up_right' | 'doubletap_hold_swipe_up_left'
-  | 'doubletap_hold_swipe_down_right' | 'doubletap_hold_swipe_down_left';
+  | 'doubletap_hold_swipe_down_right' | 'doubletap_hold_swipe_down_left'
+  // Doble-tap con 2 dedos. Atómico (sin dirección) — esa entropía la dan
+  // ya `twofingers_swipe_*` y `pinch_*`. Solo dispara con dos dedos pulsados
+  // a la vez, sin movimiento (>10 px = pinch o swipe), <200 ms cada tap, y
+  // dos taps consecutivos en <300 ms. En blind+TalkBack lo consume el lector
+  // (TalkBack usa 2-finger doble-tap para activar) — solo es útil en
+  // self-voicing o modo completo.
+  | 'twofingers_doubletap';
+
+// Fuente de opciones del selector cuando un gesto es de tipo `pick`. Cada
+// fuente resuelve a string[] en runtime:
+//   - roomExits: salidas de la sala actual (n/s/ar/ab → norte/sur/arriba/abajo).
+//   - recentTells: últimos N jugadores que mandaron tell (ring buffer en memoria).
+//   - custom: lista que el usuario edita en el propio gesto.
+export type GesturePickSource = 'roomExits' | 'recentTells' | 'custom';
+
+// Acción que dispara un gesto. Discriminated union desde v4 (antes era
+// `{command, opensKeyboard}` plano, migrado al cargar settings):
+//   - send: envía `text` directo al MUD.
+//   - prepare: pone `text` en el input del terminal y abre el teclado para
+//     que el usuario complete.
+//   - pick: abre un selector con opciones de `source`. Al elegir, construye
+//     `prefix + opcion`. Si `autoSend` envía; si no, pone en el input,
+//     enfoca el final y abre el teclado para completar.
+export type GestureAction =
+  | { kind: 'send'; text: string }
+  | { kind: 'prepare'; text: string }
+  | {
+      kind: 'pick';
+      prefix: string;
+      source: GesturePickSource;
+      // Solo relevante cuando source === 'custom'. Para otras fuentes lo
+      // mantenemos como [] (el editor lo oculta).
+      customList: string[];
+      autoSend: boolean;
+    };
 
 export interface GestureConfig {
   type: GestureType;
   enabled: boolean;
-  command: string;
-  opensKeyboard: boolean;
+  action: GestureAction;
 }
 

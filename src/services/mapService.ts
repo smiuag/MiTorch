@@ -9,7 +9,10 @@ export interface MapRoom {
   c?: string;  // color hex
 }
 
-interface MapData {
+// Mapa optimizado en disco/bundle. Idéntico al schema de OptimizedMap del
+// parser de Mudlet (rooms aplanados + nameIndex case-sensitive). MapService
+// lo recibe ya cargado — no toca filesystem ni require.
+export interface MapData {
   rooms: Record<string, { n: string; x: number; y: number; z: number; e: Record<string, number>; fn?: string; c?: string }>;
   nameIndex: Record<string, number[]>;
 }
@@ -26,18 +29,28 @@ export class MapService {
   // bus, just a flat array; we expect 1-2 subscribers max in practice.
   private roomSubscribers: Array<(room: MapRoom | null) => void> = [];
 
-  async load(): Promise<void> {
-    if (this.loaded) return;
-    try {
-      const data: MapData = require('../assets/map-reinos.json');
+  // Carga (o recarga) el mapa con los datos ya parseados que pasa el caller.
+  // Pasar `null` deja el servicio inactivo (sin minimap ni búsqueda) — útil
+  // cuando el server activo no tiene mapId asignado. La carga es idempotente
+  // en sentido pesimista: cada llamada vacía estado previo. Si el caller
+  // quiere evitar trabajo redundante debe comparar el mapId externamente
+  // antes de llamar.
+  async load(data: MapData | null): Promise<void> {
+    this.rooms.clear();
+    this.nameIndexLower.clear();
+    this.setCurrentRoomId(null);
+    this.loaded = false;
 
+    if (!data || !data.rooms) return;
+
+    try {
       for (const [idStr, room] of Object.entries(data.rooms)) {
         const id = Number(idStr);
         this.rooms.set(id, { id, ...room });
       }
 
       // Build case-insensitive index
-      for (const [name, ids] of Object.entries(data.nameIndex)) {
+      for (const [name, ids] of Object.entries(data.nameIndex ?? {})) {
         const lower = name.toLowerCase();
         const existing = this.nameIndexLower.get(lower);
         if (existing) {

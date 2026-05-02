@@ -53,6 +53,15 @@ sentry.properties
 # personal use. Not part of the publishable code.
 /tools/
 
+# Bundle ZIPs y mapas crudos de Mudlet — assets pesados que se distribuyen
+# fuera del repo (página de descargas, USB encriptado…). Pesan cientos de MB
+# y bloatearían el historial. Ver memoria "TorchZhyla — paths externos al repo".
+/Config.zip
+/map.json
+/mapa.json
+/torchzhyla-defaults.zip
+/torchzhyla-defaults.backup.zip
+
 # Native folders
 # We work in "bare workflow": android/ IS committed to git.
 # NEVER run `expo prebuild` or `expo eject` — would overwrite manual customizations

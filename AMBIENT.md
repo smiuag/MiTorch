@@ -21,11 +21,12 @@ Loop de música de fondo que cambia con el **tipo de room** (no por zona especí
 
 **Archivos clave**: `src/services/roomCategorizer.ts`, `src/services/ambientPlayer.ts` (singleton), `src/storage/ambientStorage.ts`, `src/screens/MyAmbientsScreen.tsx`, `src/screens/ConfigBackupScreen.tsx`, toggle 🎵 en `TerminalScreen.tsx`.
 
-**Import/export granular** (formato `torchzhyla-config-backup` v3, HECHO 2026-05-01). Pantalla `ConfigBackupScreen` accesible desde Settings con checkboxes para cada sección. Defaults: TODO marcado al abrir el modal — el usuario desmarca lo que no quiera.
+**Import/export granular** (formato `torchzhyla-config-backup` v4, HECHO 2026-05-01). Pantalla `ConfigBackupScreen` accesible desde Settings con checkboxes para cada sección. Defaults: TODO marcado al abrir el modal — el usuario desmarca lo que no quiera.
 - **Plantillas** (un checkbox por pack). Cada pack arrastra sus user vars referenciadas + sus sonidos custom.
 - **Ambiente**: `ambientMappings` completos + sus sonidos asignados.
 - **Personajes**: `ServerProfile[]` + por server su `buttonLayout` + `channelAliases` + `channelOrder`. **La contraseña NUNCA viaja en el ZIP** (stripped en `exportConfigToZip` antes de serializar). El usuario destino tendrá que reescribirla.
-- **Settings de la app**: blob completo de `AppSettings` que sustituye al actual al importar. Tema, fuente, gestos, volúmenes, kill-switches, etc.
+- **Settings de la app**: blob de `AppSettings` SIN gestos (esos van en su propio bloque desde v4). Sustituye los settings del destino preservando los gestos actuales del usuario que importa, salvo que también se marque "Atajos de gestos".
+- **Atajos de gestos**: bloque `gestures` top-level con `gesturesEnabled` y el array `GestureConfig[]`. Bloque independiente desde v4 — antes viajaban dentro de settings sin granularidad.
 - **Master "Todo"**: check derivado del estado de los sub-checks. Marcado solo cuando todos los sub-checks están marcados; al desmarcarlo desmarca todos los demás. Tras desmarcar un sub-check, "Todo" se desmarca automáticamente.
 
 Reglas operativas:
@@ -34,10 +35,10 @@ Reglas operativas:
 - **Servers en import: añadir duplicados** (sin merge por nombre/host). Si el usuario importa "Aljhtar" y ya tiene "Aljhtar", verá dos en la lista. Cada server importado recibe id fresco; layouts/aliases/order se reescriben con el id nuevo vía `serverIdMap`.
 - **Ambient en import: merge por categoría** — las que vienen pisan, las ausentes se conservan.
 - **Single-pack ZIPs (`pack.json` del export per-plantilla)** se aceptan en este flujo y se normalizan como un manifest de UN pack sin otras secciones. Compat hacia atrás con todos los ZIPs anteriores: lectura acepta tanto `torchzhyla-config-backup` como el legacy `torchzhyla-trigger-backup`.
-- **Versiones**: v3 añade servers/layouts/channelAliases/channelOrder/settings (todo opcional). v2 añadió ambientMappings. v1 solo packs+sounds. Importar un v3 en una app v2 antigua falla con mensaje claro ("versión más reciente, actualiza la app").
+- **Versiones**: v4 extrae `gestures` a campo top-level (settings ya no los lleva). v3 añade servers/layouts/channelAliases/channelOrder/settings. v2 añadió ambientMappings. v1 solo packs+sounds. Importar un v4 en una app más vieja falla con mensaje claro ("versión más reciente, actualiza la app"). Versiones más antiguas se siguen aceptando en lectura sin lógica especial: si un v3 traía gestos dentro de settings, al importar "Settings" en un app v4 esos gestos se descartan (los actuales del usuario se preservan).
 
 **APIs** (`src/services/triggerPackExport.ts`):
-- `exportConfigToZip({ packIds, includeAmbient, includeServers, includeSettings })`.
+- `exportConfigToZip({ packIds, includeAmbient, includeServers, includeSettings, includeGestures })`.
 - `readImportManifest(zipUri)` → `ImportManifest` (qué contiene el ZIP, sin side-effects).
 - `applyImport(manifest, selections)` → aplica solo lo seleccionado, devuelve resumen.
 - Single-pack flow per-plantilla sigue intacto: `exportPackToZip(pack)` desde TriggersScreen.

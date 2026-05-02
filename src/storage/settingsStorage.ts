@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { GestureConfig } from '../types';
+import { GestureAction, GestureConfig } from '../types';
 
 const SETTINGS_KEY = 'aljhtar_settings';
 
@@ -69,33 +69,39 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ttsRate: 1.0,
   ttsPitch: 1.0,
   ttsVolume: 1.0,
+  // Defaults vacíos: la app arranca sin ningún gesto configurado. La
+  // configuración curada (norte/sur/dentro/fuera/cerrar/abrir/t/responder...)
+  // viaja en el Config.zip que el usuario importa desde la pantalla de
+  // import/export. rebuildGestures se asegura de que cualquier tipo nuevo
+  // que añadamos en el futuro aparezca aquí también.
   gestures: [
-    { type: 'swipe_up', enabled: true, command: 'norte', opensKeyboard: false },
-    { type: 'swipe_down', enabled: true, command: 'sur', opensKeyboard: false },
-    { type: 'swipe_left', enabled: true, command: 'oeste', opensKeyboard: false },
-    { type: 'swipe_right', enabled: true, command: 'este', opensKeyboard: false },
-    { type: 'swipe_up_right', enabled: true, command: 'noreste', opensKeyboard: false },
-    { type: 'swipe_up_left', enabled: true, command: 'noroeste', opensKeyboard: false },
-    { type: 'swipe_down_right', enabled: true, command: 'sudeste', opensKeyboard: false },
-    { type: 'swipe_down_left', enabled: true, command: 'sudoeste', opensKeyboard: false },
-    { type: 'twofingers_up', enabled: true, command: 'arriba', opensKeyboard: false },
-    { type: 'twofingers_down', enabled: true, command: 'abajo', opensKeyboard: false },
-    { type: 'twofingers_left', enabled: false, command: '', opensKeyboard: false },
-    { type: 'twofingers_right', enabled: false, command: '', opensKeyboard: false },
-    { type: 'twofingers_up_right', enabled: false, command: 'noreste', opensKeyboard: false },
-    { type: 'twofingers_up_left', enabled: false, command: 'noroeste', opensKeyboard: false },
-    { type: 'twofingers_down_right', enabled: false, command: 'sudeste', opensKeyboard: false },
-    { type: 'twofingers_down_left', enabled: false, command: 'sudoeste', opensKeyboard: false },
-    { type: 'pinch_in', enabled: true, command: 'dentro', opensKeyboard: false },
-    { type: 'pinch_out', enabled: true, command: 'fuera', opensKeyboard: false },
-    { type: 'doubletap_hold_swipe_up', enabled: false, command: '', opensKeyboard: false },
-    { type: 'doubletap_hold_swipe_down', enabled: false, command: '', opensKeyboard: false },
-    { type: 'doubletap_hold_swipe_left', enabled: false, command: '', opensKeyboard: false },
-    { type: 'doubletap_hold_swipe_right', enabled: false, command: '', opensKeyboard: false },
-    { type: 'doubletap_hold_swipe_up_right', enabled: false, command: '', opensKeyboard: false },
-    { type: 'doubletap_hold_swipe_up_left', enabled: false, command: '', opensKeyboard: false },
-    { type: 'doubletap_hold_swipe_down_right', enabled: false, command: '', opensKeyboard: false },
-    { type: 'doubletap_hold_swipe_down_left', enabled: false, command: '', opensKeyboard: false },
+    { type: 'swipe_up', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'swipe_down', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'swipe_left', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'swipe_right', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'swipe_up_right', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'swipe_up_left', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'swipe_down_right', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'swipe_down_left', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'twofingers_up', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'twofingers_down', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'twofingers_left', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'twofingers_right', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'twofingers_up_right', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'twofingers_up_left', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'twofingers_down_right', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'twofingers_down_left', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'pinch_in', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'pinch_out', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'twofingers_doubletap', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'doubletap_hold_swipe_up', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'doubletap_hold_swipe_down', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'doubletap_hold_swipe_left', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'doubletap_hold_swipe_right', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'doubletap_hold_swipe_up_right', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'doubletap_hold_swipe_up_left', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'doubletap_hold_swipe_down_right', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'doubletap_hold_swipe_down_left', enabled: false, action: { kind: 'send', text: '' } },
   ],
 };
 
@@ -121,17 +127,56 @@ export async function loadSettings(): Promise<AppSettings> {
 }
 
 export function rebuildGestures(settings: AppSettings): AppSettings {
-  const savedGestureMap = new Map(settings.gestures.map(g => [g.type, g]));
+  // El array guardado puede mezclar:
+  //   - Forma actual v4: { type, enabled, action: { kind, ... } }
+  //   - Forma legacy:    { type, enabled, command, opensKeyboard } — aún
+  //     existe en AsyncStorage de instalaciones anteriores; convertimos a la
+  //     nueva al cargar y se persiste con el siguiente saveSettings.
+  const savedGestureMap = new Map(
+    settings.gestures.map(g => [g.type, g as unknown as Record<string, unknown>]),
+  );
 
   const rebuilt = DEFAULT_SETTINGS.gestures.map(defaultGesture => {
     const saved = savedGestureMap.get(defaultGesture.type);
-    if (saved) {
-      return { ...defaultGesture, enabled: saved.enabled, command: saved.command, opensKeyboard: saved.opensKeyboard };
-    }
-    return defaultGesture;
+    if (!saved) return defaultGesture;
+    const action = normalizeGestureAction(saved);
+    return { ...defaultGesture, enabled: !!saved.enabled, action };
   });
 
   return { ...settings, gestures: rebuilt };
+}
+
+function normalizeGestureAction(saved: Record<string, unknown>): GestureAction {
+  // Forma legacy { command, opensKeyboard } → send/prepare con text.
+  if (saved.action === undefined && (saved.command !== undefined || saved.opensKeyboard !== undefined)) {
+    const text = typeof saved.command === 'string' ? saved.command : '';
+    return saved.opensKeyboard ? { kind: 'prepare', text } : { kind: 'send', text };
+  }
+  const raw = saved.action;
+  if (!raw || typeof raw !== 'object') return { kind: 'send', text: '' };
+  // Acceso defensivo por indexer: el JSON pudo guardarse con cualquier shape
+  // (otra versión de la app, edición manual...). No confiamos en el tipo.
+  const a = raw as Record<string, unknown>;
+  if (a.kind === 'prepare') {
+    return { kind: 'prepare', text: typeof a.text === 'string' ? a.text : '' };
+  }
+  if (a.kind === 'pick') {
+    const sources = ['roomExits', 'recentTells', 'custom'] as const;
+    const source = sources.includes(a.source as typeof sources[number])
+      ? (a.source as typeof sources[number])
+      : 'custom';
+    return {
+      kind: 'pick',
+      prefix: typeof a.prefix === 'string' ? a.prefix : '',
+      source,
+      customList: Array.isArray(a.customList)
+        ? a.customList.filter((s: unknown): s is string => typeof s === 'string')
+        : [],
+      autoSend: !!a.autoSend,
+    };
+  }
+  // 'send' o desconocido → fallback a send.
+  return { kind: 'send', text: typeof a.text === 'string' ? a.text : '' };
 }
 
 export async function saveSettings(settings: AppSettings): Promise<void> {
