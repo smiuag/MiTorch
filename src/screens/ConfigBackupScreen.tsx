@@ -431,7 +431,7 @@ export function ConfigBackupScreen({ navigation }: Props) {
       animationType="fade"
       onRequestClose={() => setExportModalVisible(false)}
     >
-      <View style={styles.modalOverlay}>
+      <View style={styles.modalOverlay} accessibilityViewIsModal>
         <View style={styles.modalCard}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>📤 Exportar configuración</Text>
@@ -538,7 +538,7 @@ export function ConfigBackupScreen({ navigation }: Props) {
       animationType="fade"
       onRequestClose={handleCancelImport}
     >
-      <View style={styles.modalOverlay}>
+      <View style={styles.modalOverlay} accessibilityViewIsModal>
         <View style={styles.modalCard}>
           {importManifest && (
             <>
@@ -654,10 +654,15 @@ export function ConfigBackupScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
+        >
           <Text style={styles.backText}>{'< Volver'}</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Importar / exportar configuración</Text>
+        <Text style={styles.title} accessibilityRole="header">Importar / exportar configuración</Text>
         <Text style={styles.subtitle}>
           Llévate tu setup en un ZIP. Útil para cambiar de móvil o compartir con
           otro jugador.

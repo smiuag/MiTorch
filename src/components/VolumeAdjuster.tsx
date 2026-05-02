@@ -86,8 +86,8 @@ const styles = StyleSheet.create({
   },
   label: { flex: 1, color: '#ccc', fontSize: 13, fontFamily: 'monospace' },
   btn: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     borderRadius: 6,
     backgroundColor: '#0a3a0a',
     borderWidth: 1,

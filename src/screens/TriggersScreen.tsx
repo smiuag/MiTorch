@@ -98,10 +98,15 @@ export function TriggersScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
+        >
           <Text style={styles.backText}>{'< Volver'}</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Plantillas</Text>
+        <Text style={styles.title} accessibilityRole="header">Plantillas</Text>
       </View>
 
       <View style={styles.contentContainer}>
@@ -201,9 +206,9 @@ export function TriggersScreen({ navigation }: Props) {
         animationType="fade"
         onRequestClose={() => setCreateModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.modalOverlay} accessibilityViewIsModal>
           <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Nueva plantilla</Text>
+            <Text style={styles.modalTitle} accessibilityRole="header">Nueva plantilla</Text>
             <TextInput
               style={styles.modalInput}
               value={newPackName}
@@ -211,6 +216,7 @@ export function TriggersScreen({ navigation }: Props) {
               placeholder="ej. Combate básico RdL"
               placeholderTextColor="#555"
               autoFocus
+              accessibilityLabel="Nombre de la nueva plantilla"
             />
             <View style={styles.modalActions}>
               <TouchableOpacity

@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Switch, Modal, FlatList } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Tts from 'react-native-tts';
 import { RootStackParamList } from '../../types';
 import { BlindGestureContainer, SelfVoicingRow } from '../../components/SelfVoicingControls';
 import { VolumeAdjuster } from '../../components/VolumeAdjuster';
+import { AccessibleSelectModal, AccessibleSelectOption } from '../../components/AccessibleSelectModal';
 import { speechQueue } from '../../services/speechQueueService';
 import { useSounds } from '../../contexts/SoundContext';
 import {
@@ -89,7 +90,12 @@ export function SettingsGeneralScreen({ navigation, route }: Props) {
       importantForAccessibility={selfVoicingActive ? 'no-hide-descendants' : 'auto'}
     >
       <View style={s.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={s.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
+        >
           <Text style={s.backText}>{'< Volver'}</Text>
         </TouchableOpacity>
         <Text style={s.title} accessibilityRole="header">General</Text>
@@ -154,6 +160,7 @@ export function SettingsGeneralScreen({ navigation, route }: Props) {
               onValueChange={(v) => updateSetting('soundsEnabled', v)}
               trackColor={{ false: '#333', true: '#0c0' }}
               thumbColor={settings.soundsEnabled ? '#000' : '#666'}
+              accessibilityLabel={`Usar sonidos. ${settings.soundsEnabled ? 'Activado' : 'Desactivado'}`}
             />
           </SelfVoicingRow>
 
@@ -176,6 +183,7 @@ export function SettingsGeneralScreen({ navigation, route }: Props) {
               onValueChange={(v) => updateSetting('ambientEnabled', v)}
               trackColor={{ false: '#333', true: '#0c0' }}
               thumbColor={settings.ambientEnabled ? '#000' : '#666'}
+              accessibilityLabel={`Música ambiente. ${settings.ambientEnabled ? 'Activado' : 'Desactivado'}`}
             />
           </SelfVoicingRow>
 
@@ -200,7 +208,7 @@ export function SettingsGeneralScreen({ navigation, route }: Props) {
 
           {showVoice && (
             <>
-              <Text style={[s.sectionTitle, { marginTop: 24 }]}>Voz</Text>
+              <Text style={[s.sectionTitle, { marginTop: 24 }]} accessibilityRole="header">Voz</Text>
 
               <SelfVoicingRow
                 svActive={settingsSelfVoicingActive}
@@ -222,6 +230,7 @@ export function SettingsGeneralScreen({ navigation, route }: Props) {
                   onValueChange={(v) => updateSetting('useSelfVoicing', v)}
                   trackColor={{ false: '#333', true: '#0c0' }}
                   thumbColor={settings.useSelfVoicing ? '#000' : '#666'}
+                  accessibilityLabel={`Self-voicing TTS propio. Beta. ${settings.useSelfVoicing ? 'Activado' : 'Desactivado'}`}
                 />
               </SelfVoicingRow>
 
@@ -246,10 +255,12 @@ export function SettingsGeneralScreen({ navigation, route }: Props) {
                         }
                       }}
                       accessibilityRole="button"
+                      accessibilityLabel="Bajar velocidad de lectura"
+                      accessibilityState={{ disabled: settings.speechCharDurationMs <= SPEECH_CHAR_DURATION_MIN }}
                     >
                       <Text style={[s.fontBtnText, settings.speechCharDurationMs <= SPEECH_CHAR_DURATION_MIN && s.fontBtnTextDisabled]}>−</Text>
                     </TouchableOpacity>
-                    <Text style={s.fontSizeValue}>{settings.speechCharDurationMs}</Text>
+                    <Text style={s.fontSizeValue} accessibilityLabel={`Velocidad de lectura: ${settings.speechCharDurationMs} milisegundos por carácter`}>{settings.speechCharDurationMs}</Text>
                     <TouchableOpacity
                       style={[s.fontBtn, settings.speechCharDurationMs >= SPEECH_CHAR_DURATION_MAX && s.fontBtnDisabled]}
                       onPress={() => {
@@ -261,6 +272,8 @@ export function SettingsGeneralScreen({ navigation, route }: Props) {
                         }
                       }}
                       accessibilityRole="button"
+                      accessibilityLabel="Subir velocidad de lectura"
+                      accessibilityState={{ disabled: settings.speechCharDurationMs >= SPEECH_CHAR_DURATION_MAX }}
                     >
                       <Text style={[s.fontBtnText, settings.speechCharDurationMs >= SPEECH_CHAR_DURATION_MAX && s.fontBtnTextDisabled]}>+</Text>
                     </TouchableOpacity>
@@ -346,14 +359,20 @@ export function SettingsGeneralScreen({ navigation, route }: Props) {
                         style={[s.fontBtn, settings.ttsRate <= TTS_RATE_MIN && s.fontBtnDisabled]}
                         disabled={settings.ttsRate <= TTS_RATE_MIN}
                         onPress={() => settings.ttsRate > TTS_RATE_MIN && updateSetting('ttsRate', Math.max(TTS_RATE_MIN, +(settings.ttsRate - TTS_RATE_STEP).toFixed(1)))}
+                        accessibilityRole="button"
+                        accessibilityLabel="Bajar velocidad TTS"
+                        accessibilityState={{ disabled: settings.ttsRate <= TTS_RATE_MIN }}
                       >
                         <Text style={[s.fontBtnText, settings.ttsRate <= TTS_RATE_MIN && s.fontBtnTextDisabled]}>−</Text>
                       </TouchableOpacity>
-                      <Text style={s.fontSizeValue}>{settings.ttsRate.toFixed(1)}</Text>
+                      <Text style={s.fontSizeValue} accessibilityLabel={`Velocidad TTS: ${settings.ttsRate.toFixed(1)}`}>{settings.ttsRate.toFixed(1)}</Text>
                       <TouchableOpacity
                         style={[s.fontBtn, settings.ttsRate >= TTS_RATE_MAX && s.fontBtnDisabled]}
                         disabled={settings.ttsRate >= TTS_RATE_MAX}
                         onPress={() => settings.ttsRate < TTS_RATE_MAX && updateSetting('ttsRate', Math.min(TTS_RATE_MAX, +(settings.ttsRate + TTS_RATE_STEP).toFixed(1)))}
+                        accessibilityRole="button"
+                        accessibilityLabel="Subir velocidad TTS"
+                        accessibilityState={{ disabled: settings.ttsRate >= TTS_RATE_MAX }}
                       >
                         <Text style={[s.fontBtnText, settings.ttsRate >= TTS_RATE_MAX && s.fontBtnTextDisabled]}>+</Text>
                       </TouchableOpacity>
@@ -383,14 +402,20 @@ export function SettingsGeneralScreen({ navigation, route }: Props) {
                         style={[s.fontBtn, settings.ttsPitch <= TTS_PITCH_MIN && s.fontBtnDisabled]}
                         disabled={settings.ttsPitch <= TTS_PITCH_MIN}
                         onPress={() => settings.ttsPitch > TTS_PITCH_MIN && updateSetting('ttsPitch', Math.max(TTS_PITCH_MIN, +(settings.ttsPitch - TTS_PITCH_STEP).toFixed(1)))}
+                        accessibilityRole="button"
+                        accessibilityLabel="Bajar tono TTS"
+                        accessibilityState={{ disabled: settings.ttsPitch <= TTS_PITCH_MIN }}
                       >
                         <Text style={[s.fontBtnText, settings.ttsPitch <= TTS_PITCH_MIN && s.fontBtnTextDisabled]}>−</Text>
                       </TouchableOpacity>
-                      <Text style={s.fontSizeValue}>{settings.ttsPitch.toFixed(1)}</Text>
+                      <Text style={s.fontSizeValue} accessibilityLabel={`Tono TTS: ${settings.ttsPitch.toFixed(1)}`}>{settings.ttsPitch.toFixed(1)}</Text>
                       <TouchableOpacity
                         style={[s.fontBtn, settings.ttsPitch >= TTS_PITCH_MAX && s.fontBtnDisabled]}
                         disabled={settings.ttsPitch >= TTS_PITCH_MAX}
                         onPress={() => settings.ttsPitch < TTS_PITCH_MAX && updateSetting('ttsPitch', Math.min(TTS_PITCH_MAX, +(settings.ttsPitch + TTS_PITCH_STEP).toFixed(1)))}
+                        accessibilityRole="button"
+                        accessibilityLabel="Subir tono TTS"
+                        accessibilityState={{ disabled: settings.ttsPitch >= TTS_PITCH_MAX }}
                       >
                         <Text style={[s.fontBtnText, settings.ttsPitch >= TTS_PITCH_MAX && s.fontBtnTextDisabled]}>+</Text>
                       </TouchableOpacity>
@@ -433,77 +458,58 @@ export function SettingsGeneralScreen({ navigation, route }: Props) {
         </ScrollView>
       </BlindGestureContainer>
 
-      <Modal visible={ttsEngineModalVisible} transparent animationType="fade" onRequestClose={() => setTtsEngineModalVisible(false)}>
-        <View style={s.modalOverlay}>
-          <View style={s.encodingModalContent}>
-            <Text style={s.encodingModalTitle}>Selecciona motor TTS</Text>
-            <FlatList
-              data={[{ name: '', label: 'Default del sistema', default: true } as TtsEngineInfo, ...ttsEngines]}
-              keyExtractor={(item) => item.name || 'default'}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[s.encodingOption, settings.ttsEngine === item.name && s.encodingOptionSelected]}
-                  onPress={async () => {
-                    updateSetting('ttsEngine', item.name);
-                    setTtsEngineModalVisible(false);
-                    await refreshVoices();
-                  }}
-                >
-                  <Text style={[s.encodingOptionText, settings.ttsEngine === item.name && s.encodingOptionTextSelected]}>
-                    {item.label}{item.default ? ' (sistema)' : ''}
-                  </Text>
-                </TouchableOpacity>
-              )}
-              scrollEnabled
-              nestedScrollEnabled
-            />
-            <TouchableOpacity style={s.encodingModalCloseBtn} onPress={() => setTtsEngineModalVisible(false)}>
-              <Text style={s.encodingModalCloseBtnText}>Cerrar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      <AccessibleSelectModal
+        visible={ttsEngineModalVisible}
+        title="Selecciona motor TTS"
+        scope="tts-engine-modal-general"
+        selfVoicingActive={settingsSelfVoicingActive}
+        options={[
+          { key: '', label: 'Default del sistema', sublabel: 'sistema', selected: settings.ttsEngine === '' },
+          ...ttsEngines.map((e) => ({
+            key: e.name,
+            label: e.label,
+            selected: settings.ttsEngine === e.name,
+          })) as AccessibleSelectOption[],
+        ]}
+        onSelect={async (name) => {
+          updateSetting('ttsEngine', name);
+          setTtsEngineModalVisible(false);
+          await refreshVoices();
+        }}
+        onCancel={() => setTtsEngineModalVisible(false)}
+      />
 
-      <Modal visible={ttsVoiceModalVisible} transparent animationType="fade" onRequestClose={() => setTtsVoiceModalVisible(false)}>
-        <View style={s.modalOverlay}>
-          <View style={s.encodingModalContent}>
-            <Text style={s.encodingModalTitle}>Selecciona voz</Text>
-            <FlatList
-              data={(() => {
-                const all = ttsVoices.filter((v) => !v.notInstalled);
-                const spanish = all.filter((v) => v.language?.toLowerCase().startsWith('es'));
-                const list = spanish.length > 0 ? spanish : all;
-                return [{ id: '', name: 'Default del motor', language: '' } as TtsVoiceInfo, ...list];
-              })()}
-              keyExtractor={(item) => item.id || 'default'}
-              renderItem={({ item }) => {
-                const isSelected = settings.ttsVoice === item.id;
-                const subtitle = item.language ? `${item.language}` : '';
-                return (
-                  <TouchableOpacity
-                    style={[s.encodingOption, isSelected && s.encodingOptionSelected]}
-                    onPress={() => {
-                      updateSetting('ttsVoice', item.id);
-                      setTtsVoiceModalVisible(false);
-                    }}
-                  >
-                    <Text style={[s.encodingOptionText, isSelected && s.encodingOptionTextSelected]}>
-                      {item.name || item.id || 'Default'}
-                      {subtitle ? `  ·  ${subtitle}` : ''}
-                      {item.networkConnectionRequired ? '  ·  online' : ''}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              }}
-              scrollEnabled
-              nestedScrollEnabled
-            />
-            <TouchableOpacity style={s.encodingModalCloseBtn} onPress={() => setTtsVoiceModalVisible(false)}>
-              <Text style={s.encodingModalCloseBtnText}>Cerrar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      <AccessibleSelectModal
+        visible={ttsVoiceModalVisible}
+        title="Selecciona voz"
+        scope="tts-voice-modal-general"
+        selfVoicingActive={settingsSelfVoicingActive}
+        options={(() => {
+          const all = ttsVoices.filter((v) => !v.notInstalled);
+          const spanish = all.filter((v) => v.language?.toLowerCase().startsWith('es'));
+          const list = spanish.length > 0 ? spanish : all;
+          const opts: AccessibleSelectOption[] = [
+            { key: '', label: 'Default del motor', selected: settings.ttsVoice === '' },
+          ];
+          for (const v of list) {
+            const sublabelParts: string[] = [];
+            if (v.language) sublabelParts.push(v.language);
+            if (v.networkConnectionRequired) sublabelParts.push('online');
+            opts.push({
+              key: v.id,
+              label: v.name || v.id || 'Default',
+              sublabel: sublabelParts.join(' · ') || undefined,
+              selected: settings.ttsVoice === v.id,
+            });
+          }
+          return opts;
+        })()}
+        onSelect={(id) => {
+          updateSetting('ttsVoice', id);
+          setTtsVoiceModalVisible(false);
+        }}
+        onCancel={() => setTtsVoiceModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }

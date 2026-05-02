@@ -149,7 +149,12 @@ export function TriggerEditorScreen({ route, navigation }: Props) {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
+        >
           <Text style={styles.backText}>{'< Volver'}</Text>
         </TouchableOpacity>
         <TextInput
@@ -158,6 +163,7 @@ export function TriggerEditorScreen({ route, navigation }: Props) {
           onChangeText={handleRename}
           placeholder="Nombre de la plantilla"
           placeholderTextColor="#555"
+          accessibilityLabel="Nombre de la plantilla"
         />
         <TouchableOpacity style={styles.assignBtn} onPress={() => setAssignVisible(true)}>
           <Text style={styles.assignBtnText}>
@@ -230,6 +236,7 @@ export function TriggerEditorScreen({ route, navigation }: Props) {
                   onValueChange={(v) => handleToggleEnabled(item, v)}
                   trackColor={{ false: '#333', true: '#0c0' }}
                   thumbColor={item.enabled ? '#000' : '#666'}
+                  accessibilityLabel={`${item.name || 'Trigger sin nombre'}. ${item.enabled ? 'Activado' : 'Desactivado'}`}
                 />
                 <TouchableOpacity
                   style={[styles.actionBtn, styles.editBtn]}
@@ -290,9 +297,9 @@ export function TriggerEditorScreen({ route, navigation }: Props) {
         animationType="fade"
         onRequestClose={() => setAssignVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.modalOverlay} accessibilityViewIsModal>
           <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Asignar a personajes</Text>
+            <Text style={styles.modalTitle} accessibilityRole="header">Asignar a personajes</Text>
             <Text style={styles.modalSubtitle}>
               Esta plantilla se aplicará a los personajes marcados.
             </Text>
@@ -308,6 +315,7 @@ export function TriggerEditorScreen({ route, navigation }: Props) {
                 onValueChange={handleToggleAutoAssign}
                 trackColor={{ false: '#333', true: '#0c0' }}
                 thumbColor={pack.autoAssignToNew !== false ? '#000' : '#666'}
+                accessibilityLabel={`Auto-asignar a nuevos personajes. ${pack.autoAssignToNew !== false ? 'Activado' : 'Desactivado'}`}
               />
             </View>
             {servers.length === 0 ? (

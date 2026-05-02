@@ -162,10 +162,12 @@ export function useBlindNavAutoScroll(blindNavActive: boolean) {
 
 // Welcome message para el BlindGestureContainer — mismo texto en todas las
 // sub-pantallas porque las gestures son universales (tap/swipe/long-press).
+// Incluye recordatorio del back del sistema porque el botón "Volver" del
+// header está fuera del BlindGestureContainer y no es navegable por gestos.
 export function useSettingsWelcomeMessage(title: string) {
   return useMemo(
     () =>
-      `${title}. Desliza arriba o abajo para cambiar de opción. Toca en cualquier sitio para activar la opción actual. Mantén pulsado para repetir el anuncio. Desliza a los lados para subir o bajar valores cuando se pueda.`,
+      `${title}. Desliza arriba o abajo para cambiar de opción. Toca en cualquier sitio para activar la opción actual. Mantén pulsado para repetir el anuncio. Desliza a los lados para subir o bajar valores cuando se pueda. Pulsa atrás del sistema para volver.`,
     [title],
   );
 }
@@ -223,9 +225,9 @@ export const settingsStyles = StyleSheet.create({
   },
   fontSizeControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   fontBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#0a3a0a',
     borderWidth: 1,
     borderColor: '#0c0',

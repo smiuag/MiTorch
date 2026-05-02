@@ -124,10 +124,15 @@ export function MySoundsScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
+        >
           <Text style={styles.backText}>{'< Volver'}</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Mis sonidos</Text>
+        <Text style={styles.title} accessibilityRole="header">Mis sonidos</Text>
         <Text style={styles.subtitle}>
           Sonidos personalizados para usar en triggers de tipo "Reproducir sonido". Formatos soportados: wav, mp3, ogg, m4a, aac, flac.
         </Text>
@@ -203,9 +208,9 @@ export function MySoundsScreen({ navigation }: Props) {
         animationType="fade"
         onRequestClose={() => setRenameTarget(null)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.modalOverlay} accessibilityViewIsModal>
           <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Renombrar sonido</Text>
+            <Text style={styles.modalTitle} accessibilityRole="header">Renombrar sonido</Text>
             <TextInput
               style={styles.modalInput}
               value={renameValue}
@@ -213,6 +218,7 @@ export function MySoundsScreen({ navigation }: Props) {
               placeholder="Nombre"
               placeholderTextColor="#555"
               autoFocus
+              accessibilityLabel="Nuevo nombre del sonido"
             />
             <View style={styles.modalActions}>
               <TouchableOpacity

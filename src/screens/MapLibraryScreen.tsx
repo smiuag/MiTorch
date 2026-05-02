@@ -162,10 +162,15 @@ export function MapLibraryScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
+        >
           <Text style={styles.backText}>{'< Volver'}</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Mis mapas</Text>
+        <Text style={styles.title} accessibilityRole="header">Mis mapas</Text>
         <Text style={styles.subtitle}>
           Biblioteca de mapas importados desde Mudlet. Asigna un mapa a cada personaje en la lista de
           servidores. Para exportar el mapa de Mudlet ejecuta en su línea de comandos:{'\n'}
@@ -227,9 +232,9 @@ export function MapLibraryScreen({ navigation }: Props) {
         animationType="fade"
         onRequestClose={handleCancelImport}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.modalOverlay} accessibilityViewIsModal>
           <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Importar mapa</Text>
+            <Text style={styles.modalTitle} accessibilityRole="header">Importar mapa</Text>
             <Text style={styles.label}>Nombre</Text>
             <TextInput
               style={styles.modalInput}
@@ -238,6 +243,7 @@ export function MapLibraryScreen({ navigation }: Props) {
               placeholder="Nombre del mapa"
               placeholderTextColor="#666"
               editable={!importing}
+              accessibilityLabel="Nombre del mapa"
             />
             <Text style={[styles.label, { marginTop: 16 }]}>Idioma de las direcciones</Text>
             <Text style={styles.helperText}>
@@ -298,9 +304,9 @@ export function MapLibraryScreen({ navigation }: Props) {
         animationType="fade"
         onRequestClose={() => setRenameTarget(null)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.modalOverlay} accessibilityViewIsModal>
           <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Renombrar mapa</Text>
+            <Text style={styles.modalTitle} accessibilityRole="header">Renombrar mapa</Text>
             <TextInput
               style={styles.modalInput}
               value={renameValue}
@@ -308,6 +314,7 @@ export function MapLibraryScreen({ navigation }: Props) {
               placeholder="Nuevo nombre"
               placeholderTextColor="#666"
               autoFocus
+              accessibilityLabel="Nuevo nombre del mapa"
             />
             <View style={styles.modalButtons}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setRenameTarget(null)}>

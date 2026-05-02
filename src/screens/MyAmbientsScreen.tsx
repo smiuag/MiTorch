@@ -158,10 +158,15 @@ export function MyAmbientsScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
+        >
           <Text style={styles.backText}>{'< Volver'}</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Mis ambientes</Text>
+        <Text style={styles.title} accessibilityRole="header">Mis ambientes</Text>
         <Text style={styles.subtitle}>
           Música de fondo en bucle por tipo de sala. Asigna 1-{MAX_SOUNDS_PER_CATEGORY} sonidos por categoría — al
           entrar en una sala de ese tipo se elige uno al azar y se hace crossfade. Los wavs deben ser loops sin
@@ -244,9 +249,9 @@ export function MyAmbientsScreen({ navigation }: Props) {
         animationType="fade"
         onRequestClose={() => setPickerCategory(null)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.modalOverlay} accessibilityViewIsModal>
           <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>
+            <Text style={styles.modalTitle} accessibilityRole="header">
               Elegir sonido para {pickerCategory ? CATEGORY_LABEL[pickerCategory] : ''}
             </Text>
             {sounds.length === 0 ? (

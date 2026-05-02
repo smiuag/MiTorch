@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Switch, Modal, FlatList, Alert } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Switch, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types';
 import { BlindGestureContainer, SelfVoicingRow } from '../../components/SelfVoicingControls';
+import { AccessibleSelectModal, AccessibleSelectOption } from '../../components/AccessibleSelectModal';
 import { requestNotificationPermission, openNotificationSettings } from '../../services/foregroundService';
 import { logService, ExportRange, slugifyServerName } from '../../services/logService';
 import { saveSettings, LogsMaxLines } from '../../storage/settingsStorage';
@@ -114,7 +115,12 @@ export function SettingsSystemScreen({ navigation, route }: Props) {
       importantForAccessibility={selfVoicingActive ? 'no-hide-descendants' : 'auto'}
     >
       <View style={s.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={s.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
+        >
           <Text style={s.backText}>{'< Volver'}</Text>
         </TouchableOpacity>
         <Text style={s.title} accessibilityRole="header">Sistema</Text>
@@ -130,7 +136,7 @@ export function SettingsSystemScreen({ navigation, route }: Props) {
           onScroll={onScroll}
           onLayout={onLayout}
         >
-          <Text style={s.sectionTitle}>Conexión</Text>
+          <Text style={s.sectionTitle} accessibilityRole="header">Conexión</Text>
 
           {showEncoding && (
             <SelfVoicingRow
@@ -173,6 +179,7 @@ export function SettingsSystemScreen({ navigation, route }: Props) {
               onValueChange={(v) => updateSetting('backgroundConnectionEnabled', v)}
               trackColor={{ false: '#333', true: '#0c0' }}
               thumbColor={settings.backgroundConnectionEnabled ? '#000' : '#666'}
+              accessibilityLabel={`Conexión en segundo plano. ${settings.backgroundConnectionEnabled ? 'Activado' : 'Desactivado'}`}
             />
           </SelfVoicingRow>
 
@@ -195,6 +202,7 @@ export function SettingsSystemScreen({ navigation, route }: Props) {
               onValueChange={(v) => updateSetting('keepAwakeEnabled', v)}
               trackColor={{ false: '#333', true: '#0c0' }}
               thumbColor={settings.keepAwakeEnabled ? '#000' : '#666'}
+              accessibilityLabel={`Mantener pantalla encendida. ${settings.keepAwakeEnabled ? 'Activado' : 'Desactivado'}`}
             />
           </SelfVoicingRow>
 
@@ -226,10 +234,15 @@ export function SettingsSystemScreen({ navigation, route }: Props) {
               disabled={!settings.backgroundConnectionEnabled}
               trackColor={{ false: '#333', true: '#0c0' }}
               thumbColor={settings.notificationsEnabled && settings.backgroundConnectionEnabled ? '#000' : '#666'}
+              accessibilityLabel={
+                !settings.backgroundConnectionEnabled
+                  ? 'Usar notificaciones. Deshabilitado: requiere conexión en segundo plano'
+                  : `Usar notificaciones. ${settings.notificationsEnabled ? 'Activado' : 'Desactivado'}`
+              }
             />
           </SelfVoicingRow>
 
-          <Text style={[s.sectionTitle, { marginTop: 24 }]}>Logs</Text>
+          <Text style={[s.sectionTitle, { marginTop: 24 }]} accessibilityRole="header">Logs</Text>
 
           <SelfVoicingRow
             svActive={settingsSelfVoicingActive}
@@ -251,6 +264,7 @@ export function SettingsSystemScreen({ navigation, route }: Props) {
               onValueChange={onToggleLogs}
               trackColor={{ false: '#333', true: '#0c0' }}
               thumbColor={settings.logsEnabled ? '#000' : '#666'}
+              accessibilityLabel={`Guardar logs para soporte. ${settings.logsEnabled ? 'Activado' : 'Desactivado'}`}
             />
           </SelfVoicingRow>
 
@@ -347,83 +361,48 @@ export function SettingsSystemScreen({ navigation, route }: Props) {
         </ScrollView>
       </BlindGestureContainer>
 
-      <Modal
+      <AccessibleSelectModal
         visible={encodingModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setEncodingModalVisible(false)}
-      >
-        <View style={s.modalOverlay}>
-          <View style={s.encodingModalContent}>
-            <Text style={s.encodingModalTitle}>Selecciona codificación</Text>
-            <FlatList
-              data={ENCODING_OPTIONS}
-              keyExtractor={(item) => item.value}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[s.encodingOption, settings.encoding === item.value && s.encodingOptionSelected]}
-                  onPress={() => {
-                    updateSetting('encoding', item.value);
-                    setEncodingModalVisible(false);
-                  }}
-                >
-                  <Text style={[s.encodingOptionText, settings.encoding === item.value && s.encodingOptionTextSelected]}>
-                    {item.label}
-                  </Text>
-                </TouchableOpacity>
-              )}
-              scrollEnabled
-              nestedScrollEnabled
-            />
-            <TouchableOpacity style={s.encodingModalCloseBtn} onPress={() => setEncodingModalVisible(false)}>
-              <Text style={s.encodingModalCloseBtnText}>Cerrar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+        title="Selecciona codificación"
+        scope="encoding-modal"
+        selfVoicingActive={settingsSelfVoicingActive}
+        options={ENCODING_OPTIONS.map((opt) => ({
+          key: opt.value,
+          label: opt.label,
+          selected: settings.encoding === opt.value,
+        }))}
+        onSelect={(value) => {
+          updateSetting('encoding', value);
+          setEncodingModalVisible(false);
+        }}
+        onCancel={() => setEncodingModalVisible(false)}
+      />
 
-      <Modal
+      <AccessibleSelectModal<ExportRange>
         visible={exportRangeModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setExportRangeModalVisible(false)}
-      >
-        <View style={localStyles.exportRangeOverlay}>
-          <View style={localStyles.exportRangeBox}>
-            <Text style={localStyles.exportRangeTitle} accessibilityRole="header">¿Qué rango exportar?</Text>
-            {(['24h', '7d', 'all'] as ExportRange[]).map((range) => {
-              const label = range === '24h' ? 'Últimas 24 horas' : range === '7d' ? 'Últimos 7 días' : 'Todo';
-              return (
-                <TouchableOpacity
-                  key={range}
-                  style={localStyles.exportRangeBtn}
-                  onPress={async () => {
-                    setExportRangeModalVisible(false);
-                    try {
-                      const servers = await loadServers();
-                      const serverHostMap: Record<string, string> = {};
-                      for (const sv of servers) {
-                        serverHostMap[slugifyServerName(sv.name)] = sv.host;
-                      }
-                      await logService.exportToHtml(range, serverHostMap);
-                    } catch (e: any) {
-                      Alert.alert('No se pudo exportar', e?.message ?? String(e));
-                    }
-                  }}
-                >
-                  <Text style={localStyles.exportRangeBtnText}>{label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-            <TouchableOpacity
-              style={[localStyles.exportRangeBtn, localStyles.exportRangeCancel]}
-              onPress={() => setExportRangeModalVisible(false)}
-            >
-              <Text style={localStyles.exportRangeBtnText}>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+        title="¿Qué rango exportar?"
+        scope="export-range-modal-system"
+        selfVoicingActive={settingsSelfVoicingActive}
+        options={[
+          { key: '24h' as ExportRange, label: 'Últimas 24 horas' },
+          { key: '7d' as ExportRange, label: 'Últimos 7 días' },
+          { key: 'all' as ExportRange, label: 'Todo' },
+        ]}
+        onSelect={async (range) => {
+          setExportRangeModalVisible(false);
+          try {
+            const servers = await loadServers();
+            const serverHostMap: Record<string, string> = {};
+            for (const sv of servers) {
+              serverHostMap[slugifyServerName(sv.name)] = sv.host;
+            }
+            await logService.exportToHtml(range, serverHostMap);
+          } catch (e: any) {
+            Alert.alert('No se pudo exportar', e?.message ?? String(e));
+          }
+        }}
+        onCancel={() => setExportRangeModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -458,27 +437,4 @@ const localStyles = StyleSheet.create({
   },
   logActionBtnDanger: { backgroundColor: '#663333', borderColor: '#884444', marginRight: 0 },
   logActionBtnText: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
-  exportRangeOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  exportRangeBox: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#333',
-    padding: 20,
-    minWidth: 280,
-    maxWidth: 400,
-  },
-  exportRangeTitle: { color: '#00cc00', fontSize: 18, fontWeight: 'bold', marginBottom: 16, textAlign: 'center' },
-  exportRangeBtn: {
-    backgroundColor: '#336633',
-    borderWidth: 1,
-    borderColor: '#558855',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 6,
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  exportRangeCancel: { backgroundColor: '#443333', borderColor: '#664444', marginBottom: 0, marginTop: 6 },
-  exportRangeBtnText: { color: '#fff', fontSize: 15, fontWeight: 'bold' },
 });

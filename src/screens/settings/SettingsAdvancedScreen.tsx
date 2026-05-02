@@ -48,7 +48,12 @@ export function SettingsAdvancedScreen({ navigation, route }: Props) {
       importantForAccessibility={selfVoicingActive ? 'no-hide-descendants' : 'auto'}
     >
       <View style={s.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={s.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
+        >
           <Text style={s.backText}>{'< Volver'}</Text>
         </TouchableOpacity>
         <Text style={s.title} accessibilityRole="header">Avanzado</Text>
@@ -85,6 +90,7 @@ export function SettingsAdvancedScreen({ navigation, route }: Props) {
                   onValueChange={onToggleGestures}
                   trackColor={{ false: '#333', true: '#0c0' }}
                   thumbColor={settings.gesturesEnabled ? '#000' : '#666'}
+                  accessibilityLabel={`Usar gestos. ${settings.gesturesEnabled ? 'Activado' : 'Desactivado'}`}
                 />
               </SelfVoicingRow>
 
@@ -93,7 +99,7 @@ export function SettingsAdvancedScreen({ navigation, route }: Props) {
                   style={s.row}
                   onPress={() => navigation.navigate('SettingsGestures', { sourceLocation })}
                   accessibilityRole="button"
-                  accessibilityLabel="Configurar gestos"
+                  accessibilityLabel="Configurar gestos. Asocia un comando a cada gesto y elige si abre teclado tras ejecutar."
                 >
                   <View style={s.rowInfo}>
                     <Text style={s.rowTitle}>Configurar gestos</Text>

@@ -3146,7 +3146,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         animationType="fade"
         onRequestClose={cancelExit}
       >
-        <View style={styles.exitModalOverlay}>
+        <View style={styles.exitModalOverlay} accessibilityViewIsModal>
           <View style={styles.exitModalBox}>
             <Text style={styles.exitModalTitle} accessibilityRole="header">
               ¿Salir y desconectar?

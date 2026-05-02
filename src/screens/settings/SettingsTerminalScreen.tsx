@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Switch, Modal, FlatList, Alert, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Switch, Alert, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Tts from 'react-native-tts';
 import { RootStackParamList } from '../../types';
 import { BlindGestureContainer, SelfVoicingRow } from '../../components/SelfVoicingControls';
 import { VolumeAdjuster } from '../../components/VolumeAdjuster';
+import { AccessibleSelectModal, AccessibleSelectOption } from '../../components/AccessibleSelectModal';
 import { activeConnection } from '../../services/activeConnection';
 import { CANONICAL_PROMPT } from '../../services/promptParser';
 import { speechQueue } from '../../services/speechQueueService';
@@ -171,7 +172,12 @@ export function SettingsTerminalScreen({ navigation }: Props) {
       importantForAccessibility={selfVoicingActive ? 'no-hide-descendants' : 'auto'}
     >
       <View style={s.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={s.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
+        >
           <Text style={s.backText}>{'< Volver'}</Text>
         </TouchableOpacity>
         <Text style={s.title} accessibilityRole="header">Configuración</Text>
@@ -198,14 +204,18 @@ export function SettingsTerminalScreen({ navigation }: Props) {
                   style={[s.fontBtn, settings.fontSize <= 10 && s.fontBtnDisabled]}
                   onPress={() => settings.fontSize > 10 && updateSetting('fontSize', settings.fontSize - 1)}
                   accessibilityRole="button"
+                  accessibilityLabel="Bajar tamaño de fuente"
+                  accessibilityState={{ disabled: settings.fontSize <= 10 }}
                 >
                   <Text style={[s.fontBtnText, settings.fontSize <= 10 && s.fontBtnTextDisabled]}>−</Text>
                 </TouchableOpacity>
-                <Text style={s.fontSizeValue}>{settings.fontSize}</Text>
+                <Text style={s.fontSizeValue} accessibilityLabel={`Tamaño de fuente: ${settings.fontSize}`}>{settings.fontSize}</Text>
                 <TouchableOpacity
                   style={[s.fontBtn, settings.fontSize >= 20 && s.fontBtnDisabled]}
                   onPress={() => settings.fontSize < 20 && updateSetting('fontSize', settings.fontSize + 1)}
                   accessibilityRole="button"
+                  accessibilityLabel="Subir tamaño de fuente"
+                  accessibilityState={{ disabled: settings.fontSize >= 20 }}
                 >
                   <Text style={[s.fontBtnText, settings.fontSize >= 20 && s.fontBtnTextDisabled]}>+</Text>
                 </TouchableOpacity>
@@ -230,6 +240,7 @@ export function SettingsTerminalScreen({ navigation }: Props) {
               onValueChange={(v) => updateSetting('soundsEnabled', v)}
               trackColor={{ false: '#333', true: '#0c0' }}
               thumbColor={settings.soundsEnabled ? '#000' : '#666'}
+              accessibilityLabel={`Usar sonidos. ${settings.soundsEnabled ? 'Activado' : 'Desactivado'}`}
             />
           </SelfVoicingRow>
 
@@ -250,6 +261,7 @@ export function SettingsTerminalScreen({ navigation }: Props) {
               onValueChange={(v) => updateSetting('ambientEnabled', v)}
               trackColor={{ false: '#333', true: '#0c0' }}
               thumbColor={settings.ambientEnabled ? '#000' : '#666'}
+              accessibilityLabel={`Música ambiente. ${settings.ambientEnabled ? 'Activado' : 'Desactivado'}`}
             />
           </SelfVoicingRow>
 
@@ -293,6 +305,7 @@ export function SettingsTerminalScreen({ navigation }: Props) {
                   onValueChange={(v) => updateSetting('useSelfVoicing', v)}
                   trackColor={{ false: '#333', true: '#0c0' }}
                   thumbColor={settings.useSelfVoicing ? '#000' : '#666'}
+                  accessibilityLabel={`Self-voicing TTS propio. Beta. ${settings.useSelfVoicing ? 'Activado' : 'Desactivado'}`}
                 />
               </SelfVoicingRow>
 
@@ -306,13 +319,19 @@ export function SettingsTerminalScreen({ navigation }: Props) {
                     <TouchableOpacity
                       style={[s.fontBtn, settings.speechCharDurationMs <= SPEECH_CHAR_DURATION_MIN && s.fontBtnDisabled]}
                       onPress={() => settings.speechCharDurationMs > SPEECH_CHAR_DURATION_MIN && updateSetting('speechCharDurationMs', Math.max(SPEECH_CHAR_DURATION_MIN, settings.speechCharDurationMs - SPEECH_CHAR_DURATION_STEP))}
+                      accessibilityRole="button"
+                      accessibilityLabel="Bajar velocidad de lectura"
+                      accessibilityState={{ disabled: settings.speechCharDurationMs <= SPEECH_CHAR_DURATION_MIN }}
                     >
                       <Text style={[s.fontBtnText, settings.speechCharDurationMs <= SPEECH_CHAR_DURATION_MIN && s.fontBtnTextDisabled]}>−</Text>
                     </TouchableOpacity>
-                    <Text style={s.fontSizeValue}>{settings.speechCharDurationMs}</Text>
+                    <Text style={s.fontSizeValue} accessibilityLabel={`Velocidad de lectura: ${settings.speechCharDurationMs} milisegundos por carácter`}>{settings.speechCharDurationMs}</Text>
                     <TouchableOpacity
                       style={[s.fontBtn, settings.speechCharDurationMs >= SPEECH_CHAR_DURATION_MAX && s.fontBtnDisabled]}
                       onPress={() => settings.speechCharDurationMs < SPEECH_CHAR_DURATION_MAX && updateSetting('speechCharDurationMs', Math.min(SPEECH_CHAR_DURATION_MAX, settings.speechCharDurationMs + SPEECH_CHAR_DURATION_STEP))}
+                      accessibilityRole="button"
+                      accessibilityLabel="Subir velocidad de lectura"
+                      accessibilityState={{ disabled: settings.speechCharDurationMs >= SPEECH_CHAR_DURATION_MAX }}
                     >
                       <Text style={[s.fontBtnText, settings.speechCharDurationMs >= SPEECH_CHAR_DURATION_MAX && s.fontBtnTextDisabled]}>+</Text>
                     </TouchableOpacity>
@@ -393,14 +412,20 @@ export function SettingsTerminalScreen({ navigation }: Props) {
                         style={[s.fontBtn, settings.ttsRate <= TTS_RATE_MIN && s.fontBtnDisabled]}
                         disabled={settings.ttsRate <= TTS_RATE_MIN}
                         onPress={() => settings.ttsRate > TTS_RATE_MIN && updateSetting('ttsRate', Math.max(TTS_RATE_MIN, +(settings.ttsRate - TTS_RATE_STEP).toFixed(1)))}
+                        accessibilityRole="button"
+                        accessibilityLabel="Bajar velocidad TTS"
+                        accessibilityState={{ disabled: settings.ttsRate <= TTS_RATE_MIN }}
                       >
                         <Text style={[s.fontBtnText, settings.ttsRate <= TTS_RATE_MIN && s.fontBtnTextDisabled]}>−</Text>
                       </TouchableOpacity>
-                      <Text style={s.fontSizeValue}>{settings.ttsRate.toFixed(1)}</Text>
+                      <Text style={s.fontSizeValue} accessibilityLabel={`Velocidad TTS: ${settings.ttsRate.toFixed(1)}`}>{settings.ttsRate.toFixed(1)}</Text>
                       <TouchableOpacity
                         style={[s.fontBtn, settings.ttsRate >= TTS_RATE_MAX && s.fontBtnDisabled]}
                         disabled={settings.ttsRate >= TTS_RATE_MAX}
                         onPress={() => settings.ttsRate < TTS_RATE_MAX && updateSetting('ttsRate', Math.min(TTS_RATE_MAX, +(settings.ttsRate + TTS_RATE_STEP).toFixed(1)))}
+                        accessibilityRole="button"
+                        accessibilityLabel="Subir velocidad TTS"
+                        accessibilityState={{ disabled: settings.ttsRate >= TTS_RATE_MAX }}
                       >
                         <Text style={[s.fontBtnText, settings.ttsRate >= TTS_RATE_MAX && s.fontBtnTextDisabled]}>+</Text>
                       </TouchableOpacity>
@@ -427,14 +452,20 @@ export function SettingsTerminalScreen({ navigation }: Props) {
                         style={[s.fontBtn, settings.ttsPitch <= TTS_PITCH_MIN && s.fontBtnDisabled]}
                         disabled={settings.ttsPitch <= TTS_PITCH_MIN}
                         onPress={() => settings.ttsPitch > TTS_PITCH_MIN && updateSetting('ttsPitch', Math.max(TTS_PITCH_MIN, +(settings.ttsPitch - TTS_PITCH_STEP).toFixed(1)))}
+                        accessibilityRole="button"
+                        accessibilityLabel="Bajar tono TTS"
+                        accessibilityState={{ disabled: settings.ttsPitch <= TTS_PITCH_MIN }}
                       >
                         <Text style={[s.fontBtnText, settings.ttsPitch <= TTS_PITCH_MIN && s.fontBtnTextDisabled]}>−</Text>
                       </TouchableOpacity>
-                      <Text style={s.fontSizeValue}>{settings.ttsPitch.toFixed(1)}</Text>
+                      <Text style={s.fontSizeValue} accessibilityLabel={`Tono TTS: ${settings.ttsPitch.toFixed(1)}`}>{settings.ttsPitch.toFixed(1)}</Text>
                       <TouchableOpacity
                         style={[s.fontBtn, settings.ttsPitch >= TTS_PITCH_MAX && s.fontBtnDisabled]}
                         disabled={settings.ttsPitch >= TTS_PITCH_MAX}
                         onPress={() => settings.ttsPitch < TTS_PITCH_MAX && updateSetting('ttsPitch', Math.min(TTS_PITCH_MAX, +(settings.ttsPitch + TTS_PITCH_STEP).toFixed(1)))}
+                        accessibilityRole="button"
+                        accessibilityLabel="Subir tono TTS"
+                        accessibilityState={{ disabled: settings.ttsPitch >= TTS_PITCH_MAX }}
                       >
                         <Text style={[s.fontBtnText, settings.ttsPitch >= TTS_PITCH_MAX && s.fontBtnTextDisabled]}>+</Text>
                       </TouchableOpacity>
@@ -492,6 +523,7 @@ export function SettingsTerminalScreen({ navigation }: Props) {
               onValueChange={(v) => updateSetting('backgroundConnectionEnabled', v)}
               trackColor={{ false: '#333', true: '#0c0' }}
               thumbColor={settings.backgroundConnectionEnabled ? '#000' : '#666'}
+              accessibilityLabel={`Conexión en segundo plano. ${settings.backgroundConnectionEnabled ? 'Activado' : 'Desactivado'}`}
             />
           </SelfVoicingRow>
 
@@ -512,6 +544,7 @@ export function SettingsTerminalScreen({ navigation }: Props) {
               onValueChange={(v) => updateSetting('keepAwakeEnabled', v)}
               trackColor={{ false: '#333', true: '#0c0' }}
               thumbColor={settings.keepAwakeEnabled ? '#000' : '#666'}
+              accessibilityLabel={`Mantener pantalla encendida. ${settings.keepAwakeEnabled ? 'Activado' : 'Desactivado'}`}
             />
           </SelfVoicingRow>
 
@@ -543,6 +576,11 @@ export function SettingsTerminalScreen({ navigation }: Props) {
               disabled={!settings.backgroundConnectionEnabled}
               trackColor={{ false: '#333', true: '#0c0' }}
               thumbColor={settings.notificationsEnabled && settings.backgroundConnectionEnabled ? '#000' : '#666'}
+              accessibilityLabel={
+                !settings.backgroundConnectionEnabled
+                  ? 'Usar notificaciones. Deshabilitado: requiere conexión en segundo plano'
+                  : `Usar notificaciones. ${settings.notificationsEnabled ? 'Activado' : 'Desactivado'}`
+              }
             />
           </SelfVoicingRow>
 
@@ -566,6 +604,7 @@ export function SettingsTerminalScreen({ navigation }: Props) {
                 onValueChange={onToggleGestures}
                 trackColor={{ false: '#333', true: '#0c0' }}
                 thumbColor={settings.gesturesEnabled ? '#000' : '#666'}
+                accessibilityLabel={`Usar gestos. ${settings.gesturesEnabled ? 'Activado' : 'Desactivado'}`}
               />
             </SelfVoicingRow>
           )}
@@ -660,115 +699,84 @@ export function SettingsTerminalScreen({ navigation }: Props) {
         </ScrollView>
       </BlindGestureContainer>
 
-      <Modal visible={ttsEngineModalVisible} transparent animationType="fade" onRequestClose={() => setTtsEngineModalVisible(false)}>
-        <View style={s.modalOverlay}>
-          <View style={s.encodingModalContent}>
-            <Text style={s.encodingModalTitle}>Selecciona motor TTS</Text>
-            <FlatList
-              data={[{ name: '', label: 'Default del sistema', default: true } as TtsEngineInfo, ...ttsEngines]}
-              keyExtractor={(item) => item.name || 'default'}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[s.encodingOption, settings.ttsEngine === item.name && s.encodingOptionSelected]}
-                  onPress={async () => {
-                    updateSetting('ttsEngine', item.name);
-                    setTtsEngineModalVisible(false);
-                    await refreshVoices();
-                  }}
-                >
-                  <Text style={[s.encodingOptionText, settings.ttsEngine === item.name && s.encodingOptionTextSelected]}>
-                    {item.label}{item.default ? ' (sistema)' : ''}
-                  </Text>
-                </TouchableOpacity>
-              )}
-              scrollEnabled
-              nestedScrollEnabled
-            />
-            <TouchableOpacity style={s.encodingModalCloseBtn} onPress={() => setTtsEngineModalVisible(false)}>
-              <Text style={s.encodingModalCloseBtnText}>Cerrar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      <AccessibleSelectModal
+        visible={ttsEngineModalVisible}
+        title="Selecciona motor TTS"
+        scope="tts-engine-modal"
+        selfVoicingActive={settingsSelfVoicingActive}
+        options={[
+          { key: '', label: 'Default del sistema', sublabel: 'sistema', selected: settings.ttsEngine === '' },
+          ...ttsEngines.map((e) => ({
+            key: e.name,
+            label: e.label,
+            selected: settings.ttsEngine === e.name,
+          })) as AccessibleSelectOption[],
+        ]}
+        onSelect={async (name) => {
+          updateSetting('ttsEngine', name);
+          setTtsEngineModalVisible(false);
+          await refreshVoices();
+        }}
+        onCancel={() => setTtsEngineModalVisible(false)}
+      />
 
-      <Modal visible={ttsVoiceModalVisible} transparent animationType="fade" onRequestClose={() => setTtsVoiceModalVisible(false)}>
-        <View style={s.modalOverlay}>
-          <View style={s.encodingModalContent}>
-            <Text style={s.encodingModalTitle}>Selecciona voz</Text>
-            <FlatList
-              data={(() => {
-                const all = ttsVoices.filter((v) => !v.notInstalled);
-                const spanish = all.filter((v) => v.language?.toLowerCase().startsWith('es'));
-                const list = spanish.length > 0 ? spanish : all;
-                return [{ id: '', name: 'Default del motor', language: '' } as TtsVoiceInfo, ...list];
-              })()}
-              keyExtractor={(item) => item.id || 'default'}
-              renderItem={({ item }) => {
-                const isSelected = settings.ttsVoice === item.id;
-                const subtitle = item.language ? `${item.language}` : '';
-                return (
-                  <TouchableOpacity
-                    style={[s.encodingOption, isSelected && s.encodingOptionSelected]}
-                    onPress={() => {
-                      updateSetting('ttsVoice', item.id);
-                      setTtsVoiceModalVisible(false);
-                    }}
-                  >
-                    <Text style={[s.encodingOptionText, isSelected && s.encodingOptionTextSelected]}>
-                      {item.name || item.id || 'Default'}
-                      {subtitle ? `  ·  ${subtitle}` : ''}
-                      {item.networkConnectionRequired ? '  ·  online' : ''}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              }}
-              scrollEnabled
-              nestedScrollEnabled
-            />
-            <TouchableOpacity style={s.encodingModalCloseBtn} onPress={() => setTtsVoiceModalVisible(false)}>
-              <Text style={s.encodingModalCloseBtnText}>Cerrar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      <AccessibleSelectModal
+        visible={ttsVoiceModalVisible}
+        title="Selecciona voz"
+        scope="tts-voice-modal"
+        selfVoicingActive={settingsSelfVoicingActive}
+        options={(() => {
+          const all = ttsVoices.filter((v) => !v.notInstalled);
+          const spanish = all.filter((v) => v.language?.toLowerCase().startsWith('es'));
+          const list = spanish.length > 0 ? spanish : all;
+          const opts: AccessibleSelectOption[] = [
+            { key: '', label: 'Default del motor', selected: settings.ttsVoice === '' },
+          ];
+          for (const v of list) {
+            const sublabelParts: string[] = [];
+            if (v.language) sublabelParts.push(v.language);
+            if (v.networkConnectionRequired) sublabelParts.push('online');
+            opts.push({
+              key: v.id,
+              label: v.name || v.id || 'Default',
+              sublabel: sublabelParts.join(' · ') || undefined,
+              selected: settings.ttsVoice === v.id,
+            });
+          }
+          return opts;
+        })()}
+        onSelect={(id) => {
+          updateSetting('ttsVoice', id);
+          setTtsVoiceModalVisible(false);
+        }}
+        onCancel={() => setTtsVoiceModalVisible(false)}
+      />
 
-      <Modal visible={exportRangeModalVisible} transparent animationType="fade" onRequestClose={() => setExportRangeModalVisible(false)}>
-        <View style={localStyles.exportRangeOverlay}>
-          <View style={localStyles.exportRangeBox}>
-            <Text style={localStyles.exportRangeTitle} accessibilityRole="header">¿Qué rango exportar?</Text>
-            {(['24h', '7d', 'all'] as ExportRange[]).map((range) => {
-              const label = range === '24h' ? 'Últimas 24 horas' : range === '7d' ? 'Últimos 7 días' : 'Todo';
-              return (
-                <TouchableOpacity
-                  key={range}
-                  style={localStyles.exportRangeBtn}
-                  onPress={async () => {
-                    setExportRangeModalVisible(false);
-                    try {
-                      const servers = await loadServers();
-                      const serverHostMap: Record<string, string> = {};
-                      for (const sv of servers) {
-                        serverHostMap[slugifyServerName(sv.name)] = sv.host;
-                      }
-                      await logService.exportToHtml(range, serverHostMap);
-                    } catch (e: any) {
-                      Alert.alert('No se pudo exportar', e?.message ?? String(e));
-                    }
-                  }}
-                >
-                  <Text style={localStyles.exportRangeBtnText}>{label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-            <TouchableOpacity
-              style={[localStyles.exportRangeBtn, localStyles.exportRangeCancel]}
-              onPress={() => setExportRangeModalVisible(false)}
-            >
-              <Text style={localStyles.exportRangeBtnText}>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      <AccessibleSelectModal<ExportRange>
+        visible={exportRangeModalVisible}
+        title="¿Qué rango exportar?"
+        scope="export-range-modal"
+        selfVoicingActive={settingsSelfVoicingActive}
+        options={[
+          { key: '24h' as ExportRange, label: 'Últimas 24 horas' },
+          { key: '7d' as ExportRange, label: 'Últimos 7 días' },
+          { key: 'all' as ExportRange, label: 'Todo' },
+        ]}
+        onSelect={async (range) => {
+          setExportRangeModalVisible(false);
+          try {
+            const servers = await loadServers();
+            const serverHostMap: Record<string, string> = {};
+            for (const sv of servers) {
+              serverHostMap[slugifyServerName(sv.name)] = sv.host;
+            }
+            await logService.exportToHtml(range, serverHostMap);
+          } catch (e: any) {
+            Alert.alert('No se pudo exportar', e?.message ?? String(e));
+          }
+        }}
+        onCancel={() => setExportRangeModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -787,27 +795,4 @@ const localStyles = StyleSheet.create({
   },
   logActionBtnDanger: { backgroundColor: '#663333', borderColor: '#884444', marginRight: 0 },
   logActionBtnText: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
-  exportRangeOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  exportRangeBox: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#333',
-    padding: 20,
-    minWidth: 280,
-    maxWidth: 400,
-  },
-  exportRangeTitle: { color: '#00cc00', fontSize: 18, fontWeight: 'bold', marginBottom: 16, textAlign: 'center' },
-  exportRangeBtn: {
-    backgroundColor: '#336633',
-    borderWidth: 1,
-    borderColor: '#558855',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 6,
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  exportRangeCancel: { backgroundColor: '#443333', borderColor: '#664444', marginBottom: 0, marginTop: 6 },
-  exportRangeBtnText: { color: '#fff', fontSize: 15, fontWeight: 'bold' },
 });

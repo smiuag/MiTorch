@@ -143,11 +143,16 @@ export function UserVariablesScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
+        >
           <Text style={styles.backText}>{'< Volver'}</Text>
         </TouchableOpacity>
         <View style={styles.headerRow}>
-          <Text style={styles.title}>Mis variables</Text>
+          <Text style={styles.title} accessibilityRole="header">Mis variables</Text>
           <View style={styles.headerActions}>
             <TouchableOpacity
               style={[styles.resetBtn, vars.length === 0 && styles.btnDisabled]}
@@ -248,9 +253,9 @@ export function UserVariablesScreen({ navigation }: Props) {
         animationType="fade"
         onRequestClose={() => setCreateModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.modalOverlay} accessibilityViewIsModal>
           <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Nueva variable</Text>
+            <Text style={styles.modalTitle} accessibilityRole="header">Nueva variable</Text>
             <Text style={styles.modalHint}>
               Solo letras minúsculas, números y guiones bajos. Debe empezar por letra. No puedes
               usar nombres reservados del sistema (vida, energia, imagenes, …).
@@ -264,6 +269,7 @@ export function UserVariablesScreen({ navigation }: Props) {
               autoFocus
               autoCapitalize="none"
               autoCorrect={false}
+              accessibilityLabel="Nombre de la nueva variable"
             />
             <View style={styles.modalActions}>
               <TouchableOpacity

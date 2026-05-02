@@ -219,9 +219,9 @@ export function ServerListScreen({ navigation }: Props) {
             style={[styles.actionBtn, styles.duplicateBtn]}
             onPress={() => handleDuplicate(item)}
             accessible={true}
-            accessibilityLabel="Duplicate"
+            accessibilityLabel="Duplicar"
             accessibilityRole="button"
-            accessibilityHint={`Create a copy of ${item.name}`}
+            accessibilityHint={`Crear una copia del personaje ${item.name}`}
           >
             <Text style={[styles.actionBtnText, styles.duplicateBtnText]}>⬚</Text>
           </TouchableOpacity>
@@ -245,7 +245,7 @@ export function ServerListScreen({ navigation }: Props) {
       <View style={styles.header}>
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.title}>TorchZhyla</Text>
+            <Text style={styles.title} accessibilityRole="header">TorchZhyla</Text>
             <Text style={styles.subtitle}>MUD Client</Text>
           </View>
           <View style={styles.headerButtons}>
@@ -253,9 +253,9 @@ export function ServerListScreen({ navigation }: Props) {
               style={styles.helpBtn}
               onPress={() => setHelpModalVisible(true)}
               accessible={true}
-              accessibilityLabel="Help"
+              accessibilityLabel="Ayuda"
               accessibilityRole="button"
-              accessibilityHint="Open help information"
+              accessibilityHint="Abrir información de ayuda"
             >
               <Text style={styles.helpIcon}>?</Text>
             </TouchableOpacity>
@@ -263,9 +263,9 @@ export function ServerListScreen({ navigation }: Props) {
               style={styles.settingsBtn}
               onPress={() => navigation.navigate('Settings')}
               accessible={true}
-              accessibilityLabel="Settings"
+              accessibilityLabel="Configuración"
               accessibilityRole="button"
-              accessibilityHint="Open application settings"
+              accessibilityHint="Abrir ajustes de la aplicación"
             >
               <Text style={styles.settingsIcon}>⚙</Text>
             </TouchableOpacity>
@@ -305,9 +305,9 @@ export function ServerListScreen({ navigation }: Props) {
         animationType="fade"
         onRequestClose={() => {}}
       >
-        <View style={[styles.modalOverlay, overlayInsetStyle]}>
+        <View style={[styles.modalOverlay, overlayInsetStyle]} accessibilityViewIsModal>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>¡Bienvenido a TorchZhyla!</Text>
+            <Text style={styles.modalTitle} accessibilityRole="header">¡Bienvenido a TorchZhyla!</Text>
             <Text style={[styles.label, { marginBottom: 20, lineHeight: 20 }]}>
               ¿Cómo vas a usar la app? Elige el modo de interfaz:
             </Text>
@@ -345,13 +345,13 @@ export function ServerListScreen({ navigation }: Props) {
         animationType="fade"
         onRequestClose={() => setModalVisible(false)}
       >
-        <View style={[styles.modalOverlay, overlayInsetStyle]}>
+        <View style={[styles.modalOverlay, overlayInsetStyle]} accessibilityViewIsModal>
           <View style={styles.modalContent}>
             <ScrollView
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-            <Text style={styles.modalTitle}>
+            <Text style={styles.modalTitle} accessibilityRole="header">
               {editingServer ? 'Editar personaje' : 'Añadir personaje'}
             </Text>
 
@@ -544,9 +544,9 @@ export function ServerListScreen({ navigation }: Props) {
         animationType="fade"
         onRequestClose={() => setMapPickerVisible(false)}
       >
-        <View style={[styles.modalOverlay, overlayInsetStyle]}>
+        <View style={[styles.modalOverlay, overlayInsetStyle]} accessibilityViewIsModal>
           <View style={styles.mapPickerModal}>
-            <Text style={styles.modalTitle}>Elegir mapa</Text>
+            <Text style={styles.modalTitle} accessibilityRole="header">Elegir mapa</Text>
             <ScrollView style={styles.mapPickerList}>
               <TouchableOpacity
                 style={[styles.mapPickerRow, !formMapId && styles.mapPickerRowActive]}
@@ -584,6 +584,8 @@ export function ServerListScreen({ navigation }: Props) {
             <TouchableOpacity
               style={styles.cancelBtn}
               onPress={() => setMapPickerVisible(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar selector de mapa"
             >
               <Text style={styles.cancelText}>Cerrar</Text>
             </TouchableOpacity>
@@ -597,21 +599,21 @@ export function ServerListScreen({ navigation }: Props) {
         animationType="fade"
         onRequestClose={() => setHelpModalVisible(false)}
       >
-        <View style={[styles.helpModalOverlay, overlayInsetStyle]}>
+        <View style={[styles.helpModalOverlay, overlayInsetStyle]} accessibilityViewIsModal>
           <TouchableOpacity
             style={styles.helpModalBackdrop}
             onPress={() => setHelpModalVisible(false)}
             activeOpacity={1}
           />
           <View style={styles.helpModalContent}>
-            <Text style={styles.helpModalTitle}>Ayuda</Text>
+            <Text style={styles.helpModalTitle} accessibilityRole="header">Ayuda</Text>
             <ScrollView
               style={styles.helpModalScroll}
               contentContainerStyle={styles.helpModalScrollContent}
               showsVerticalScrollIndicator={true}
               scrollEnabled={true}
             >
-              <Text style={styles.helpModalSectionTitle}>Conectar a un personaje</Text>
+              <Text style={styles.helpModalSectionTitle} accessibilityRole="header">Conectar a un personaje</Text>
               <Text style={styles.helpModalText}>
                 Pulsa el botón + para crear un nuevo personaje. Introduce nombre, host y puerto. Luego pulsa en el personaje para conectar.
               </Text>
@@ -622,7 +624,7 @@ export function ServerListScreen({ navigation }: Props) {
                 • ✕ (rojo) — Eliminar
               </Text>
 
-              <Text style={styles.helpModalSectionTitle}>Durante la partida</Text>
+              <Text style={styles.helpModalSectionTitle} accessibilityRole="header">Durante la partida</Text>
               <Text style={styles.helpModalText}>
                 • Input inferior para enviar órdenes al MUD.{'\n'}
                 • Botones del grid para comandos rápidos (edita con pulsación larga o con el botón ✎).{'\n'}
@@ -632,7 +634,7 @@ export function ServerListScreen({ navigation }: Props) {
                 • Botón 🎵 activa/desactiva la música ambiente.
               </Text>
 
-              <Text style={styles.helpModalSectionTitle}>Auto-walk</Text>
+              <Text style={styles.helpModalSectionTitle} accessibilityRole="header">Auto-walk</Text>
               <Text style={styles.helpModalText}>
                 • `irsala &lt;nombre&gt;` busca una sala y te lleva andando paso a paso.{'\n'}
                 • `sigilarsala &lt;nombre&gt;` igual pero sigilando cada paso.{'\n'}
@@ -642,12 +644,12 @@ export function ServerListScreen({ navigation }: Props) {
                 • Si tecleas un comando de movimiento manual (norte, sur, sigilar...) mientras camina, el auto-walk se cancela. Otros comandos (chat, atacar, ojear...) NO interrumpen.
               </Text>
 
-              <Text style={styles.helpModalSectionTitle}>Prompt del MUD</Text>
+              <Text style={styles.helpModalSectionTitle} accessibilityRole="header">Prompt del MUD</Text>
               <Text style={styles.helpModalText}>
                 Para que la app capture vida, energía, salidas y otras variables que usan triggers y minimap, el MUD tiene que mandar un prompt con un formato concreto. Conéctate al personaje y, en Settings → Terminal, pulsa "Aplicar prompt TorchZhyla". Eso sobrescribe tu prompt actual en el MUD para ese personaje. Una vez por personaje basta.
               </Text>
 
-              <Text style={styles.helpModalSectionTitle}>Plantillas de triggers</Text>
+              <Text style={styles.helpModalSectionTitle} accessibilityRole="header">Plantillas de triggers</Text>
               <Text style={styles.helpModalText}>
                 Settings → Triggers. Una plantilla agrupa N triggers que se asignan a uno o varios personajes.
               </Text>
@@ -666,22 +668,22 @@ export function ServerListScreen({ navigation }: Props) {
                 Orden importa: dentro de una plantilla, primero matchea el de arriba. Triggers "no bloqueantes" pueden encadenar varios efectos sobre la misma línea.
               </Text>
 
-              <Text style={styles.helpModalSectionTitle}>Mis variables</Text>
+              <Text style={styles.helpModalSectionTitle} accessibilityRole="header">Mis variables</Text>
               <Text style={styles.helpModalText}>
                 Settings → Mis variables. Variables personalizadas que rellenas desde acciones `set_var` y consumes con `${'${nombre}'}` en otros triggers, en botones del grid, o en patrones (con `${'${nombre:raw}'}` para inyectar como regex). Útil para guardar último objetivo, última dirección, lista pipe-separated de enemigos (`nick_x`), etc.
               </Text>
 
-              <Text style={styles.helpModalSectionTitle}>Mis sonidos</Text>
+              <Text style={styles.helpModalSectionTitle} accessibilityRole="header">Mis sonidos</Text>
               <Text style={styles.helpModalText}>
                 Settings → Mis sonidos. Sube wavs / mp3 / ogg desde el móvil. Disponibles en cualquier `play_sound` de trigger y en cualquier slot de Mis ambientes.
               </Text>
 
-              <Text style={styles.helpModalSectionTitle}>Mis ambientes</Text>
+              <Text style={styles.helpModalSectionTitle} accessibilityRole="header">Mis ambientes</Text>
               <Text style={styles.helpModalText}>
                 Settings → Mis ambientes. Música de fondo en bucle que cambia con el tipo de sala (bosque, ciudad, subterráneo, mar, etc.). 18 categorías; asignas 1-4 sonidos a cada una. Al entrar en una sala se elige uno al azar y se hace crossfade desde el anterior. También controla volúmenes de música ambiente y de efectos (triggers).
               </Text>
 
-              <Text style={styles.helpModalSectionTitle}>Importar / exportar configuración</Text>
+              <Text style={styles.helpModalSectionTitle} accessibilityRole="header">Importar / exportar configuración</Text>
               <Text style={styles.helpModalText}>
                 Settings → Importar / exportar configuración. Genera un único ZIP que contiene plantillas de triggers, mappings de ambiente y los sonidos personalizados que usen. Útil para mover el setup a otro móvil o compartirlo. NO incluye servidores, layouts de botones ni settings de la app.
               </Text>
@@ -689,12 +691,12 @@ export function ServerListScreen({ navigation }: Props) {
                 El ZIP se importa por la misma pantalla. Las plantillas se añaden, los mappings de ambiente que vengan en el ZIP sustituyen los actuales (los demás se conservan).
               </Text>
 
-              <Text style={styles.helpModalSectionTitle}>Pack Movimiento (con pan estéreo)</Text>
+              <Text style={styles.helpModalSectionTitle} accessibilityRole="header">Pack Movimiento (con pan estéreo)</Text>
               <Text style={styles.helpModalText}>
                 Si has importado el pack "Movimiento", para que distinga aliados de enemigos teclea en el MUD: `nick x nombre1 nombre2 ...` con los nombres a marcar como enemigos. La lista persiste server-side y los triggers la leen automáticamente. Sin nick x, todos suenan como aliados. Cada dirección suena con pan estéreo distinto (este → derecha, oeste → izquierda, etc.).
               </Text>
 
-              <Text style={styles.helpModalSectionTitle}>Modo blind (accesibilidad)</Text>
+              <Text style={styles.helpModalSectionTitle} accessibilityRole="header">Modo blind (accesibilidad)</Text>
               <Text style={styles.helpModalText}>
                 Settings → "Modo de interfaz" → "Blind". Pensado para usar con TalkBack. La interfaz se simplifica a paneles de botones con acción primaria (doble tap) y secundaria (swipe up/down via TalkBack). Sin gestos visuales — TalkBack los consume.
               </Text>
@@ -702,12 +704,12 @@ export function ServerListScreen({ navigation }: Props) {
                 Cola de lectura propia que evita que TalkBack pise mensajes (ajustable en "Velocidad de lectura"). Canales se anuncian a una y se loguean al terminal para revisión posterior. Los modales y toggles tienen `accessibilityLabel` específicos.
               </Text>
 
-              <Text style={styles.helpModalSectionTitle}>Logs para soporte</Text>
+              <Text style={styles.helpModalSectionTitle} accessibilityRole="header">Logs para soporte</Text>
               <Text style={styles.helpModalText}>
                 Settings → Logs. Captura toda la actividad del terminal a un archivo HTML que puedes compartir con soporte o subir a deathlogs.com (si juegas en Reinos de Leyenda). Off por defecto. Se borra inmediatamente al desactivar (privacidad). La contraseña del auto-login NUNCA se loguea; el resto sí (host, username, nicks de otros).
               </Text>
 
-              <Text style={styles.helpModalSectionTitle}>Macros y atajos</Text>
+              <Text style={styles.helpModalSectionTitle} accessibilityRole="header">Macros y atajos</Text>
               <Text style={styles.helpModalText}>
                 • Botones del grid (Settings → Layout) ejecutan comandos al pulsar.{'\n'}
                 • Pulsación larga edita el botón.{'\n'}
@@ -717,7 +719,7 @@ export function ServerListScreen({ navigation }: Props) {
                 • Modo blind: dos paneles separados con switch (acción primaria del botón switch).
               </Text>
 
-              <Text style={styles.helpModalSectionTitle}>Canales</Text>
+              <Text style={styles.helpModalSectionTitle} accessibilityRole="header">Canales</Text>
               <Text style={styles.helpModalText}>
                 • Cada canal agrupa los mensajes de un tipo (chat, bando, grupo, etc.).{'\n'}
                 • El canal "Todos" los mezcla.{'\n'}
@@ -725,7 +727,7 @@ export function ServerListScreen({ navigation }: Props) {
                 • En blind mode los canales se loguean al terminal pero NO se anuncian (decisión de doctrina, anula ruido).
               </Text>
 
-              <Text style={styles.helpModalSectionTitle}>Trucos</Text>
+              <Text style={styles.helpModalSectionTitle} accessibilityRole="header">Trucos</Text>
               <Text style={styles.helpModalText}>
                 • Botones "Aviso" con `${'${vida}'}/${'${vida_max}'}` reemplazan al viejo "consultar vida".{'\n'}
                 • `nick x` para fijar enemigos del pack Movimiento.{'\n'}
@@ -734,7 +736,7 @@ export function ServerListScreen({ navigation }: Props) {
                 • Pulsa el botón ? de esta lista en cualquier momento para volver a esta ayuda.
               </Text>
 
-              <Text style={styles.helpModalSectionTitle}>Solución de problemas</Text>
+              <Text style={styles.helpModalSectionTitle} accessibilityRole="header">Solución de problemas</Text>
               <Text style={styles.helpModalText}>
                 • Mapa no aparece: estás conectado a un MUD distinto de Reinos de Leyenda.{'\n'}
                 • Música ambiente no suena: comprueba que el botón 🎵 está ON, que tienes wavs asignados en Mis ambientes, y que el mini-mapa te localiza (sin sala, no hay categoría que reproducir).{'\n'}

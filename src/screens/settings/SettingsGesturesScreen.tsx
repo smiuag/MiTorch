@@ -22,6 +22,39 @@ const GESTURE_SYMBOLS: Record<string, string> = {
   doubletap_hold_swipe_down_right: '↘', doubletap_hold_swipe_down_left: '↙',
 };
 
+// Etiquetas en texto natural para que TalkBack/lectores lean algo útil en
+// vez de los símbolos Unicode (↑ se lee como "up arrow", etc.). Se usa como
+// `accessibilityLabel` del row entero y como prefijo en los Switch/Input.
+const GESTURE_LABELS: Record<string, string> = {
+  swipe_up: 'Deslizar arriba',
+  swipe_down: 'Deslizar abajo',
+  swipe_left: 'Deslizar izquierda',
+  swipe_right: 'Deslizar derecha',
+  swipe_up_right: 'Deslizar arriba-derecha',
+  swipe_up_left: 'Deslizar arriba-izquierda',
+  swipe_down_right: 'Deslizar abajo-derecha',
+  swipe_down_left: 'Deslizar abajo-izquierda',
+  twofingers_up: 'Dos dedos arriba',
+  twofingers_down: 'Dos dedos abajo',
+  twofingers_left: 'Dos dedos izquierda',
+  twofingers_right: 'Dos dedos derecha',
+  twofingers_up_right: 'Dos dedos arriba-derecha',
+  twofingers_up_left: 'Dos dedos arriba-izquierda',
+  twofingers_down_right: 'Dos dedos abajo-derecha',
+  twofingers_down_left: 'Dos dedos abajo-izquierda',
+  pinch_in: 'Pellizco hacia dentro',
+  pinch_out: 'Pellizco hacia fuera',
+  twofingers_doubletap: 'Doble toque con dos dedos',
+  doubletap_hold_swipe_up: 'Doble toque mantenido y deslizar arriba',
+  doubletap_hold_swipe_down: 'Doble toque mantenido y deslizar abajo',
+  doubletap_hold_swipe_left: 'Doble toque mantenido y deslizar izquierda',
+  doubletap_hold_swipe_right: 'Doble toque mantenido y deslizar derecha',
+  doubletap_hold_swipe_up_right: 'Doble toque mantenido y deslizar arriba-derecha',
+  doubletap_hold_swipe_up_left: 'Doble toque mantenido y deslizar arriba-izquierda',
+  doubletap_hold_swipe_down_right: 'Doble toque mantenido y deslizar abajo-derecha',
+  doubletap_hold_swipe_down_left: 'Doble toque mantenido y deslizar abajo-izquierda',
+};
+
 function getSection(type: string): string {
   if (type === 'twofingers_doubletap') return '2 dedos doble tap';
   if (type.startsWith('swipe_')) return '1 dedo';
@@ -68,7 +101,12 @@ export function SettingsGesturesScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView style={s.container} edges={['top', 'left', 'right', 'bottom']}>
       <View style={s.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={s.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
+        >
           <Text style={s.backText}>{'< Volver'}</Text>
         </TouchableOpacity>
         <Text style={s.title} accessibilityRole="header">Configurar gestos</Text>
@@ -95,16 +133,32 @@ export function SettingsGesturesScreen({ navigation, route }: Props) {
             updateOne({ action: { ...item.action, ...patch } as GestureAction });
           };
 
+          const gestureName = GESTURE_LABELS[item.type] || item.type;
+
           return (
             <View>
               {showSectionHeader && (
-                <View style={localStyles.gestureSectionHeader}>
+                <View
+                  style={localStyles.gestureSectionHeader}
+                  accessible={true}
+                  accessibilityRole="header"
+                  accessibilityLabel={currentSection}
+                >
                   <Text style={localStyles.gestureSectionTitle}>{currentSection}</Text>
                 </View>
               )}
               <View style={item.enabled ? localStyles.gestureCardContainer : undefined}>
                 <View style={[localStyles.gestureCompactRow, item.enabled && localStyles.gestureCompactRowTop]}>
-                  <Text style={localStyles.gestureSymbol}>{symbol}</Text>
+                  {/* Símbolo Unicode visual oculto a screen readers (los lee
+                      literal: "up arrow" etc.). El nombre del gesto va como
+                      label del Switch. */}
+                  <Text
+                    style={localStyles.gestureSymbol}
+                    accessibilityElementsHidden={true}
+                    importantForAccessibility="no"
+                  >
+                    {symbol}
+                  </Text>
                   {item.enabled ? (
                     <Text style={localStyles.gestureKindLabel} numberOfLines={1}>
                       {actionPreview(item.action)}
@@ -117,6 +171,7 @@ export function SettingsGesturesScreen({ navigation, route }: Props) {
                     onValueChange={(value) => updateOne({ enabled: value })}
                     trackColor={{ false: '#333', true: '#0c0' }}
                     thumbColor={item.enabled ? '#000' : '#666'}
+                    accessibilityLabel={`${gestureName}. ${item.enabled ? `Habilitado. Acción: ${actionPreview(item.action)}` : 'Deshabilitado'}`}
                   />
                 </View>
 
@@ -153,6 +208,11 @@ export function SettingsGesturesScreen({ navigation, route }: Props) {
                           autoCapitalize="none"
                           autoCorrect={false}
                           spellCheck={false}
+                          accessibilityLabel={
+                            item.action.kind === 'send'
+                              ? `${gestureName}, comando a enviar`
+                              : `${gestureName}, texto a preparar en el input`
+                          }
                         />
                       </View>
                     )}
@@ -170,6 +230,7 @@ export function SettingsGesturesScreen({ navigation, route }: Props) {
                           autoCapitalize="none"
                           autoCorrect={false}
                           spellCheck={false}
+                          accessibilityLabel={`${gestureName}, texto antes de la opción`}
                         />
 
                         <Text style={localStyles.fieldLabel}>Origen de las opciones</Text>
@@ -204,6 +265,7 @@ export function SettingsGesturesScreen({ navigation, route }: Props) {
                             onValueChange={(autoSend) => updateAction({ autoSend })}
                             trackColor={{ false: '#333', true: '#0c0' }}
                             thumbColor={item.action.autoSend ? '#000' : '#666'}
+                            accessibilityLabel={`${gestureName}, enviar automáticamente al elegir. ${item.action.autoSend ? 'Activado. Al elegir se envía el comando' : 'Desactivado. Al elegir se prepara en el input y abre el teclado'}`}
                           />
                         </View>
                         <Text style={localStyles.helpText}>
@@ -270,6 +332,7 @@ function CustomListEditor({ list, onChange }: { list: string[]; onChange: (next:
             autoCapitalize="none"
             autoCorrect={false}
             spellCheck={false}
+            accessibilityLabel={`Opción ${idx + 1} de ${list.length} de la lista personalizada`}
           />
           <TouchableOpacity
             style={localStyles.removeBtn}
@@ -279,7 +342,7 @@ function CustomListEditor({ list, onChange }: { list: string[]; onChange: (next:
               onChange(next);
             }}
             accessibilityRole="button"
-            accessibilityLabel={`Borrar opción ${idx + 1}`}
+            accessibilityLabel={entry ? `Borrar opción ${idx + 1}: ${entry}` : `Borrar opción ${idx + 1}`}
           >
             <Text style={localStyles.removeBtnText}>✕</Text>
           </TouchableOpacity>
@@ -444,8 +507,8 @@ const localStyles = StyleSheet.create({
     gap: 6,
   },
   removeBtn: {
-    width: 32,
-    height: 32,
+    width: 44,
+    height: 44,
     borderRadius: 4,
     borderWidth: 1,
     borderColor: '#553333',

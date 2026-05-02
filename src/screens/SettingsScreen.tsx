@@ -45,7 +45,12 @@ function SettingsRootMenu({ navigation, route }: Props) {
   return (
     <SafeAreaView style={s.container} edges={['top', 'left', 'right', 'bottom']}>
       <View style={s.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={s.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
+        >
           <Text style={s.backText}>{'< Volver'}</Text>
         </TouchableOpacity>
         <Text style={s.title} accessibilityRole="header">Configuración</Text>
