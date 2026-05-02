@@ -406,8 +406,14 @@ export function BlindGestureContainer({ active, welcomeMessage, style, children 
     },
   }), [active]);
 
+  // Cuando no está activo devolvemos children sin envolver — meter un
+  // <View style={style}> intermedio rompía el layout de modales (un
+  // ScrollView sin flex propio se colapsa cuando su padre directo es un
+  // View flex:1, y las secciones siguientes desaparecen). El style solo
+  // se aplica cuando estamos en modo activo, donde sí hace falta una View
+  // concreta para enganchar el PanResponder.
   if (!active) {
-    return <View style={style}>{children}</View>;
+    return <>{children}</>;
   }
 
   return (
