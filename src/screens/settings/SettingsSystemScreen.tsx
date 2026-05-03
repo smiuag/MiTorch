@@ -47,7 +47,7 @@ const LOG_SIZE_OPTIONS: { value: LogsMaxLines; mb: string }[] = [
 
 export function SettingsSystemScreen({ navigation, route }: Props) {
   const sourceLocation = route.params?.sourceLocation ?? 'serverlist';
-  const { settings, setSettings, updateSetting, settingsSelfVoicingActive, selfVoicingActive } = useSettings(sourceLocation);
+  const { settings, setSettings, updateSetting, settingsSelfVoicingActive } = useSettings(sourceLocation);
   const [encodingModalVisible, setEncodingModalVisible] = useState(false);
   const [exportRangeModalVisible, setExportRangeModalVisible] = useState(false);
   const anyModalOpen = encodingModalVisible || exportRangeModalVisible;
@@ -112,7 +112,7 @@ export function SettingsSystemScreen({ navigation, route }: Props) {
     <SafeAreaView
       style={s.container}
       edges={['top', 'left', 'right', 'bottom']}
-      importantForAccessibility={selfVoicingActive ? 'no-hide-descendants' : 'auto'}
+      importantForAccessibility={settingsSelfVoicingActive ? 'no-hide-descendants' : 'auto'}
     >
       <View style={s.header}>
         <TouchableOpacity
@@ -151,11 +151,17 @@ export function SettingsSystemScreen({ navigation, route }: Props) {
                 <Text style={s.rowTitle}>Codificación</Text>
                 <Text style={s.rowDesc}>Codificación de la conexión Telnet. Solo editable fuera del MUD.</Text>
               </View>
-              <View style={s.encodingBtn}>
-                <Text style={s.encodingBtnText}>
+              <TouchableOpacity
+                style={s.encodingBtn}
+                onPress={() => setEncodingModalVisible(true)}
+                accessible={true}
+                accessibilityRole="button"
+                accessibilityLabel="Cambiar codificación"
+              >
+                <Text style={s.encodingBtnText} numberOfLines={1} ellipsizeMode="tail">
                   {settings.encoding === 'utf8' ? 'UTF-8' : (settings.encoding || 'UTF-8').toUpperCase()}
                 </Text>
-              </View>
+              </TouchableOpacity>
             </SelfVoicingRow>
           )}
 

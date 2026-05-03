@@ -19,7 +19,7 @@ const SCOPE = 'settings-advanced';
 
 export function SettingsAdvancedScreen({ navigation, route }: Props) {
   const sourceLocation = route.params?.sourceLocation ?? 'serverlist';
-  const { settings, updateSetting, settingsSelfVoicingActive, selfVoicingActive } = useSettings(sourceLocation);
+  const { settings, updateSetting, settingsSelfVoicingActive } = useSettings(sourceLocation);
   const blindNavActive = settingsSelfVoicingActive;
   useSettingsScope(SCOPE, settingsSelfVoicingActive);
   const { scrollViewRef, onScroll, onLayout } = useBlindNavAutoScroll(blindNavActive);
@@ -45,7 +45,7 @@ export function SettingsAdvancedScreen({ navigation, route }: Props) {
     <SafeAreaView
       style={s.container}
       edges={['top', 'left', 'right', 'bottom']}
-      importantForAccessibility={selfVoicingActive ? 'no-hide-descendants' : 'auto'}
+      importantForAccessibility={settingsSelfVoicingActive ? 'no-hide-descendants' : 'auto'}
     >
       <View style={s.header}>
         <TouchableOpacity

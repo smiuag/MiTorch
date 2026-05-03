@@ -434,7 +434,7 @@ export function ConfigBackupScreen({ navigation }: Props) {
       <View style={styles.modalOverlay} accessibilityViewIsModal>
         <View style={styles.modalCard}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>📤 Exportar configuración</Text>
+            <Text style={styles.modalTitle} accessibilityRole="header">📤 Exportar configuración</Text>
             <Text style={styles.modalSubtitle}>
               Marca lo que quieras incluir en el ZIP.
             </Text>
@@ -507,6 +507,7 @@ export function ConfigBackupScreen({ navigation }: Props) {
               disabled={busy}
               accessibilityRole="button"
               accessibilityLabel="Cancelar exportación"
+              accessibilityHint="Cierra el diálogo sin exportar"
             >
               <Text style={styles.actionTitle}>✕ Cancelar</Text>
             </TouchableOpacity>
@@ -543,7 +544,7 @@ export function ConfigBackupScreen({ navigation }: Props) {
           {importManifest && (
             <>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>📥 Importar configuración</Text>
+                <Text style={styles.modalTitle} accessibilityRole="header">📥 Importar configuración</Text>
                 <Text style={styles.modalSubtitle}>
                   Contenido del archivo (v{importManifest.version}). Desmarca lo
                   que no quieras traer.
@@ -631,6 +632,7 @@ export function ConfigBackupScreen({ navigation }: Props) {
                   disabled={busy}
                   accessibilityRole="button"
                   accessibilityLabel="Cancelar importación"
+                  accessibilityHint="Cierra el diálogo sin importar"
                 >
                   <Text style={styles.actionTitle}>✕ Cancelar</Text>
                 </TouchableOpacity>

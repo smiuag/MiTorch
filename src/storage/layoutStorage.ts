@@ -130,28 +130,28 @@ export function createPanelButtons(panelId: number, kind: 'standard' | 'custom',
 export function createBlindModeLayout(): ButtonLayout {
   // Panel 1: Core controls + directions
   const panel1: LayoutButton[] = [
-    // Row 0: IR, VID, ENE, XP, Salidas (las 4 últimas son avisos floating con variables)
-    { id: genId(), col: 0, row: 0, label: 'IR', command: 'irsala', color: '#662266', textColor: '#fff', blindPanel: 1, fixed: true },
-    { id: genId(), col: 1, row: 0, label: 'VID', command: 'Vida: ${vida}/${vida_max}', color: '#336633', textColor: '#fff', blindPanel: 1, kind: 'floating' },
-    { id: genId(), col: 2, row: 0, label: 'ENE', command: 'Energía: ${energia}/${energia_max}', color: '#336633', textColor: '#fff', blindPanel: 1, kind: 'floating' },
+    // Row 0: IRSALA, Vida, Energía, XP, Salidas (las 4 últimas son avisos floating con variables)
+    { id: genId(), col: 0, row: 0, label: 'IRSALA', command: 'irsala', color: '#662266', textColor: '#fff', blindPanel: 1, fixed: true },
+    { id: genId(), col: 1, row: 0, label: 'Vida', command: 'Vida: ${vida}/${vida_max}', color: '#336633', textColor: '#fff', blindPanel: 1, kind: 'floating' },
+    { id: genId(), col: 2, row: 0, label: 'Energía', command: 'Energía: ${energia}/${energia_max}', color: '#336633', textColor: '#fff', blindPanel: 1, kind: 'floating' },
     { id: genId(), col: 3, row: 0, label: 'XP', command: 'XP: ${xp}', color: '#336633', textColor: '#fff', blindPanel: 1, kind: 'floating' },
     { id: genId(), col: 4, row: 0, label: 'Salidas', command: 'Salidas: ${salidas}', color: '#336633', textColor: '#fff', blindPanel: 1, kind: 'floating' },
-    // Row 1: NO, N, NE, AR
-    { id: genId(), col: 0, row: 1, label: 'NO', command: 'noroeste', color: '#662222', textColor: '#fff', blindPanel: 1 },
-    { id: genId(), col: 1, row: 1, label: 'N', command: 'norte', color: '#662222', textColor: '#fff', blindPanel: 1 },
-    { id: genId(), col: 2, row: 1, label: 'NE', command: 'noreste', color: '#662222', textColor: '#fff', blindPanel: 1 },
-    { id: genId(), col: 3, row: 1, label: 'AR', command: 'ar', color: '#663322', textColor: '#fff', blindPanel: 1 },
-    // Row 2: O, [CENTER SWITCH], E, AB
-    { id: genId(), col: 0, row: 2, label: 'O', command: 'oeste', color: '#662222', textColor: '#fff', blindPanel: 1 },
+    // Row 1: Noroeste, Norte, Noreste, Arriba
+    { id: genId(), col: 0, row: 1, label: 'Noroeste', command: 'noroeste', color: '#662222', textColor: '#fff', blindPanel: 1 },
+    { id: genId(), col: 1, row: 1, label: 'Norte', command: 'norte', color: '#662222', textColor: '#fff', blindPanel: 1 },
+    { id: genId(), col: 2, row: 1, label: 'Noreste', command: 'noreste', color: '#662222', textColor: '#fff', blindPanel: 1 },
+    { id: genId(), col: 3, row: 1, label: 'Arriba', command: 'ar', color: '#663322', textColor: '#fff', blindPanel: 1 },
+    // Row 2: Oeste, [CENTER SWITCH], Este, Abajo
+    { id: genId(), col: 0, row: 2, label: 'Oeste', command: 'oeste', color: '#662222', textColor: '#fff', blindPanel: 1 },
     { id: genId(), col: 1, row: 2, label: 'Cambiar', command: '__SWITCH_PANEL__', color: '#336666', textColor: '#88ccff', blindPanel: 1, fixed: true },
-    { id: genId(), col: 2, row: 2, label: 'E', command: 'este', color: '#662222', textColor: '#fff', blindPanel: 1 },
-    { id: genId(), col: 3, row: 2, label: 'AB', command: 'ab', color: '#663322', textColor: '#fff', blindPanel: 1 },
-    // Row 3: SO, S, SE, DE, FU
-    { id: genId(), col: 0, row: 3, label: 'SO', command: 'sudoeste', color: '#662222', textColor: '#fff', blindPanel: 1 },
-    { id: genId(), col: 1, row: 3, label: 'S', command: 'sur', color: '#662222', textColor: '#fff', blindPanel: 1 },
-    { id: genId(), col: 2, row: 3, label: 'SE', command: 'sudeste', color: '#662222', textColor: '#fff', blindPanel: 1 },
-    { id: genId(), col: 3, row: 3, label: 'DE', command: 'dentro', color: '#663322', textColor: '#fff', blindPanel: 1 },
-    { id: genId(), col: 4, row: 3, label: 'FU', command: 'fuera', color: '#663322', textColor: '#fff', blindPanel: 1 },
+    { id: genId(), col: 2, row: 2, label: 'Este', command: 'este', color: '#662222', textColor: '#fff', blindPanel: 1 },
+    { id: genId(), col: 3, row: 2, label: 'Abajo', command: 'ab', color: '#663322', textColor: '#fff', blindPanel: 1 },
+    // Row 3: Sudoeste, Sur, Sudeste, Dentro, Fuera
+    { id: genId(), col: 0, row: 3, label: 'Sudoeste', command: 'sudoeste', color: '#662222', textColor: '#fff', blindPanel: 1 },
+    { id: genId(), col: 1, row: 3, label: 'Sur', command: 'sur', color: '#662222', textColor: '#fff', blindPanel: 1 },
+    { id: genId(), col: 2, row: 3, label: 'Sudeste', command: 'sudeste', color: '#662222', textColor: '#fff', blindPanel: 1 },
+    { id: genId(), col: 3, row: 3, label: 'Dentro', command: 'dentro', color: '#663322', textColor: '#fff', blindPanel: 1 },
+    { id: genId(), col: 4, row: 3, label: 'Fuera', command: 'fuera', color: '#663322', textColor: '#fff', blindPanel: 1 },
   ];
 
   // Panel 2: Stealth directions with empty customizable buttons
@@ -162,24 +162,24 @@ export function createBlindModeLayout(): ButtonLayout {
     { id: genId(), col: 2, row: 0, label: '-', command: '', color: '#444444', textColor: '#fff', blindPanel: 2 },
     { id: genId(), col: 3, row: 0, label: '-', command: '', color: '#444444', textColor: '#fff', blindPanel: 2 },
     { id: genId(), col: 4, row: 0, label: '-', command: '', color: '#444444', textColor: '#fff', blindPanel: 2 },
-    // Row 1: Stealth directions NO, N, NE, AR + empty
-    { id: genId(), col: 0, row: 1, label: 'NO', command: 'sigilar noroeste', color: '#662222', textColor: '#fff', blindPanel: 2 },
-    { id: genId(), col: 1, row: 1, label: 'N', command: 'sigilar norte', color: '#662222', textColor: '#fff', blindPanel: 2 },
-    { id: genId(), col: 2, row: 1, label: 'NE', command: 'sigilar noreste', color: '#662222', textColor: '#fff', blindPanel: 2 },
-    { id: genId(), col: 3, row: 1, label: 'AR', command: 'sigilar ar', color: '#663322', textColor: '#fff', blindPanel: 2 },
+    // Row 1: Stealth directions Noroeste, Norte, Noreste, Arriba + empty
+    { id: genId(), col: 0, row: 1, label: 'Noroeste sigilar', command: 'sigilar noroeste', color: '#662222', textColor: '#fff', blindPanel: 2 },
+    { id: genId(), col: 1, row: 1, label: 'Norte sigilar', command: 'sigilar norte', color: '#662222', textColor: '#fff', blindPanel: 2 },
+    { id: genId(), col: 2, row: 1, label: 'Noreste sigilar', command: 'sigilar noreste', color: '#662222', textColor: '#fff', blindPanel: 2 },
+    { id: genId(), col: 3, row: 1, label: 'Arriba sigilar', command: 'sigilar ar', color: '#663322', textColor: '#fff', blindPanel: 2 },
     { id: genId(), col: 4, row: 1, label: '-', command: '', color: '#444444', textColor: '#fff', blindPanel: 2 },
-    // Row 2: Stealth directions O, SWITCH, E, AB + empty
-    { id: genId(), col: 0, row: 2, label: 'O', command: 'sigilar oeste', color: '#662222', textColor: '#fff', blindPanel: 2 },
+    // Row 2: Stealth directions Oeste, SWITCH, Este, Abajo + empty
+    { id: genId(), col: 0, row: 2, label: 'Oeste sigilar', command: 'sigilar oeste', color: '#662222', textColor: '#fff', blindPanel: 2 },
     { id: genId(), col: 1, row: 2, label: 'Cambiar', command: '__SWITCH_PANEL__', color: '#336666', textColor: '#88ccff', blindPanel: 2 },
-    { id: genId(), col: 2, row: 2, label: 'E', command: 'sigilar este', color: '#662222', textColor: '#fff', blindPanel: 2 },
-    { id: genId(), col: 3, row: 2, label: 'AB', command: 'sigilar ab', color: '#663322', textColor: '#fff', blindPanel: 2 },
+    { id: genId(), col: 2, row: 2, label: 'Este sigilar', command: 'sigilar este', color: '#662222', textColor: '#fff', blindPanel: 2 },
+    { id: genId(), col: 3, row: 2, label: 'Abajo sigilar', command: 'sigilar ab', color: '#663322', textColor: '#fff', blindPanel: 2 },
     { id: genId(), col: 4, row: 2, label: '-', command: '', color: '#444444', textColor: '#fff', blindPanel: 2 },
-    // Row 3: Stealth directions SO, S, SE, DE, FU
-    { id: genId(), col: 0, row: 3, label: 'SO', command: 'sigilar sudoeste', color: '#662222', textColor: '#fff', blindPanel: 2 },
-    { id: genId(), col: 1, row: 3, label: 'S', command: 'sigilar sur', color: '#662222', textColor: '#fff', blindPanel: 2 },
-    { id: genId(), col: 2, row: 3, label: 'SE', command: 'sigilar sudeste', color: '#662222', textColor: '#fff', blindPanel: 2 },
-    { id: genId(), col: 3, row: 3, label: 'DE', command: 'sigilar dentro', color: '#663322', textColor: '#fff', blindPanel: 2 },
-    { id: genId(), col: 4, row: 3, label: 'FU', command: 'sigilar fuera', color: '#663322', textColor: '#fff', blindPanel: 2 },
+    // Row 3: Stealth directions Sudoeste, Sur, Sudeste, Dentro, Fuera
+    { id: genId(), col: 0, row: 3, label: 'Sudoeste sigilar', command: 'sigilar sudoeste', color: '#662222', textColor: '#fff', blindPanel: 2 },
+    { id: genId(), col: 1, row: 3, label: 'Sur sigilar', command: 'sigilar sur', color: '#662222', textColor: '#fff', blindPanel: 2 },
+    { id: genId(), col: 2, row: 3, label: 'Sudeste sigilar', command: 'sigilar sudeste', color: '#662222', textColor: '#fff', blindPanel: 2 },
+    { id: genId(), col: 3, row: 3, label: 'Dentro sigilar', command: 'sigilar dentro', color: '#663322', textColor: '#fff', blindPanel: 2 },
+    { id: genId(), col: 4, row: 3, label: 'Fuera sigilar', command: 'sigilar fuera', color: '#663322', textColor: '#fff', blindPanel: 2 },
   ];
 
   return { buttons: [...panel1, ...panel2] };

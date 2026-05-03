@@ -43,8 +43,13 @@ export interface UseSettingsBundle {
   // anuncio en self-voicing) y devuelve el nuevo objeto. Llama a
   // `loadSettings()` SOLO al montar; el resto de operaciones leen de memoria.
   updateSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void;
+  // True solo cuando self-voicing está activo Y la pantalla se abrió desde
+  // Terminal. Usar este flag para todo lo que dependa de self-voicing —
+  // controla el `importantForAccessibility` del root, el BlindGestureContainer
+  // y los SelfVoicingRow/Switch/etc. Si el usuario abre Settings desde
+  // ServerList con useSelfVoicing=true, este flag es false porque la pantalla
+  // tiene que seguir siendo navegable con TalkBack.
   settingsSelfVoicingActive: boolean;
-  selfVoicingActive: boolean;
 }
 
 // Hook que carga settings al montar y devuelve `updateSetting` con los side
@@ -59,7 +64,6 @@ export function useSettings(sourceLocation: SourceLocation): UseSettingsBundle {
 
   const settingsSelfVoicingActive =
     settings.useSelfVoicing && settings.uiMode === 'blind' && sourceLocation === 'terminal';
-  const selfVoicingActive = settings.useSelfVoicing && settings.uiMode === 'blind';
 
   const updateSetting = useCallback(
     <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
@@ -72,8 +76,14 @@ export function useSettings(sourceLocation: SourceLocation): UseSettingsBundle {
         // speechCharDurationMs. Aplica inmediato sin esperar restart.
         speechQueue.applyConfig(updated);
 
-        // Anuncia el cambio si self-voicing está activo.
-        if (settingsSelfVoicingActive) {
+        // Anuncia el cambio si self-voicing está activo. Excepción: valores
+        // numéricos (volúmenes, ttsRate, ttsPitch). Esos se ajustan por
+        // swipe horizontal sobre un SelfVoicingRow con `onAdjust`, y
+        // `blindNav.runAdjust` ya re-lee el `svLabel` formateado del row
+        // tras el callback (p. ej. "Volumen ambiente: 55 por ciento"). Si
+        // anunciáramos también aquí, sonaría primero el raw `String(value)`
+        // = "0.55" y luego la versión formateada — ruido + confusión.
+        if (settingsSelfVoicingActive && typeof value !== 'number') {
           const label = SETTING_LABELS[key] || String(key);
           const stateText = typeof value === 'boolean'
             ? (value ? 'activado' : 'desactivado')
@@ -93,7 +103,7 @@ export function useSettings(sourceLocation: SourceLocation): UseSettingsBundle {
     [settingsSelfVoicingActive],
   );
 
-  return { settings, setSettings, updateSetting, settingsSelfVoicingActive, selfVoicingActive };
+  return { settings, setSettings, updateSetting, settingsSelfVoicingActive };
 }
 
 // Hook que activa/desactiva el scope de drag-explore para esta sub-pantalla.
@@ -252,6 +262,12 @@ export const settingsStyles = StyleSheet.create({
     backgroundColor: '#0a3a0a',
     borderWidth: 1,
     borderColor: '#0c0',
+    // Limita el ancho del botón cuando el contenido (nombre del motor TTS,
+    // voz, etc.) es muy largo. Sin maxWidth el botón se expandía y empujaba
+    // el resto del row fuera de pantalla. flexShrink permite que el row le
+    // recorte espacio si el título de la izquierda también es largo.
+    maxWidth: 160,
+    flexShrink: 1,
   },
   encodingBtnText: { color: '#0c0', fontSize: 13, fontWeight: 'bold', fontFamily: 'monospace' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 20 },

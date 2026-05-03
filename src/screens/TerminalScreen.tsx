@@ -34,6 +34,7 @@ import { MiniMap, MiniMapHandle } from '../components/MiniMap';
 import { VitalBars } from '../components/VitalBars';
 import { ButtonGrid, GRID_COLS, GRID_ROWS } from '../components/ButtonGrid';
 import { ButtonEditModal } from '../components/ButtonEditModal';
+import { BlindButtonEditModal } from '../components/BlindButtonEditModal';
 import { PanelManagementModal } from '../components/PanelManagementModal';
 import { RoomSearchResults } from '../components/RoomSearchResults';
 import { loadSettings } from '../storage/settingsStorage';
@@ -51,6 +52,7 @@ import { promptParser } from '../services/promptParser';
 import { userVariablesService } from '../services/userVariablesService';
 import { speechQueue } from '../services/speechQueueService';
 import { selfVoicingPress, buttonRegistry } from '../utils/selfVoicingPress';
+import { SelfVoicingTouchable } from '../components/SelfVoicingControls';
 import { announceTyping } from '../utils/typingAnnounce';
 import { ambientPlayer } from '../services/ambientPlayer';
 import { categorizeRoom } from '../services/roomCategorizer';
@@ -222,6 +224,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   type AutoLoginState = 'pending' | 'waiting-for-password' | 'completed';
   const autoLoginRef = useRef<AutoLoginState>('pending');
   const textInputRef = useRef<TextInput>(null);
+  const reconnectButtonRef = useRef<View>(null);
   const lastSentChannelTime = useRef(0);
   // Channel list capture (text-based fallback for when GMCP doesn't push
   // Comm.Canales — e.g. "consentir accesibilidad on"). Armed when the user
@@ -315,6 +318,10 @@ export function TerminalScreen({ route, navigation }: Props) {
     const stepSub = addWalkStepListener((e) => {
       if (!walkActiveRef.current) return;
       walkStepRef.current = e.index + 1;
+      // Cada paso del walk descarta la voz pendiente, igual que un comando
+      // tecleado: si las descripciones de sala tardan más que el step delay
+      // (1.1s) se acumularían y nunca oirías la sala actual.
+      speechQueue.clear();
       telnetRef.current?.send(e.command);
     });
     const doneSub = addWalkDoneListener(() => {
@@ -463,6 +470,34 @@ export function TerminalScreen({ route, navigation }: Props) {
   };
   useEffect(() => {
     return () => buttonRegistry.unregister('default:cmd-input');
+  }, []);
+
+  // Botón Reconectar: solo se monta cuando `connected=false` y reemplaza
+  // toda la fila de input. En self-voicing hay que registrarlo en
+  // `buttonRegistry` para que el drag-explore lo encuentre — sin esto el
+  // usuario tendría que tap directo sobre el rect, sin poder localizarlo
+  // arrastrando el dedo. Hay dos copias (vertical+horizontal) que comparten
+  // ref y key porque solo una está montada a la vez. Re-registramos en cada
+  // onLayout (cambia label entre "Reconectar" y "Conectando").
+  const registerReconnectRect = () => {
+    if (!selfVoicingActive) return;
+    reconnectButtonRef.current?.measure?.((_x, _y, w, h, pageX, pageY) => {
+      buttonRegistry.register(
+        'default:reconnect',
+        { x: pageX, y: pageY, w, h },
+        connecting ? 'Conectando' : 'Reconectar',
+        undefined,
+        'default',
+      );
+    });
+  };
+  useEffect(() => {
+    if (!selfVoicingActive || connected) {
+      buttonRegistry.unregister('default:reconnect');
+    }
+  }, [selfVoicingActive, connected]);
+  useEffect(() => {
+    return () => buttonRegistry.unregister('default:reconnect');
   }, []);
 
   // Settings vive ahora como ruta navegable (no modal). El sync se hace
@@ -1400,10 +1435,11 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   const sendCommand = useCallback((command: string, skipHistory?: boolean) => {
     // Cualquier comando del usuario hacia el MUD (o intercept interno tipo
-    // locate/parar/panel switch) descarta los anuncios pendientes y corta
-    // el TTS en curso. Lo viejo deja de importar — la nueva respuesta del
-    // MUD entra en cola limpia. En backend talkback solo vacía la cola
-    // interna (no hay API para cortar TalkBack en curso).
+    // locate/parar/panel switch) descarta TODO lo pendiente y corta la
+    // utterance en curso, sin excepción. Lo viejo deja de importar — solo
+    // los mensajes que lleguen después de este comando se anuncian. En
+    // backend talkback el corte aplica solo a la cola interna (no hay API
+    // para cortar TalkBack en curso).
     speechQueue.clear();
 
     // Expand ${var} (system + user vars) before any intercept logic so
@@ -1828,21 +1864,29 @@ export function TerminalScreen({ route, navigation }: Props) {
   const applyGestureText = (text: string, autoSend: boolean) => {
     if (!text) return;
     if (autoSend) {
-      telnetRef.current?.send(text);
+      // Vía sendCommand para heredar clear de speechQueue, expansión de
+      // ${vars}, intercepts (parar/irsala) y separador ;;. skipHistory:
+      // true porque la pulsación del gesto no es texto tecleado.
+      sendCommand(text, true);
       return;
     }
     // Cuando se prepara (sin enviar) añadimos siempre un espacio final para
     // que el usuario pueda continuar tecleando lo siguiente sin tener que
     // teclear el separador. Normalizamos por si el caller dejó trailing
     // spaces — queremos exactamente UNO al final. Cursor tras ese espacio.
+    // Mismo patrón que handleAddTextButton: actualizamos el state controlado
+    // de selección (no setNativeProps, pelearía con el prop `selection`) y
+    // hacemos blur+focus para forzar el teclado en Android.
     const padded = `${text.replace(/\s+$/, '')} `;
     setInputText(padded);
-    setTimeout(() => {
+    setInputSelection({ start: padded.length, end: padded.length });
+    suppressClearOnHideRef.current = true;
+    textInputRef.current?.blur();
+    const id = setTimeout(() => {
       textInputRef.current?.focus();
-      textInputRef.current?.setNativeProps({
-        selection: { start: padded.length, end: padded.length },
-      });
+      pendingTimeoutsRef.current.delete(id);
     }, 100);
+    pendingTimeoutsRef.current.add(id);
   };
 
   const openGesturePicker = async (action: Extract<GestureAction, { kind: 'pick' }>) => {
@@ -2447,14 +2491,16 @@ export function TerminalScreen({ route, navigation }: Props) {
           selfVoicingActive={selfVoicingActive}
         />
 
-        {/* Banner: self-voicing on PERO TalkBack sigue activo. UX rota — la
-            app está doblada (TalkBack + nuestro TTS) y los gestos no llegan
-            al PanResponder. El usuario debe usar el atajo OS (típicamente
-            Volumen Arriba + Volumen Abajo 3 segundos) para desactivarlo. */}
+        {/* Banner: self-voicing on PERO un lector de pantalla sigue activo
+            (TalkBack, Voice Assistant Samsung, Jieshuo, BrailleBack…). UX
+            rota — la app está doblada (lector + nuestro TTS) y los gestos
+            no llegan al PanResponder. El usuario debe usar el atajo OS
+            (típicamente Volumen Arriba + Volumen Abajo 3 segundos) para
+            desactivarlo. */}
         {selfVoicingActive && screenReaderOn && (
           <View style={styles.selfVoicingWarning}>
             <Text style={styles.selfVoicingWarningText}>
-              ⚠ TalkBack sigue activo. Desactívalo con el atajo de accesibilidad del sistema (Vol+ y Vol- 3 s) para que self-voicing funcione bien.
+              ⚠ Hay un lector de pantalla activo. Desactívalo con el atajo de accesibilidad del sistema (Vol+ y Vol- 3 s) para que self-voicing funcione bien.
             </Text>
           </View>
         )}
@@ -2464,41 +2510,53 @@ export function TerminalScreen({ route, navigation }: Props) {
           {connected ? (
             <>
               {uiMode === 'blind' && globalSoundsEnabled && (
-                <TouchableOpacity
+                <SelfVoicingTouchable
+                  svActive={selfVoicingActive}
+                  svScope="default"
+                  svKey="silent"
+                  svLabel={`Modo Silencio ${silentModeEnabled ? 'activado' : 'desactivado'}`}
+                  onPress={toggleSilentMode}
                   style={[styles.sendButton, { flex: 0.4, backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
-                  onPress={() => selfVoicingPress.tap(selfVoicingActive, 'silent', `Modo Silencio ${silentModeEnabled ? 'activado' : 'desactivado'}`, toggleSilentMode)}
                   accessible={true}
                   accessibilityLabel={`Modo Silencio ${silentModeEnabled ? 'activado' : 'desactivado'}`}
                   accessibilityRole="button"
                   accessibilityHint={`Lee los mensajes en voz alta. Estado: ${silentModeEnabled ? 'ON' : 'OFF'}`}
                 >
                   <Text style={[styles.sendButtonText, { fontSize: 14 }]}>{silentModeEnabled ? 'Silencio' : 'Sonido'}</Text>
-                </TouchableOpacity>
+                </SelfVoicingTouchable>
               )}
 
               {uiMode === 'blind' && globalAmbientEnabled && (
-                <TouchableOpacity
+                <SelfVoicingTouchable
+                  svActive={selfVoicingActive}
+                  svScope="default"
+                  svKey="ambient"
+                  svLabel={`Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`}
+                  onPress={toggleAmbient}
                   style={[styles.sendButton, { flex: 0.4, backgroundColor: ambientEnabled ? '#3a5a3a' : '#666666' }]}
-                  onPress={() => selfVoicingPress.tap(selfVoicingActive, 'ambient', `Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`, toggleAmbient)}
                   accessible={true}
                   accessibilityLabel={`Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`}
                   accessibilityRole="button"
                   accessibilityHint="Activa o desactiva la música de fondo"
                 >
                   <Text style={[styles.sendButtonText, { fontSize: 14 }]}>{ambientEnabled ? 'Música' : 'Sin música'}</Text>
-                </TouchableOpacity>
+                </SelfVoicingTouchable>
               )}
 
               {uiMode === 'blind' && (
-                <TouchableOpacity
+                <SelfVoicingTouchable
+                  svActive={selfVoicingActive}
+                  svScope="default"
+                  svKey="channels"
+                  svLabel="Abrir canales"
+                  onPress={() => setBlindChannelModalVisible(true)}
                   style={[styles.sendButton, { flex: 0.4, backgroundColor: '#336699' }]}
-                  onPress={() => selfVoicingPress.tap(selfVoicingActive, 'channels', 'Abrir canales', () => setBlindChannelModalVisible(true))}
                   accessible={true}
                   accessibilityLabel="Abrir canales"
                   accessibilityRole="button"
                 >
                   <Text style={[styles.sendButtonText, { fontSize: 14 }]}>Canales</Text>
-                </TouchableOpacity>
+                </SelfVoicingTouchable>
               )}
 
               {uiMode === 'completo' && (
@@ -2551,12 +2609,16 @@ export function TerminalScreen({ route, navigation }: Props) {
                 accessibilityHint="Escribe un comando y presiona enviar o enter"
               />
 
-              <TouchableOpacity
+              <SelfVoicingTouchable
+                svActive={selfVoicingActive}
+                svScope="default"
+                svKey="send"
+                svLabel="Enviar comando"
+                onPress={handleSendInput}
                 style={[
                   styles.sendButton,
                   uiMode === 'blind' && { flex: 0.4 }
                 ]}
-                onPress={() => selfVoicingPress.tap(selfVoicingActive, 'send', 'Enviar comando', handleSendInput)}
                 accessible={true}
                 accessibilityLabel="Enviar comando"
                 accessibilityRole="button"
@@ -2565,7 +2627,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 <Text style={[styles.sendButtonText, uiMode === 'blind' && { fontSize: 14 }]}>
                   {uiMode === 'blind' ? 'Enviar' : '›'}
                 </Text>
-              </TouchableOpacity>
+              </SelfVoicingTouchable>
 
               {uiMode === 'completo' && (
                 <>
@@ -2606,13 +2668,17 @@ export function TerminalScreen({ route, navigation }: Props) {
                 </>
               )}
 
-              <TouchableOpacity
+              <SelfVoicingTouchable
+                svActive={selfVoicingActive}
+                svScope="default"
+                svKey="settings"
+                svLabel="Configuración"
+                onPress={() => navigation.navigate('Settings', { sourceLocation: 'terminal' })}
                 style={[
                   styles.compactButton,
                   { backgroundColor: '#663366' },
                   uiMode === 'blind' && styles.blindTextButton,
                 ]}
-                onPress={() => selfVoicingPress.tap(selfVoicingActive, 'settings', 'Configuración', () => navigation.navigate('Settings', { sourceLocation: 'terminal' }))}
                 accessible={true}
                 accessibilityLabel="Configuración"
                 accessibilityRole="button"
@@ -2621,10 +2687,12 @@ export function TerminalScreen({ route, navigation }: Props) {
                 <Text style={[styles.compactButtonText, uiMode === 'blind' && { fontSize: 14 }]}>
                   {uiMode === 'blind' ? 'Ajustes' : '⚙️'}
                 </Text>
-              </TouchableOpacity>
+              </SelfVoicingTouchable>
             </>
           ) : (
             <TouchableOpacity
+              ref={reconnectButtonRef as any}
+              onLayout={registerReconnectRect}
               style={[styles.input, styles.reconnectButton, connecting && { opacity: 0.5 }]}
               onPress={() => selfVoicingPress.tap(selfVoicingActive, 'reconnect', connecting ? 'Conectando' : 'Reconectar', handleReconnect)}
               disabled={connecting}
@@ -2814,7 +2882,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           {selfVoicingActive && screenReaderOn && (
             <View style={styles.selfVoicingWarning}>
               <Text style={styles.selfVoicingWarningText}>
-                ⚠ TalkBack sigue activo. Desactívalo con el atajo de accesibilidad del sistema (Vol+ y Vol- 3 s).
+                ⚠ Hay un lector de pantalla activo. Desactívalo con el atajo de accesibilidad del sistema (Vol+ y Vol- 3 s).
               </Text>
             </View>
           )}
@@ -2824,41 +2892,53 @@ export function TerminalScreen({ route, navigation }: Props) {
             {connected ? (
               <>
                 {uiMode === 'blind' && globalSoundsEnabled && (
-                  <TouchableOpacity
+                  <SelfVoicingTouchable
+                    svActive={selfVoicingActive}
+                    svScope="default"
+                    svKey="silent"
+                    svLabel={`Modo Silencio ${silentModeEnabled ? 'activado' : 'desactivado'}`}
+                    onPress={toggleSilentMode}
                     style={[styles.sendButton, { flex: 0.4, backgroundColor: silentModeEnabled ? '#ff6600' : '#666666' }]}
-                    onPress={() => selfVoicingPress.tap(selfVoicingActive, 'silent', `Modo Silencio ${silentModeEnabled ? 'activado' : 'desactivado'}`, toggleSilentMode)}
                     accessible={true}
                     accessibilityLabel={`Modo Silencio ${silentModeEnabled ? 'activado' : 'desactivado'}`}
                     accessibilityRole="button"
                     accessibilityHint={`Lee los mensajes en voz alta. Estado: ${silentModeEnabled ? 'ON' : 'OFF'}`}
                   >
                     <Text style={[styles.sendButtonText, { fontSize: 14 }]}>{silentModeEnabled ? 'Silencio' : 'Sonido'}</Text>
-                  </TouchableOpacity>
+                  </SelfVoicingTouchable>
                 )}
 
                 {uiMode === 'blind' && globalAmbientEnabled && (
-                  <TouchableOpacity
+                  <SelfVoicingTouchable
+                    svActive={selfVoicingActive}
+                    svScope="default"
+                    svKey="ambient"
+                    svLabel={`Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`}
+                    onPress={toggleAmbient}
                     style={[styles.sendButton, { flex: 0.4, backgroundColor: ambientEnabled ? '#3a5a3a' : '#666666' }]}
-                    onPress={() => selfVoicingPress.tap(selfVoicingActive, 'ambient', `Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`, toggleAmbient)}
                     accessible={true}
                     accessibilityLabel={`Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`}
                     accessibilityRole="button"
                     accessibilityHint="Activa o desactiva la música de fondo"
                   >
                     <Text style={[styles.sendButtonText, { fontSize: 14 }]}>{ambientEnabled ? 'Música' : 'Sin música'}</Text>
-                  </TouchableOpacity>
+                  </SelfVoicingTouchable>
                 )}
 
                 {uiMode === 'blind' && (
-                  <TouchableOpacity
+                  <SelfVoicingTouchable
+                    svActive={selfVoicingActive}
+                    svScope="default"
+                    svKey="channels"
+                    svLabel="Abrir canales"
+                    onPress={() => setBlindChannelModalVisible(true)}
                     style={[styles.sendButton, { flex: 0.4, backgroundColor: '#336699' }]}
-                    onPress={() => selfVoicingPress.tap(selfVoicingActive, 'channels', 'Abrir canales', () => setBlindChannelModalVisible(true))}
                     accessible={true}
                     accessibilityLabel="Abrir canales"
                     accessibilityRole="button"
                   >
                     <Text style={[styles.sendButtonText, { fontSize: 14 }]}>Canales</Text>
-                  </TouchableOpacity>
+                  </SelfVoicingTouchable>
                 )}
 
                 {uiMode === 'completo' && (
@@ -2911,12 +2991,16 @@ export function TerminalScreen({ route, navigation }: Props) {
                   accessibilityHint="Escribe un comando y presiona enviar o enter"
                 />
 
-                <TouchableOpacity
+                <SelfVoicingTouchable
+                  svActive={selfVoicingActive}
+                  svScope="default"
+                  svKey="send"
+                  svLabel="Enviar comando"
+                  onPress={handleSendInput}
                   style={[
                     styles.sendButton,
                     uiMode === 'blind' && { flex: 0.4 }
                   ]}
-                  onPress={handleSendInput}
                   accessible={true}
                   accessibilityLabel="Enviar comando"
                   accessibilityRole="button"
@@ -2925,7 +3009,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                   <Text style={[styles.sendButtonText, uiMode === 'blind' && { fontSize: 14 }]}>
                     {uiMode === 'blind' ? 'Enviar' : '›'}
                   </Text>
-                </TouchableOpacity>
+                </SelfVoicingTouchable>
 
                 {uiMode === 'completo' && (
                   <>
@@ -2954,13 +3038,17 @@ export function TerminalScreen({ route, navigation }: Props) {
                   </>
                 )}
 
-                <TouchableOpacity
+                <SelfVoicingTouchable
+                  svActive={selfVoicingActive}
+                  svScope="default"
+                  svKey="settings"
+                  svLabel="Configuración"
+                  onPress={() => navigation.navigate('Settings', { sourceLocation: 'terminal' })}
                   style={[
                     styles.compactButton,
                     { backgroundColor: '#663366' },
                     uiMode === 'blind' && styles.blindTextButton,
                   ]}
-                  onPress={() => navigation.navigate('Settings', { sourceLocation: 'terminal' })}
                   accessible={true}
                   accessibilityLabel="Configuración"
                   accessibilityRole="button"
@@ -2969,10 +3057,12 @@ export function TerminalScreen({ route, navigation }: Props) {
                   <Text style={[styles.compactButtonText, uiMode === 'blind' && { fontSize: 14 }]}>
                     {uiMode === 'blind' ? 'Ajustes' : '⚙️'}
                   </Text>
-                </TouchableOpacity>
+                </SelfVoicingTouchable>
               </>
             ) : (
               <TouchableOpacity
+                ref={reconnectButtonRef as any}
+                onLayout={registerReconnectRect}
                 style={[styles.input, styles.reconnectButton, connecting && { opacity: 0.5 }]}
                 onPress={() => selfVoicingPress.tap(selfVoicingActive, 'reconnect', connecting ? 'Conectando' : 'Reconectar', handleReconnect)}
                 disabled={connecting}
@@ -3030,21 +3120,38 @@ export function TerminalScreen({ route, navigation }: Props) {
       </View>
       )}
 
-      {/* Alias Wizard Modal */}
-      {/* Button Edit Modal */}
+      {/* Button Edit Modal — modal dedicado por modo:
+          - blind+self-voicing → BlindButtonEditModal (lista plana navegable
+            con swipe vertical, sin colores/preview/labels-título).
+          - completo y blind+TalkBack → ButtonEditModal (UI visual completa
+            con colores, preview, addText, etc.). */}
       {(() => {
+        const targetButton = buttonLayout?.buttons.find(b => {
+          if (b.col !== editButtonCol || b.row !== editButtonRow) return false;
+          if (uiMode === 'blind') {
+            return !b.blindPanel || b.blindPanel === currentBlindPanel;
+          }
+          return !b.completoPanel || b.completoPanel === currentCompletoPanel;
+        }) || null;
+        if (uiMode === 'blind' && selfVoicingActive) {
+          return (
+            <BlindButtonEditModal
+              visible={editButtonVisible}
+              col={editButtonCol}
+              row={editButtonRow}
+              button={targetButton}
+              onSave={handleSaveEditButton}
+              onDelete={handleDeleteButton}
+              onClose={() => setEditButtonVisible(false)}
+            />
+          );
+        }
         return (
           <ButtonEditModal
             visible={editButtonVisible}
             col={editButtonCol}
             row={editButtonRow}
-            button={buttonLayout?.buttons.find(b => {
-              if (b.col !== editButtonCol || b.row !== editButtonRow) return false;
-              if (uiMode === 'blind') {
-                return !b.blindPanel || b.blindPanel === currentBlindPanel;
-              }
-              return !b.completoPanel || b.completoPanel === currentCompletoPanel;
-            }) || null}
+            button={targetButton}
             onSave={handleSaveEditButton}
             onDelete={handleDeleteButton}
             onMove={handleMoveButton}

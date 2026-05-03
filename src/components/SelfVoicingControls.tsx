@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   TouchableOpacity,
   TextInput,
@@ -43,19 +43,48 @@ export function SelfVoicingTouchable({
   svSequential = true,
   onPress,
   onLayout,
+  style,
   children,
   ...rest
 }: SelfVoicingTouchableProps) {
   const ref = useRef<View>(null);
   const fullKey = `${svScope}:${svKey}`;
 
-  const handleLayout = useCallback((e: any) => {
-    onLayout?.(e);
+  // Suscripción al foco self-voicing para pintar borde cyan cuando este
+  // botón es el foco actual. Mismo patrón que ButtonGrid — feedback visual
+  // para usuarios con vista parcial o developers que prueban a ver dónde
+  // está el foco. Solo aplica cuando svActive=true.
+  const [hasFocus, setHasFocus] = useState(false);
+  useEffect(() => {
+    if (!svActive) {
+      setHasFocus(false);
+      return;
+    }
+    const update = (key: string | null) => setHasFocus(key === fullKey);
+    update(selfVoicingPress.getFocusedKey());
+    return selfVoicingPress.subscribe(update);
+  }, [svActive, fullKey]);
+
+  const measureAndRegister = useCallback(() => {
     if (!svActive) return;
     ref.current?.measure((_x, _y, w, h, pageX, pageY) => {
       buttonRegistry.register(fullKey, { x: pageX, y: pageY, w, h }, svLabel, undefined, svScope, svSequential);
     });
-  }, [svActive, fullKey, svLabel, svScope, svSequential, onLayout]);
+  }, [svActive, fullKey, svLabel, svScope, svSequential]);
+
+  const handleLayout = useCallback((e: any) => {
+    onLayout?.(e);
+    measureAndRegister();
+  }, [onLayout, measureAndRegister]);
+
+  // Re-registra cuando cambia `svLabel` aunque no haya cambio de layout.
+  // Necesario para botones con label dinámico (p. ej. "Modo Silencio
+  // activado/desactivado"): un toggle solo cambia el background del View,
+  // no su rect, así que onLayout no dispararía y el registry quedaría con
+  // el label viejo — drag-explore anunciaría el estado anterior.
+  useEffect(() => {
+    measureAndRegister();
+  }, [measureAndRegister]);
 
   useEffect(() => {
     return () => buttonRegistry.unregister(fullKey);
@@ -65,8 +94,8 @@ export function SelfVoicingTouchable({
   // y el registry quedaría con coordenadas obsoletas).
   useEffect(() => {
     if (!svActive) return;
-    return remeasureBus.subscribe(() => handleLayout(undefined));
-  }, [svActive, handleLayout]);
+    return remeasureBus.subscribe(measureAndRegister);
+  }, [svActive, measureAndRegister]);
 
   return (
     <TouchableOpacity
@@ -74,6 +103,7 @@ export function SelfVoicingTouchable({
       ref={ref as any}
       onLayout={handleLayout}
       onPress={() => selfVoicingPress.tap(svActive, fullKey, svLabel, onPress)}
+      style={[style, hasFocus && svActive && { borderWidth: 3, borderColor: '#00ffff' }]}
     >
       {children}
     </TouchableOpacity>
@@ -130,24 +160,16 @@ export function SelfVoicingTextInput({
     onChangeText?.(text);
   }, [svActive, onChangeText]);
 
+  // El TextInput NO se auto-registra en buttonRegistry: el caller siempre
+  // lo envuelve en un `SelfVoicingRow` que ya cubre el área del input,
+  // anuncia el label completo al recibir foco y al activarlo hace focus()
+  // del TextInput. Si lo registráramos aquí, blindNav vería dos entradas
+  // (row + input) y el usuario tendría que pasar por ambas. handleFocus
+  // sigue anunciando el contenido cuando el input recibe foco real (tras
+  // la activación del row), independiente del registry.
   const handleLayout = useCallback((e: any) => {
     onLayout?.(e);
-    if (!svActive) return;
-    // measure() en TextInput devuelve callback igual que en View — usamos
-    // pageX/pageY para coordenadas absolutas.
-    (ref.current as any)?.measure?.((_x: number, _y: number, w: number, h: number, pageX: number, pageY: number) => {
-      buttonRegistry.register(fullKey, { x: pageX, y: pageY, w, h }, svLabel, undefined, svScope);
-    });
-  }, [svActive, fullKey, svLabel, svScope, onLayout]);
-
-  useEffect(() => {
-    return () => buttonRegistry.unregister(fullKey);
-  }, [fullKey]);
-
-  useEffect(() => {
-    if (!svActive) return;
-    return remeasureBus.subscribe(() => handleLayout(undefined));
-  }, [svActive, handleLayout]);
+  }, [onLayout]);
 
   const handleFocus = useCallback((e: any) => {
     onFocus?.(e);
@@ -289,13 +311,32 @@ export function SelfVoicingRow({
   const ref = useRef<View>(null);
   const fullKey = `${svScope}:${svKey}`;
 
+  // onActivate/onAdjust por ref para que `measureAndRegister` sea estable
+  // entre renders. El caller los recrea en cada render (p. ej. handleSave
+  // del ButtonEditModal no está memoizado), y sin esto cada render dispara
+  // un measure async + register + setActions; varios pendientes en cola
+  // pueden producir una carrera donde el último register pisa el setActions
+  // del anterior y la fila queda sin onActivate hasta el siguiente layout.
+  // Con ref, el callback siempre usa la versión más reciente sin necesidad
+  // de re-registrar. setActions se llama una sola vez al montar (escribe
+  // los refs como callbacks indirectos).
+  const onActivateRef = useRef(onActivate);
+  const onAdjustRef = useRef(onAdjust);
+  useEffect(() => { onActivateRef.current = onActivate; }, [onActivate]);
+  useEffect(() => { onAdjustRef.current = onAdjust; }, [onAdjust]);
+
+  const hasActivate = !!onActivate;
+  const hasAdjust = !!onAdjust;
   const measureAndRegister = useCallback(() => {
     if (!svActive) return;
     ref.current?.measure?.((_x, _y, w, h, pageX, pageY) => {
       buttonRegistry.register(fullKey, { x: pageX, y: pageY, w, h }, svLabel, undefined, svScope, true);
-      buttonRegistry.setActions(fullKey, { onActivate, onAdjust });
+      buttonRegistry.setActions(fullKey, {
+        onActivate: hasActivate ? () => onActivateRef.current?.() : undefined,
+        onAdjust: hasAdjust ? (dir) => onAdjustRef.current?.(dir) : undefined,
+      });
     });
-  }, [svActive, fullKey, svLabel, svScope, onActivate, onAdjust]);
+  }, [svActive, fullKey, svLabel, svScope, hasActivate, hasAdjust]);
 
   useEffect(() => { measureAndRegister(); }, [measureAndRegister]);
   useEffect(() => () => buttonRegistry.unregister(fullKey), [fullKey]);

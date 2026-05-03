@@ -321,25 +321,33 @@ class BlindNavController {
   }
 
   adjustInc(): void {
-    if (!this.currentKey) return;
-    const entry = buttonRegistry.getEntry(this.currentKey);
-    if (entry?.onAdjust) {
-      Vibration.vibrate(15);
-      entry.onAdjust('inc');
-    } else {
-      speechQueue.enqueue('No ajustable', 'high');
-    }
+    this.runAdjust('inc');
   }
 
   adjustDec(): void {
+    this.runAdjust('dec');
+  }
+
+  private runAdjust(dir: 'inc' | 'dec'): void {
     if (!this.currentKey) return;
     const entry = buttonRegistry.getEntry(this.currentKey);
-    if (entry?.onAdjust) {
-      Vibration.vibrate(15);
-      entry.onAdjust('dec');
-    } else {
+    if (!entry?.onAdjust) {
       speechQueue.enqueue('No ajustable', 'high');
+      return;
     }
+    Vibration.vibrate(15);
+    entry.onAdjust(dir);
+    // Re-anuncio del label tras adjust: el callback actualiza estado, el
+    // SelfVoicingRow re-renderiza con `svLabel` nuevo y measureAndRegister
+    // actualiza `entry.label` en el registry. Un setTimeout corto da margen
+    // a React para completar el ciclo. Si el adjust no movió nada (en
+    // min/max), se re-lee el mismo label — refuerza al usuario que ya está
+    // en el extremo.
+    setTimeout(() => {
+      if (!this.currentKey) return;
+      const updated = buttonRegistry.getEntry(this.currentKey);
+      if (updated) speechQueue.enqueue(updated.label, 'high');
+    }, 80);
   }
 
   repeat(): void {

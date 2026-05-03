@@ -46,7 +46,7 @@ interface TtsEngineInfo { name: string; label: string; default: boolean; }
 interface TtsVoiceInfo { id: string; name: string; language: string; quality?: number; networkConnectionRequired?: boolean; notInstalled?: boolean; }
 
 export function SettingsTerminalScreen({ navigation }: Props) {
-  const { settings, setSettings, updateSetting, settingsSelfVoicingActive, selfVoicingActive } = useSettings('terminal');
+  const { settings, setSettings, updateSetting, settingsSelfVoicingActive } = useSettings('terminal');
   const { setEffectsVolume } = useSounds();
 
   const [ttsEngineModalVisible, setTtsEngineModalVisible] = useState(false);
@@ -169,7 +169,7 @@ export function SettingsTerminalScreen({ navigation }: Props) {
     <SafeAreaView
       style={s.container}
       edges={['top', 'left', 'right', 'bottom']}
-      importantForAccessibility={selfVoicingActive ? 'no-hide-descendants' : 'auto'}
+      importantForAccessibility={settingsSelfVoicingActive ? 'no-hide-descendants' : 'auto'}
     >
       <View style={s.header}>
         <TouchableOpacity
@@ -362,13 +362,19 @@ export function SettingsTerminalScreen({ navigation }: Props) {
                       <Text style={s.rowTitle}>Motor TTS</Text>
                       <Text style={s.rowDesc}>Engine que produce la voz.</Text>
                     </View>
-                    <View style={s.encodingBtn}>
-                      <Text style={s.encodingBtnText} numberOfLines={1}>
+                    <TouchableOpacity
+                      style={s.encodingBtn}
+                      onPress={() => setTtsEngineModalVisible(true)}
+                      accessible={true}
+                      accessibilityRole="button"
+                      accessibilityLabel="Cambiar motor TTS"
+                    >
+                      <Text style={s.encodingBtnText} numberOfLines={1} ellipsizeMode="tail">
                         {settings.ttsEngine
                           ? (ttsEngines.find(e => e.name === settings.ttsEngine)?.label || settings.ttsEngine)
                           : 'Default'}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
                   </SelfVoicingRow>
 
                   <SelfVoicingRow
@@ -383,13 +389,19 @@ export function SettingsTerminalScreen({ navigation }: Props) {
                       <Text style={s.rowTitle}>Voz</Text>
                       <Text style={s.rowDesc}>Voz concreta del motor seleccionado.</Text>
                     </View>
-                    <View style={s.encodingBtn}>
-                      <Text style={s.encodingBtnText} numberOfLines={1}>
+                    <TouchableOpacity
+                      style={s.encodingBtn}
+                      onPress={() => setTtsVoiceModalVisible(true)}
+                      accessible={true}
+                      accessibilityRole="button"
+                      accessibilityLabel="Cambiar voz TTS"
+                    >
+                      <Text style={s.encodingBtnText} numberOfLines={1} ellipsizeMode="tail">
                         {settings.ttsVoice
                           ? (ttsVoices.find(v => v.id === settings.ttsVoice)?.name || settings.ttsVoice)
                           : 'Default'}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
                   </SelfVoicingRow>
 
                   <SelfVoicingRow
@@ -495,9 +507,15 @@ export function SettingsTerminalScreen({ navigation }: Props) {
                       <Text style={s.rowTitle}>Probar voz</Text>
                       <Text style={s.rowDesc}>Reproduce una frase corta con la configuración actual.</Text>
                     </View>
-                    <View style={s.encodingBtn}>
+                    <TouchableOpacity
+                      style={s.encodingBtn}
+                      onPress={() => speechQueue.preview('Hola, esta es la voz de TorchZhyla en modo blind.')}
+                      accessible={true}
+                      accessibilityRole="button"
+                      accessibilityLabel="Probar voz"
+                    >
                       <Text style={s.encodingBtnText}>Probar</Text>
-                    </View>
+                    </TouchableOpacity>
                   </SelfVoicingRow>
                 </>
               )}

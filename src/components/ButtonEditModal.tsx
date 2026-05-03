@@ -11,6 +11,7 @@ import {
 import { LayoutButton } from '../storage/layoutStorage';
 import { buttonRegistry } from '../utils/selfVoicingPress';
 import { SelfVoicingTouchable, SelfVoicingTextInput, SelfVoicingRow, BlindGestureContainer } from './SelfVoicingControls';
+import { loadButtonFormState, buildLayoutButton } from './buttonEditShared';
 
 interface ButtonEditModalProps {
   visible: boolean;
@@ -89,50 +90,20 @@ export function ButtonEditModal({
   }, [visible, selfVoicingActive]);
 
   useEffect(() => {
-    if (button) {
-      setLabel(button.label);
-      const allCmds = [button.command, ...(button.alternativeCommands ?? [])];
-      // Pad to max slots
-      while (allCmds.length < maxCommands) {
-        allCmds.push('');
-      }
-      setCommands(allCmds.slice(0, maxCommands));
-      setColor(button.color);
-      setTextColor(button.textColor ?? '#ffffff');
-      setAddText(button.addText ?? false);
-      setKind(button.kind ?? 'command');
-    } else {
-      setLabel('');
-      setCommands(Array(maxCommands).fill(''));
-      setColor('#662222');
-      setTextColor('#ffffff');
-      setAddText(false);
-      setKind('command');
-    }
+    const s = loadButtonFormState(button, maxCommands);
+    setLabel(s.label);
+    setCommands(s.commands);
+    setColor(s.color);
+    setTextColor(s.textColor);
+    setAddText(s.addText);
+    setKind(s.kind);
   }, [button, visible, uiMode, maxCommands]);
 
   const handleSave = () => {
-    // Filter out empty commands
-    const nonEmptyCommands = commands.filter(cmd => cmd.trim() !== '');
-
-    const newButton: LayoutButton = {
-      id: button?.id || `btn_${Date.now()}`,
-      col,
-      row,
-      label: label || '—',
-      command: nonEmptyCommands[0] || '',
-      color,
-      textColor,
-      // Floating buttons never inject text into the input or carry alternatives.
-      addText: kind === 'floating' ? false : addText,
-      alternativeCommands: kind === 'floating' || nonEmptyCommands.length <= 1
-        ? undefined
-        : nonEmptyCommands.slice(1),
-      kind,
-      // Preserve fixed and locked flags from original button
-      fixed: button?.fixed,
-      locked: button?.locked,
-    };
+    const newButton = buildLayoutButton(
+      { label, commands, color, textColor, addText, kind },
+      { col, row, button },
+    );
     onSave(newButton);
     onClose();
   };
@@ -140,14 +111,21 @@ export function ButtonEditModal({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.modal}>
+        {/* Cuando self-voicing está activo, BlindGestureContainer envuelve los
+            children en <View style={{flex:1}}>. Para que ScrollView+actions
+            laxen como [crece, fijo] dentro de ese wrapper, el modal necesita
+            altura explícita (no solo maxHeight) y el ScrollView flex:1.
+            Sin esto, el contenido del ScrollView empuja las acciones
+            (Cancelar/Guardar) fuera del `overflow:hidden` del modal y el
+            usuario las pierde. Mismo patrón que las pantallas Settings. */}
+        <View style={[styles.modal, selfVoicingActive && { height: '80%' }]}>
         <BlindGestureContainer
           active={selfVoicingActive && visible}
           welcomeMessage={editWelcome}
           style={{ flex: 1 }}
         >
-          <ScrollView style={styles.content} showsVerticalScrollIndicator={false} scrollEnabled={!selfVoicingActive}>
-            <Text style={styles.label}>Etiqueta</Text>
+          <ScrollView style={[styles.content, selfVoicingActive && { flex: 1 }]} showsVerticalScrollIndicator={false} scrollEnabled={!selfVoicingActive}>
+            <Text style={styles.label} importantForAccessibility="no" accessibilityElementsHidden>Etiqueta</Text>
             <SelfVoicingRow
               svActive={selfVoicingActive}
               svScope={SCOPE}
@@ -176,30 +154,26 @@ export function ButtonEditModal({
               />
             </SelfVoicingRow>
 
-            <Text style={styles.label}>Tipo</Text>
+            <Text style={styles.label} importantForAccessibility="no" accessibilityElementsHidden>Tipo</Text>
             {selfVoicingActive ? (
-              <View style={styles.kindRow}>
-                <SelfVoicingRow
-                  svActive
-                  svScope={SCOPE}
-                  svKey="kind-command"
-                  svLabel={`Tipo Comando. El botón envía el comando al MUD. ${kind === 'command' ? 'Seleccionado' : 'No seleccionado'}`}
-                  onActivate={() => setKind('command')}
-                  style={[styles.kindOption, kind === 'command' && styles.kindOptionActive]}
-                >
+              // Self-voicing: una sola fila con swipe horizontal alternando
+              // entre los dos valores. Visualmente sigue mostrando los dos
+              // chips, pero solo el contenedor entra en blindNav.
+              <SelfVoicingRow
+                svActive
+                svScope={SCOPE}
+                svKey="kind"
+                svLabel={`Tipo: ${kind === 'command' ? 'Comando. Envía un comando al MUD' : 'Aviso. Muestra un mensaje flotante en pantalla'}. Desliza horizontal para cambiar.`}
+                onAdjust={() => setKind(kind === 'command' ? 'floating' : 'command')}
+                style={styles.kindRow}
+              >
+                <View style={[styles.kindOption, kind === 'command' && styles.kindOptionActive]}>
                   <Text style={[styles.kindOptionText, kind === 'command' && styles.kindOptionTextActive]}>Comando</Text>
-                </SelfVoicingRow>
-                <SelfVoicingRow
-                  svActive
-                  svScope={SCOPE}
-                  svKey="kind-floating"
-                  svLabel={`Tipo Aviso. El botón muestra un mensaje flotante en pantalla. ${kind === 'floating' ? 'Seleccionado' : 'No seleccionado'}`}
-                  onActivate={() => setKind('floating')}
-                  style={[styles.kindOption, kind === 'floating' && styles.kindOptionActive]}
-                >
+                </View>
+                <View style={[styles.kindOption, kind === 'floating' && styles.kindOptionActive]}>
                   <Text style={[styles.kindOptionText, kind === 'floating' && styles.kindOptionTextActive]}>Aviso</Text>
-                </SelfVoicingRow>
-              </View>
+                </View>
+              </SelfVoicingRow>
             ) : (
               <View style={styles.kindRow}>
                 <SelfVoicingTouchable
@@ -235,8 +209,8 @@ export function ButtonEditModal({
               </View>
             )}
 
-            <Text style={styles.label}>{kind === 'floating' ? 'Mensaje' : 'Comando'}</Text>
-            <Text style={styles.hint}>{kind === 'floating'
+            <Text style={styles.label} importantForAccessibility="no" accessibilityElementsHidden>{kind === 'floating' ? 'Mensaje' : 'Comando'}</Text>
+            <Text style={styles.hint} importantForAccessibility="no" accessibilityElementsHidden>{kind === 'floating'
               ? 'Texto que se muestra al pulsar. Puedes usar variables: ${vida}, ${energia}, ${xp}, ${salidas}…'
               : (uiMode === 'blind'
                 ? 'Comando que se ejecuta al pulsar. Variables disponibles: ${vida}, ${energia}…'
@@ -291,50 +265,74 @@ export function ButtonEditModal({
               );
             })}
 
-            <Text style={styles.label}>Color Fondo</Text>
-            <View style={styles.colorGrid}>
-              {PRESET_COLORS.map((c, idx) => {
-                const colorName = COLOR_NAMES[idx] || `Color ${idx + 1}`;
-                if (selfVoicingActive) {
+            {uiMode !== 'blind' && (
+              <>
+            <Text style={styles.label} importantForAccessibility="no" accessibilityElementsHidden>Color Fondo</Text>
+            {selfVoicingActive ? (
+              // Self-voicing: una sola fila con swipe horizontal ciclando por
+              // PRESET_COLORS. Las 7 swatches siguen pintándose pero ya no
+              // son items individuales en blindNav — el usuario barre los
+              // colores con un solo elemento de lista.
+              (() => {
+                const idx = PRESET_COLORS.indexOf(color);
+                const currentColorName = idx >= 0 ? (COLOR_NAMES[idx] || `Color ${idx + 1}`) : 'Personalizado';
+                return (
+                  <SelfVoicingRow
+                    svActive
+                    svScope={SCOPE}
+                    svKey="color"
+                    svLabel={`Color de fondo: ${currentColorName}. Desliza horizontal para cambiar.`}
+                    onAdjust={(dir) => {
+                      const cur = PRESET_COLORS.indexOf(color);
+                      const base = cur >= 0 ? cur : 0;
+                      const next = dir === 'inc'
+                        ? (base + 1) % PRESET_COLORS.length
+                        : (base - 1 + PRESET_COLORS.length) % PRESET_COLORS.length;
+                      setColor(PRESET_COLORS[next]);
+                    }}
+                    style={styles.colorGrid}
+                  >
+                    {PRESET_COLORS.map((c) => (
+                      <View
+                        key={c}
+                        style={[
+                          styles.colorOption,
+                          { backgroundColor: c, borderWidth: color === c ? 3 : 0, borderColor: '#fff' },
+                        ]}
+                      />
+                    ))}
+                  </SelfVoicingRow>
+                );
+              })()
+            ) : (
+              <View style={styles.colorGrid}>
+                {PRESET_COLORS.map((c, idx) => {
+                  const colorName = COLOR_NAMES[idx] || `Color ${idx + 1}`;
                   return (
-                    <SelfVoicingRow
+                    <SelfVoicingTouchable
                       key={c}
-                      svActive
+                      svActive={selfVoicingActive}
                       svScope={SCOPE}
                       svKey={`color-${idx}`}
-                      svLabel={`Color ${colorName}. ${color === c ? 'Seleccionado' : 'No seleccionado'}`}
-                      onActivate={() => setColor(c)}
+                      svLabel={`${colorName}${color === c ? ' seleccionado' : ''}`}
+                      onPress={() => setColor(c)}
                       style={[
                         styles.colorOption,
                         { backgroundColor: c, borderWidth: color === c ? 3 : 0, borderColor: '#fff' },
                       ]}
-                    >
-                      <View />
-                    </SelfVoicingRow>
-                  );
-                }
-                return (
-                  <SelfVoicingTouchable
-                    key={c}
-                    svActive={selfVoicingActive}
-                    svScope={SCOPE}
-                    svKey={`color-${idx}`}
-                    svLabel={`${colorName}${color === c ? ' seleccionado' : ''}`}
-                    onPress={() => setColor(c)}
-                    style={[
-                      styles.colorOption,
-                      { backgroundColor: c, borderWidth: color === c ? 3 : 0, borderColor: '#fff' },
-                    ]}
-                    accessible={true}
-                    accessibilityLabel={`Color ${colorName}`}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: color === c }}
+                      accessible={true}
+                      accessibilityLabel={`Color ${colorName}`}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: color === c }}
                   >
                     <View />
                   </SelfVoicingTouchable>
                 );
               })}
             </View>
+            )}
+              </>
+            )}
 
             {uiMode !== 'blind' && kind === 'command' && (
               selfVoicingActive ? (
@@ -372,20 +370,22 @@ export function ButtonEditModal({
               )
             )}
 
-            <View style={styles.preview}>
-              <Text style={styles.previewLabel}>Preview:</Text>
-              <TouchableOpacity
-                style={[
-                  styles.previewButton,
-                  { backgroundColor: color },
-                ]}
-                disabled
-              >
-                <Text style={[styles.previewText, { color: '#ffffff' }]}>
-                  {label || '—'}
-                </Text>
-              </TouchableOpacity>
-            </View>
+            {uiMode !== 'blind' && (
+              <View style={styles.preview}>
+                <Text style={styles.previewLabel}>Preview:</Text>
+                <TouchableOpacity
+                  style={[
+                    styles.previewButton,
+                    { backgroundColor: color },
+                  ]}
+                  disabled
+                >
+                  <Text style={[styles.previewText, { color: '#ffffff' }]}>
+                    {label || '—'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </ScrollView>
 
           <View style={styles.actions}>

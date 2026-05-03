@@ -20,7 +20,12 @@ export function announceTyping(prev: string, curr: string): void {
   if (prev === curr) return;
 
   if (curr.length < prev.length) {
-    speechQueue.enqueue('borrado', 'high');
+    const deleted = prev.length - curr.length;
+    // 1 char → simplemente "borrado". Múltiples (selection-delete, paste
+    // sobre selección, ctrl-backspace) → "borrado N" para que el usuario
+    // ciego sepa cuánto desapareció. No leemos qué contenido desapareció
+    // porque suele ser información ya conocida (acaba de teclearla).
+    speechQueue.enqueue(deleted === 1 ? 'borrado' : `borrado ${deleted}`, 'high');
     return;
   }
 
