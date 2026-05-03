@@ -54,4 +54,4 @@ Logcat: `adb logcat | Select-String "TorchZhyla|SOUND|BM|BLIND|Telnet"`. Reset d
 - `versionCode`: `+1` por cada release publicada en Play. Solo sube, nunca baja.
 - **Sincronizar siempre** `android/app/build.gradle` (versionCode + versionName) y `app.json` (`expo.version`). Si divergen, manda `build.gradle`.
 - **NO bumpear automáticamente.** Solo cuando el usuario diga "vamos a publicar" / "release". Si hay duda de PATCH/MINOR/MAJOR → **preguntar**.
-- Última publicada en Play: _(ninguna — 1.0.0 será la primera)_
+- Última publicada en Play: **1.0.1 (versionCode 2)** — internal testing (2026-05-03)
