@@ -1951,6 +1951,18 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
   };
 
+  // Ref a `triggerGesture` que apunta SIEMPRE a la última versión. El
+  // `terminalPanResponder` se memoiza con deps que NO incluyen sendCommand
+  // / connected / commandHistory; sin esta indirección su closure capturaría
+  // un `triggerGesture → applyGestureText → sendCommand` con `connected=false`
+  // (estado inicial antes de conectar) y los gestos de 1-dedo nunca se
+  // mandarían al telnet aunque ya estuvieras conectado. Los gestos 2-dedos
+  // viven en `onTouchMove` del View JSX, que se re-renderiza con cada cambio
+  // de estado, así que no sufren el problema. Mismo patrón ya documentado
+  // arriba para `mapServiceRef.current.getCurrentRoom()`.
+  const triggerGestureRef = useRef(triggerGesture);
+  triggerGestureRef.current = triggerGesture;
+
   const handleDoubleTap = (touchCount: number) => {
     if (!gesturesEnabledRef.current || !gesturesAvailable || touchCount !== 1) {
       lastTapRef.current = 0;
@@ -2043,7 +2055,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         if (absX > 15 || absY > 15) {
           const dir = detectSwipeDirection(gs.dx, gs.dy);
           const gestureType = dir.replace('swipe_', 'doubletap_hold_swipe_') as GestureType;
-          triggerGesture(gestureType);
+          triggerGestureRef.current(gestureType);
         }
         return;
       }
@@ -2058,7 +2070,7 @@ export function TerminalScreen({ route, navigation }: Props) {
 
       if (gesturesEnabledRef.current && !isSlowVertical && (absX > 15 || absY > 15)) {
         const swipeDirection = detectSwipeDirection(gs.dx, gs.dy);
-        triggerGesture(swipeDirection as GestureType);
+        triggerGestureRef.current(swipeDirection as GestureType);
       }
     },
   }), [uiMode, useSelfVoicing, gesturesAvailable, applyScrollMomentum]);
@@ -2293,11 +2305,18 @@ export function TerminalScreen({ route, navigation }: Props) {
           onTouchStart={(evt) => {
             const touchCount = evt.nativeEvent.touches.length;
             if (touchCount === 1) {
+              // Reset al empezar un gesto fresco: si un 2-finger anterior
+              // dejó el flag colgado (caso típico: 2-finger tap/doubletap
+              // sin movimiento ⇒ PanResponder no reclama ⇒ release no
+              // dispara ⇒ flag queda true), el primer 1-finger después se
+              // comería el flag y bloquearía el swipe.
+              multiTouchGestureRef.current = false;
               handleDoubleTap(1);
             } else {
               lastTapRef.current = 0;
               // Sticky: bloquea el swipe de 1-dedo del PanResponder al
-              // soltar. Se resetea en onPanResponderRelease.
+              // soltar. Se resetea en onPanResponderRelease o al empezar
+              // un nuevo gesto de 1 dedo.
               multiTouchGestureRef.current = true;
             }
             if (!gesturesEnabledRef.current || !gesturesAvailable) return;
@@ -2749,6 +2768,9 @@ export function TerminalScreen({ route, navigation }: Props) {
             onTouchStart={(evt) => {
               const touchCount = evt.nativeEvent.touches.length;
               if (touchCount === 1) {
+                // Reset al empezar gesto fresco; ver comentario en la
+                // versión vertical.
+                multiTouchGestureRef.current = false;
                 handleDoubleTap(1);
               } else {
                 lastTapRef.current = 0;
