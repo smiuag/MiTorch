@@ -47,6 +47,7 @@ const ACTION_TYPES: Array<{ key: TriggerAction['type']; label: string }> = [
   { key: 'send', label: 'Enviar comando' },
   { key: 'notify', label: 'Notificación del sistema' },
   { key: 'floating', label: 'Mensaje flotante' },
+  { key: 'start_timer', label: 'Cuenta atrás (barra)' },
   { key: 'set_var', label: 'Guardar en variable' },
 ];
 
@@ -384,6 +385,9 @@ export function TriggerEditModal({ visible, initialTrigger, onSave, onCancel }: 
         break;
       case 'set_var':
         newAction = { type: 'set_var', varName: '', value: '', valueBlocks: [] };
+        break;
+      case 'start_timer':
+        newAction = { type: 'start_timer', label: '', labelBlocks: [], seconds: 8, level: 'info' };
         break;
     }
     setActions([...actions, newAction]);
@@ -1321,6 +1325,67 @@ function ActionEditor({ action, expertMode, patternBlocks, customSounds, onChang
         </>
       )}
 
+      {action.type === 'start_timer' && (
+        <>
+          <Text style={styles.smallLabel}>Texto de la barra</Text>
+          {expertMode ? (
+            <TextInput
+              style={styles.input}
+              value={action.label}
+              onChangeText={(t) => onChange({ ...action, label: t })}
+              placeholder="ej. Curar ligeras"
+              placeholderTextColor="#555"
+            />
+          ) : (
+            <TriggerActionTextBuilder
+              blocks={action.labelBlocks || []}
+              patternBlocks={patternBlocks}
+              placeholder="Vacío. Texto que verás en la barra."
+              onChange={(b) => onChange({ ...action, labelBlocks: b })}
+            />
+          )}
+
+          <Text style={styles.smallLabel}>Duración (segundos)</Text>
+          <TextInput
+            style={[styles.input, styles.monoInput]}
+            value={String(action.seconds ?? '')}
+            onChangeText={(t) => {
+              const n = parseInt(t.replace(/[^\d]/g, ''), 10);
+              onChange({ ...action, seconds: Number.isFinite(n) ? n : 0 });
+            }}
+            placeholder="ej. 8"
+            placeholderTextColor="#555"
+            keyboardType="numeric"
+          />
+
+          <Text style={styles.smallLabel}>Color</Text>
+          <View style={styles.floatingLevelRow}>
+            {FLOATING_LEVELS.map((lvl) => {
+              const selected = (action.level || 'info') === lvl.key;
+              return (
+                <TouchableOpacity
+                  key={lvl.key}
+                  style={[
+                    styles.floatingLevelChip,
+                    { backgroundColor: lvl.color },
+                    selected && styles.floatingLevelChipSelected,
+                  ]}
+                  onPress={() => onChange({ ...action, level: lvl.key })}
+                >
+                  <Text style={styles.floatingLevelText}>{lvl.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={styles.actionHint}>
+            Aparece arriba como una barra. Mientras quedan más de 5s la
+            barra interior va llena; en los últimos 5s se acorta hasta
+            desaparecer. El texto y el tiempo se ven siempre.
+          </Text>
+        </>
+      )}
+
       {action.type === 'set_var' && (
         <SetVarActionEditor
           action={action}
@@ -1581,6 +1646,8 @@ function actionToCajas(a: TriggerAction): TriggerAction {
       };
     case 'floating':
       return { ...a, messageBlocks: a.message ? [{ kind: 'text', text: a.message }] : [] };
+    case 'start_timer':
+      return { ...a, labelBlocks: a.label ? [{ kind: 'text', text: a.label }] : [] };
     case 'set_var':
       return { ...a, valueBlocks: a.value ? [{ kind: 'text', text: a.value }] : [] };
     default:
@@ -1610,6 +1677,10 @@ function compileActionWithBlocks(
     case 'floating':
       return a.messageBlocks
         ? { ...a, message: compileActionText(a.messageBlocks, captureMap) }
+        : a;
+    case 'start_timer':
+      return a.labelBlocks
+        ? { ...a, label: compileActionText(a.labelBlocks, captureMap) }
         : a;
     case 'set_var':
       return a.valueBlocks
@@ -1658,6 +1729,7 @@ function inferType(actions: TriggerAction[]): TriggerType {
     case 'notify': return 'notify';
     case 'floating': return 'combo';
     case 'set_var': return 'combo';
+    case 'start_timer': return 'combo';
   }
 }
 

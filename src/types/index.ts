@@ -126,7 +126,13 @@ export type TriggerAction =
   // order — each pair does a literal (non-regex) string replace-all on the
   // accumulated value. Common use: turn ", " into "|" so the resulting var
   // is regex-friendly when injected into a pattern with `${name:raw}`.
-  | { type: 'set_var'; varName: string; value: string; valueBlocks?: ActionTextBlock[]; replacements?: { from: string; to: string }[] };
+  | { type: 'set_var'; varName: string; value: string; valueBlocks?: ActionTextBlock[]; replacements?: { from: string; to: string }[] }
+  // Lanza una barra de cuenta atrás visual en el HUD superior. `label` es el
+  // texto que sale en la barra (soporta $1/$old/$new vía template). `seconds`
+  // es la duración total — al expirar la barra desaparece sola. `level` define
+  // la paleta (default 'info'). Si la misma `label` ya está corriendo, se
+  // reinicia (caso típico: re-cast del mismo buff).
+  | { type: 'start_timer'; label: string; labelBlocks?: ActionTextBlock[]; seconds: number; level?: FloatingMessageLevel };
 
 export type CaptureType = 'word' | 'phrase' | 'number';
 
@@ -254,6 +260,10 @@ export type GestureType =
   | 'swipe_up_right' | 'swipe_up_left' | 'swipe_down_right' | 'swipe_down_left'
   | 'twofingers_up' | 'twofingers_down' | 'twofingers_left' | 'twofingers_right'
   | 'twofingers_up_right' | 'twofingers_up_left' | 'twofingers_down_right' | 'twofingers_down_left'
+  // 3 dedos en las 8 direcciones cardinales. Detección equivalente a 2 dedos
+  // pero requiere `touches.length === 3` y mide centroide de los 3 puntos.
+  | 'threefingers_up' | 'threefingers_down' | 'threefingers_left' | 'threefingers_right'
+  | 'threefingers_up_right' | 'threefingers_up_left' | 'threefingers_down_right' | 'threefingers_down_left'
   | 'pinch_in' | 'pinch_out'
   // Doble-tap-hold-swipe: tap-tap-mantener-y-arrastrar. El segundo tap se
   // mantiene > 200 ms y el dedo se mueve > 15 px en la dirección. Permite

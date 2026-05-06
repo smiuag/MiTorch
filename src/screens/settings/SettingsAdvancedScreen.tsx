@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types';
-import { BlindGestureContainer, SelfVoicingRow } from '../../components/SelfVoicingControls';
+import { BlindGestureContainer, SelfVoicingRow, SelfVoicingTouchable } from '../../components/SelfVoicingControls';
 import { DEFAULT_SETTINGS } from '../../storage/settingsStorage';
 import {
   useSettings,
@@ -47,19 +47,23 @@ export function SettingsAdvancedScreen({ navigation, route }: Props) {
       edges={['top', 'left', 'right', 'bottom']}
       importantForAccessibility={settingsSelfVoicingActive ? 'no-hide-descendants' : 'auto'}
     >
-      <View style={s.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={s.backBtn}
-          accessibilityRole="button"
-          accessibilityLabel="Volver"
-        >
-          <Text style={s.backText}>{'< Volver'}</Text>
-        </TouchableOpacity>
-        <Text style={s.title} accessibilityRole="header">Avanzado</Text>
-      </View>
-
       <BlindGestureContainer active={blindNavActive} welcomeMessage={welcome} style={{ flex: 1 }}>
+        <View style={s.header}>
+          <SelfVoicingTouchable
+            svActive={settingsSelfVoicingActive}
+            svScope={SCOPE}
+            svKey="back"
+            svLabel="Volver"
+            onPress={() => navigation.goBack()}
+            style={s.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Volver"
+          >
+            <Text style={s.backText}>{'< Volver'}</Text>
+          </SelfVoicingTouchable>
+          <Text style={s.title} accessibilityRole="header">Avanzado</Text>
+        </View>
+
         <ScrollView
           ref={scrollViewRef}
           style={s.section}

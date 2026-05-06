@@ -375,13 +375,19 @@ interface BlindGestureContainerProps {
   welcomeMessage: string;
   style?: any;
   children: React.ReactNode;
+  // Si true, los swipes HORIZONTALES también navegan items (next/prev)
+  // igual que los verticales. Default false: horizontales son adjustInc /
+  // adjustDec (para sliders +/-). Útil en listas tipo pickers donde el
+  // user espera que swipe izquierda/derecha funcione como siguiente/
+  // anterior, igual que TalkBack.
+  horizontalAsNav?: boolean;
 }
 
 const TAP_MAX_MOVE = 10;
 const SWIPE_MIN = 50;
 const LONG_PRESS_MS = 600;
 
-export function BlindGestureContainer({ active, welcomeMessage, style, children }: BlindGestureContainerProps) {
+export function BlindGestureContainer({ active, welcomeMessage, style, children, horizontalAsNav }: BlindGestureContainerProps) {
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
 
@@ -392,7 +398,7 @@ export function BlindGestureContainer({ active, welcomeMessage, style, children 
     // welcomeMessage intencionalmente fuera de deps — no queremos re-entrar
     // si el padre re-renderiza con el mismo welcome.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
+  }, [active, horizontalAsNav]);
 
   const panResponder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => active,
@@ -434,8 +440,14 @@ export function BlindGestureContainer({ active, welcomeMessage, style, children 
         return;
       }
       if (absDx > absDy && absDx > SWIPE_MIN) {
-        if (g.dx > 0) blindNav.adjustInc();
-        else blindNav.adjustDec();
+        if (horizontalAsNav) {
+          // Mismo modelo que vertical: derecha = next, izquierda = prev.
+          if (g.dx > 0) blindNav.next();
+          else blindNav.prev();
+        } else {
+          if (g.dx > 0) blindNav.adjustInc();
+          else blindNav.adjustDec();
+        }
       }
     },
     onPanResponderTerminate: () => {

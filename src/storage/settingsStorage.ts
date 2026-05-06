@@ -10,6 +10,18 @@ export interface AppSettings {
   uiMode: 'completo' | 'blind';
   onboardingDone: boolean;
   encoding: string;
+  // Bloqueo de orientación de pantalla. 'none' = libre (rota con el
+  // dispositivo). 'horizontal' / 'vertical' = fuerza esa orientación
+  // a nivel de toda la app. Aplicado vía expo-screen-orientation en
+  // App.tsx + al cambiar el setting.
+  screenLockOrientation: 'none' | 'horizontal' | 'vertical';
+  // Heurística opt-in que detecta firma mojibake (`Ã©`, `Â¿`, etc.) en líneas
+  // entrantes y aplica el round-trip latin1→utf8 que deshace la doble
+  // codificación. Útil cuando OTRO jugador escribe acentos con su cliente
+  // mal configurado y al llegarte vienen como `Ã©` aunque tu encoding esté
+  // correcto. Default off — no es perfecto: en casos extremos puede
+  // reinterpretar texto legítimo como roto.
+  fixMojibake: boolean;
   gesturesEnabled: boolean;
   gestures: GestureConfig[];
   soundsEnabled: boolean;
@@ -52,6 +64,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   uiMode: 'completo',
   onboardingDone: false,
   encoding: 'utf8',
+  screenLockOrientation: 'none',
+  fixMojibake: false,
   gesturesEnabled: true,
   soundsEnabled: false,
   keepAwakeEnabled: true,
@@ -91,6 +105,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
     { type: 'twofingers_up_left', enabled: false, action: { kind: 'send', text: '' } },
     { type: 'twofingers_down_right', enabled: false, action: { kind: 'send', text: '' } },
     { type: 'twofingers_down_left', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'threefingers_up', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'threefingers_down', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'threefingers_left', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'threefingers_right', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'threefingers_up_right', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'threefingers_up_left', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'threefingers_down_right', enabled: false, action: { kind: 'send', text: '' } },
+    { type: 'threefingers_down_left', enabled: false, action: { kind: 'send', text: '' } },
     { type: 'pinch_in', enabled: false, action: { kind: 'send', text: '' } },
     { type: 'pinch_out', enabled: false, action: { kind: 'send', text: '' } },
     { type: 'twofingers_doubletap', enabled: false, action: { kind: 'send', text: '' } },

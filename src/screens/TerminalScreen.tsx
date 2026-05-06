@@ -29,6 +29,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, MudLine, GestureConfig, GestureType, GestureAction } from '../types';
 import { TelnetService, TelnetEventHandler } from '../services/telnetService';
 import { parseAnsi } from '../utils/ansiParser';
+import { fixMojibake } from '../utils/fixMojibake';
 import { AnsiText } from '../components/AnsiText';
 import { MiniMap, MiniMapHandle } from '../components/MiniMap';
 import { VitalBars } from '../components/VitalBars';
@@ -47,6 +48,7 @@ import { collectVarsReferencedByPacks } from '../utils/userVariablesUsage';
 import { triggerEngine } from '../services/triggerEngine';
 import { blindModeService } from '../services/blindModeService';
 import { logService } from '../services/logService';
+import { terminalVocabularyService } from '../services/terminalVocabularyService';
 import { playerStatsService } from '../services/playerStatsService';
 import { promptParser } from '../services/promptParser';
 import { userVariablesService } from '../services/userVariablesService';
@@ -61,6 +63,9 @@ import { activeConnection } from '../services/activeConnection';
 import { useSounds } from '../contexts/SoundContext';
 import { useFloatingMessages } from '../contexts/FloatingMessagesContext';
 import { FloatingMessages } from '../components/FloatingMessages';
+import { useCountdownTimers } from '../contexts/CountdownTimersContext';
+import { CountdownTimers } from '../components/CountdownTimers';
+import { useBlindKeyboardActivation } from '../contexts/BlindKeyboardContext';
 import { NORMAL_MODE, BLIND_MODE, getCustomDisplayDimensions } from '../config/gridConfig';
 import { BlindChannelModal, ChannelMessage, nextMsgId } from '../components/BlindChannelModal';
 import { loadChannelAliases, saveChannelAliases, loadChannelOrder, saveChannelOrder } from '../storage/channelStorage';
@@ -103,6 +108,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { playSound } = useSounds();
   const { push: pushFloating } = useFloatingMessages();
+  const { start: startCountdown } = useCountdownTimers();
   const { server: initialServer } = route.params;
 
   const [server, setServer] = useState(initialServer);
@@ -234,6 +240,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const channelsCaptureTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelsCaptureAccumRef = useRef<string[]>([]);
   const silentModeEnabledRef = useRef(false);
+  const fixMojibakeEnabledRef = useRef(false);
   const gesturesEnabledRef = useRef(false);
   const gesturesRef = useRef<GestureConfig[]>([]);
   // Ring buffer de remitentes recientes de telepatía. Lo escribimos en
@@ -254,6 +261,12 @@ export function TerminalScreen({ route, navigation }: Props) {
   const twoFingersStartRef = useRef({ x: 0, y: 0 });
   const twoFingersActiveRef = useRef(false);
   const twoFingersMovedRef = useRef(false);
+  // 3 dedos — solo direccional (sin pinch ni doubletap). Mismo modelo que
+  // 2 dedos: centroid de los tres puntos al `onTouchStart` con touchCount=3,
+  // detección de swipe en `onTouchMove` mientras siga habiendo 3 dedos.
+  const threeFingersStartRef = useRef({ x: 0, y: 0 });
+  const threeFingersActiveRef = useRef(false);
+  const threeFingersMovedRef = useRef(false);
   // Detección del doble-tap con 2 dedos. `tapStart` se setea al apoyar 2
   // dedos y se invalida (=0) si llega a haber pinch o swipe. Al levantar el
   // último dedo, si el tap fue corto y sin movimiento se mira contra
@@ -282,6 +295,13 @@ export function TerminalScreen({ route, navigation }: Props) {
   // pending — no se abre nada.
   const hoverHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingHoverLongPressRef = useRef<(() => void) | null>(null);
+  // Swipe direccional sobre la botonera (blind+selfVoicing). Trackeamos el
+  // inicio del touch para distinguir movimiento lento (drag-explore que
+  // sigue al dedo) de un swipe rápido y direccional (mueve el foco al
+  // botón adyacente en esa dirección sin anunciar los intermedios).
+  const swipeStartRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const swipeFastModeRef = useRef(false);
+  const swipeStartFocusKeyRef = useRef<string | null>(null);
   const scrollStartRef = useRef({ y: 0, offset: 0 });
   const scrollVelocityRef = useRef(0);
   const scrollMomentumRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -394,6 +414,9 @@ export function TerminalScreen({ route, navigation }: Props) {
     if (settings.gesturesEnabled !== undefined) {
       gesturesEnabledRef.current = settings.gesturesEnabled;
     }
+    if (settings.fixMojibake !== undefined) {
+      fixMojibakeEnabledRef.current = settings.fixMojibake;
+    }
     if (settings.keepAwakeEnabled !== undefined) {
       setKeepAwakeEnabled(settings.keepAwakeEnabled);
     }
@@ -468,6 +491,19 @@ export function TerminalScreen({ route, navigation }: Props) {
       );
     }
   };
+
+  // Teclado custom blind: solo se activa cuando uiMode==='blind' &&
+  // selfVoicing está ON. En cualquier otro modo el TextInput usa teclado
+  // nativo del sistema.
+  const blindKbInput = useBlindKeyboardActivation({
+    enabled: uiMode === 'blind' && useSelfVoicing,
+    textInputRef,
+    value: inputText,
+    setValue: setInputText,
+    setSelection: setInputSelection,
+    onSubmit: () => handleSendInput(),
+    history: commandHistory,
+  });
   useEffect(() => {
     return () => buttonRegistry.unregister('default:cmd-input');
   }, []);
@@ -792,6 +828,8 @@ export function TerminalScreen({ route, navigation }: Props) {
               }
             } else if (fx.type === 'floating') {
               pushFloating(fx.message, fx.level, undefined, { fg: fx.fg, bg: fx.bg });
+            } else if (fx.type === 'start_timer') {
+              startCountdown(fx.label, fx.seconds, fx.level);
             }
           }
         }
@@ -824,6 +862,8 @@ export function TerminalScreen({ route, navigation }: Props) {
         }
       } else if (fx.type === 'floating') {
         pushFloating(fx.message, fx.level, undefined, { fg: fx.fg, bg: fx.bg });
+      } else if (fx.type === 'start_timer') {
+        startCountdown(fx.label, fx.seconds, fx.level);
       }
     }
 
@@ -891,6 +931,11 @@ export function TerminalScreen({ route, navigation }: Props) {
     if (!deferSetState) {
       scheduleLinesFlush();
     }
+
+    // Alimentamos el vocabulario rolling para el suggestion engine del
+    // teclado blind. Incluye también canales — los nicks que aparecen
+    // en chat son útiles como sugerencia.
+    terminalVocabularyService.addLine(displayText);
 
     // Channel messages: always write to terminal, NEVER announce (even if silent mode is off).
     // Auto-scroll is handled by FlatList's onContentSizeChange/onLayout.
@@ -1009,8 +1054,16 @@ export function TerminalScreen({ route, navigation }: Props) {
   // capa global ya está garantizada por el render). El sync con el player
   // y con el ref lo hace el useEffect de arriba.
   const toggleSilentMode = useCallback(() => {
-    setSilentModeEnabled(prev => !prev);
-  }, []);
+    setSilentModeEnabled(prev => {
+      const next = !prev;
+      // En blind mode anunciamos el nuevo estado (igual que toggleAmbient).
+      // `next === true` significa silencio ON ⇒ sonido OFF.
+      if (uiMode === 'blind') {
+        speechQueue.enqueue(`Sonido ${next ? 'desactivado' : 'activado'}`);
+      }
+      return next;
+    });
+  }, [uiMode]);
 
   const toggleAmbient = useCallback(() => {
     setAmbientEnabled(prev => {
@@ -1036,6 +1089,9 @@ export function TerminalScreen({ route, navigation }: Props) {
       const list = await loadRecentTells(server.id);
       if (!cancelled) recentTellsRef.current = list;
     })();
+    // El vocabulario rolling del terminal se reinicia al cambiar de
+    // server — los tokens del personaje anterior no son relevantes.
+    terminalVocabularyService.clear();
     return () => { cancelled = true; };
   }, [server.id]);
 
@@ -1075,6 +1131,12 @@ export function TerminalScreen({ route, navigation }: Props) {
   useEffect(() => {
     const handler: TelnetEventHandler = {
       onData: (text: string) => {
+        // Reparación opt-in de doble codificación: cuando otro jugador
+        // envía bytes UTF-8 que el MUD interpreta como latin-1 y luego
+        // re-encodea, llegan como `Ã©`. La heurística identifica la
+        // firma y aplica el round-trip inverso. Off por defecto. Ver
+        // utils/fixMojibake.ts.
+        if (fixMojibakeEnabledRef.current) text = fixMojibake(text);
         logService.appendIncoming(text);
         if (isCapturingAliasRef.current) {
           aliasBufferRef.current.push(text);
@@ -1884,6 +1946,13 @@ export function TerminalScreen({ route, navigation }: Props) {
     textInputRef.current?.blur();
     const id = setTimeout(() => {
       textInputRef.current?.focus();
+      // En blind anunciamos que el teclado está activo y el comando
+      // pre-rellenado; el user solo tiene que terminar y enviar. El
+      // prefix con la opción elegida ya está dentro del input pero el
+      // user blind no lo ve, así que se lo decimos explícito.
+      if (uiMode === 'blind') {
+        speechQueue.enqueue(`Teclado activo. Comando: ${padded.trim()}. Completa y envía.`, 'high');
+      }
       pendingTimeoutsRef.current.delete(id);
     }, 100);
     pendingTimeoutsRef.current.add(id);
@@ -2221,6 +2290,18 @@ export function TerminalScreen({ route, navigation }: Props) {
       // children grabraran el responder, así que no chocamos con
       // PanResponders existentes. Además gestiona el hover-hold timer:
       // 800 ms quieto sobre un botón después de drag = longpress.
+      onTouchStart={selfVoicingActive ? (evt) => {
+        const t = evt.nativeEvent.touches?.[0];
+        if (!t) return;
+        swipeStartRef.current = { x: t.pageX, y: t.pageY, t: Date.now() };
+        swipeFastModeRef.current = false;
+        // Capturamos el foco actual para usar como ANCHOR del swipe — al
+        // soltar usaremos esto + dirección, no la posición final del dedo.
+        // El foco actual ya refleja dónde apoyó el dedo (el sistema marca
+        // foco al hover); si justo antes del touchstart el usuario tenía
+        // foco en otro botón por blind-nav, también es un anchor válido.
+        swipeStartFocusKeyRef.current = selfVoicingPress.getFocusedKey();
+      } : undefined}
       onTouchMove={selfVoicingActive ? (evt) => {
         // Si hay un modal abierto que NO migró todavía a scopes, el
         // `buttonRegistry.activeScope` sigue siendo 'default' y los
@@ -2239,6 +2320,32 @@ export function TerminalScreen({ route, navigation }: Props) {
         }
         const t = evt.nativeEvent.touches?.[0];
         if (!t) return;
+
+        // Detección de swipe rápido. Si la velocidad cruza el umbral en
+        // cualquier momento, sellamos el modo y dejamos de hacer
+        // drag-explore (no anunciamos los botones intermedios). El swipe
+        // se resuelve en onTouchEnd usando la dirección dominante.
+        const start = swipeStartRef.current;
+        if (start) {
+          const elapsed = Date.now() - start.t;
+          if (!swipeFastModeRef.current && elapsed > 30) {
+            const dx = t.pageX - start.x;
+            const dy = t.pageY - start.y;
+            const velocity = Math.hypot(dx, dy) / elapsed;
+            if (velocity > 1.5) {
+              swipeFastModeRef.current = true;
+              // Cancelamos hover-hold timer — el usuario está haciendo un
+              // swipe, no manteniendo el dedo quieto.
+              if (hoverHoldTimerRef.current) {
+                clearTimeout(hoverHoldTimerRef.current);
+                hoverHoldTimerRef.current = null;
+              }
+              pendingHoverLongPressRef.current = null;
+            }
+          }
+        }
+        if (swipeFastModeRef.current) return; // suprime drag-explore
+
         const hit = buttonRegistry.findAtPoint(t.pageX, t.pageY);
         if (hit) {
           const focusChanged = selfVoicingPress.getFocusedKey() !== hit.key;
@@ -2274,11 +2381,49 @@ export function TerminalScreen({ route, navigation }: Props) {
           pendingHoverLongPressRef.current = null;
         }
       } : undefined}
-      onTouchEnd={selfVoicingActive ? () => {
+      onTouchEnd={selfVoicingActive ? (evt) => {
         if (hoverHoldTimerRef.current) {
           clearTimeout(hoverHoldTimerRef.current);
           hoverHoldTimerRef.current = null;
         }
+
+        // Resolución de swipe: si el modo se selló durante el move, ahora
+        // calculamos dirección dominante y movemos foco al adyacente. El
+        // ANCHOR es el foco que había al iniciar el touch (no el final),
+        // para que la dirección se aplique desde donde el usuario empezó.
+        if (swipeFastModeRef.current && swipeStartRef.current) {
+          const start = swipeStartRef.current;
+          const t = evt.nativeEvent.changedTouches?.[0];
+          if (t) {
+            const dx = t.pageX - start.x;
+            const dy = t.pageY - start.y;
+            const adx = Math.abs(dx), ady = Math.abs(dy);
+            // Mínimo 40px y eje dominante claro (al menos 1.5× sobre el
+            // perpendicular) para descartar diagonales ambiguos.
+            if (Math.hypot(dx, dy) > 40 && (adx > 1.5 * ady || ady > 1.5 * adx)) {
+              const dir: 'up' | 'down' | 'left' | 'right' =
+                adx > ady ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+              const anchor = swipeStartFocusKeyRef.current;
+              if (anchor) {
+                const target = buttonRegistry.findInDirection(anchor, dir);
+                if (target) {
+                  selfVoicingPress.setFocusFromHover(target.key, target.label);
+                } else {
+                  speechQueue.enqueue('Sin botón', 'high');
+                }
+              }
+            }
+          }
+          swipeFastModeRef.current = false;
+          swipeStartRef.current = null;
+          swipeStartFocusKeyRef.current = null;
+          return;
+        }
+
+        // Limpieza del estado de swipe en touch normal (no fue swipe).
+        swipeStartRef.current = null;
+        swipeStartFocusKeyRef.current = null;
+
         // Si el pending estaba armado (= 800 ms cumplidos sobre el botón
         // con foco), abrir el editor AHORA al soltar.
         if (pendingHoverLongPressRef.current) {
@@ -2334,10 +2479,35 @@ export function TerminalScreen({ route, navigation }: Props) {
               twoFingersActiveRef.current = true;
               twoFingersMovedRef.current = false;
               twoFingersTapStartRef.current = Date.now();
+            } else if (touchCount === 3) {
+              const [t1, t2, t3] = evt.nativeEvent.touches;
+              threeFingersStartRef.current = {
+                x: (t1.pageX + t2.pageX + t3.pageX) / 3,
+                y: (t1.pageY + t2.pageY + t3.pageY) / 3,
+              };
+              threeFingersActiveRef.current = true;
+              threeFingersMovedRef.current = false;
             }
           }}
           onTouchMove={(evt) => {
-            if (!pinchActiveRef.current || evt.nativeEvent.touches.length !== 2) return;
+            const touchCount = evt.nativeEvent.touches.length;
+            // 3 dedos: solo direccional. Misma lógica que 2 dedos pero con
+            // centroide de 3 puntos.
+            if (touchCount === 3 && threeFingersActiveRef.current && !threeFingersMovedRef.current) {
+              const [t1, t2, t3] = evt.nativeEvent.touches;
+              const cx = (t1.pageX + t2.pageX + t3.pageX) / 3;
+              const cy = (t1.pageY + t2.pageY + t3.pageY) / 3;
+              const cdx = cx - threeFingersStartRef.current.x;
+              const cdy = cy - threeFingersStartRef.current.y;
+              if (Math.hypot(cdx, cdy) > 30) {
+                const direction = detectSwipeDirection(cdx, cdy) as GestureType;
+                const gestureType = direction.replace('swipe_', 'threefingers_') as GestureType;
+                triggerGestureRef.current(gestureType);
+                threeFingersMovedRef.current = true;
+              }
+              return;
+            }
+            if (!pinchActiveRef.current || touchCount !== 2) return;
             const [t1, t2] = evt.nativeEvent.touches;
             const centroidX = (t1.pageX + t2.pageX) / 2;
             const centroidY = (t1.pageY + t2.pageY) / 2;
@@ -2370,6 +2540,8 @@ export function TerminalScreen({ route, navigation }: Props) {
             // doubletap se evalúa en la última liberación.
             if (evt.nativeEvent.touches.length === 0) {
               handleTwoFingersTouchEnd();
+              threeFingersActiveRef.current = false;
+              threeFingersMovedRef.current = false;
             }
             pinchActiveRef.current = false;
             twoFingersActiveRef.current = false;
@@ -2545,23 +2717,6 @@ export function TerminalScreen({ route, navigation }: Props) {
                 </SelfVoicingTouchable>
               )}
 
-              {uiMode === 'blind' && globalAmbientEnabled && (
-                <SelfVoicingTouchable
-                  svActive={selfVoicingActive}
-                  svScope="default"
-                  svKey="ambient"
-                  svLabel={`Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`}
-                  onPress={toggleAmbient}
-                  style={[styles.sendButton, { flex: 0.4, backgroundColor: ambientEnabled ? '#3a5a3a' : '#666666' }]}
-                  accessible={true}
-                  accessibilityLabel={`Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`}
-                  accessibilityRole="button"
-                  accessibilityHint="Activa o desactiva la música de fondo"
-                >
-                  <Text style={[styles.sendButtonText, { fontSize: 14 }]}>{ambientEnabled ? 'Música' : 'Sin música'}</Text>
-                </SelfVoicingTouchable>
-              )}
-
               {uiMode === 'blind' && (
                 <SelfVoicingTouchable
                   svActive={selfVoicingActive}
@@ -2615,14 +2770,15 @@ export function TerminalScreen({ route, navigation }: Props) {
                 }}
                 onSelectionChange={(e) => setInputSelection(e.nativeEvent.selection)}
                 onLayout={registerInputRect}
-                onFocus={handleInputFocus}
-                onBlur={() => setInputFocused(false)}
+                onFocus={() => { handleInputFocus(); blindKbInput.onFocus(); }}
+                onBlur={() => { setInputFocused(false); blindKbInput.onBlur(); }}
                 onSubmitEditing={handleSendInput}
                 blurOnSubmit={false}
                 returnKeyType="send"
                 autoCapitalize="none"
                 autoCorrect={false}
                 spellCheck={false}
+                showSoftInputOnFocus={blindKbInput.showSoftInputOnFocus}
                 accessible={true}
                 accessibilityLabel="Entrada de comando"
                 accessibilityHint="Escribe un comando y presiona enviar o enter"
@@ -2793,10 +2949,33 @@ export function TerminalScreen({ route, navigation }: Props) {
                 twoFingersActiveRef.current = true;
                 twoFingersMovedRef.current = false;
                 twoFingersTapStartRef.current = Date.now();
+              } else if (touchCount === 3) {
+                const [t1, t2, t3] = evt.nativeEvent.touches;
+                threeFingersStartRef.current = {
+                  x: (t1.pageX + t2.pageX + t3.pageX) / 3,
+                  y: (t1.pageY + t2.pageY + t3.pageY) / 3,
+                };
+                threeFingersActiveRef.current = true;
+                threeFingersMovedRef.current = false;
               }
             }}
             onTouchMove={(evt) => {
-              if (!pinchActiveRef.current || evt.nativeEvent.touches.length !== 2) return;
+              const tc = evt.nativeEvent.touches.length;
+              if (tc === 3 && threeFingersActiveRef.current && !threeFingersMovedRef.current) {
+                const [t1, t2, t3] = evt.nativeEvent.touches;
+                const cx = (t1.pageX + t2.pageX + t3.pageX) / 3;
+                const cy = (t1.pageY + t2.pageY + t3.pageY) / 3;
+                const cdx = cx - threeFingersStartRef.current.x;
+                const cdy = cy - threeFingersStartRef.current.y;
+                if (Math.hypot(cdx, cdy) > 30) {
+                  const direction = detectSwipeDirection(cdx, cdy) as GestureType;
+                  const gestureType = direction.replace('swipe_', 'threefingers_') as GestureType;
+                  triggerGestureRef.current(gestureType);
+                  threeFingersMovedRef.current = true;
+                }
+                return;
+              }
+              if (!pinchActiveRef.current || tc !== 2) return;
               const [t1, t2] = evt.nativeEvent.touches;
               const centroidX = (t1.pageX + t2.pageX) / 2;
               const centroidY = (t1.pageY + t2.pageY) / 2;
@@ -2825,6 +3004,8 @@ export function TerminalScreen({ route, navigation }: Props) {
             onTouchEnd={(evt) => {
               if (evt.nativeEvent.touches.length === 0) {
                 handleTwoFingersTouchEnd();
+                threeFingersActiveRef.current = false;
+                threeFingersMovedRef.current = false;
               }
               pinchActiveRef.current = false;
               twoFingersActiveRef.current = false;
@@ -2930,23 +3111,6 @@ export function TerminalScreen({ route, navigation }: Props) {
                   </SelfVoicingTouchable>
                 )}
 
-                {uiMode === 'blind' && globalAmbientEnabled && (
-                  <SelfVoicingTouchable
-                    svActive={selfVoicingActive}
-                    svScope="default"
-                    svKey="ambient"
-                    svLabel={`Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`}
-                    onPress={toggleAmbient}
-                    style={[styles.sendButton, { flex: 0.4, backgroundColor: ambientEnabled ? '#3a5a3a' : '#666666' }]}
-                    accessible={true}
-                    accessibilityLabel={`Música ambiente ${ambientEnabled ? 'activada' : 'desactivada'}`}
-                    accessibilityRole="button"
-                    accessibilityHint="Activa o desactiva la música de fondo"
-                  >
-                    <Text style={[styles.sendButtonText, { fontSize: 14 }]}>{ambientEnabled ? 'Música' : 'Sin música'}</Text>
-                  </SelfVoicingTouchable>
-                )}
-
                 {uiMode === 'blind' && (
                   <SelfVoicingTouchable
                     svActive={selfVoicingActive}
@@ -3000,14 +3164,15 @@ export function TerminalScreen({ route, navigation }: Props) {
                   }}
                   onSelectionChange={(e) => setInputSelection(e.nativeEvent.selection)}
                   onLayout={registerInputRect}
-                  onFocus={handleInputFocus}
-                  onBlur={() => setInputFocused(false)}
+                  onFocus={() => { handleInputFocus(); blindKbInput.onFocus(); }}
+                  onBlur={() => { setInputFocused(false); blindKbInput.onBlur(); }}
                   onSubmitEditing={handleSendInput}
                   blurOnSubmit={false}
                   returnKeyType="send"
                   autoCapitalize="none"
                   autoCorrect={false}
                   spellCheck={false}
+                  showSoftInputOnFocus={blindKbInput.showSoftInputOnFocus}
                   accessible={true}
                   accessibilityLabel="Entrada de comando"
                   accessibilityHint="Escribe un comando y presiona enviar o enter"
@@ -3333,6 +3498,7 @@ export function TerminalScreen({ route, navigation }: Props) {
       )}
 
       <FloatingMessages />
+      {uiMode === 'completo' && <CountdownTimers />}
     </SafeAreaView>
   );
 }

@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Tts from 'react-native-tts';
 import { RootStackParamList } from '../../types';
-import { BlindGestureContainer, SelfVoicingRow } from '../../components/SelfVoicingControls';
+import { BlindGestureContainer, SelfVoicingRow, SelfVoicingTouchable } from '../../components/SelfVoicingControls';
 import { VolumeAdjuster } from '../../components/VolumeAdjuster';
 import { AccessibleSelectModal, AccessibleSelectOption } from '../../components/AccessibleSelectModal';
 import { activeConnection } from '../../services/activeConnection';
@@ -171,19 +171,23 @@ export function SettingsTerminalScreen({ navigation }: Props) {
       edges={['top', 'left', 'right', 'bottom']}
       importantForAccessibility={settingsSelfVoicingActive ? 'no-hide-descendants' : 'auto'}
     >
-      <View style={s.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={s.backBtn}
-          accessibilityRole="button"
-          accessibilityLabel="Volver"
-        >
-          <Text style={s.backText}>{'< Volver'}</Text>
-        </TouchableOpacity>
-        <Text style={s.title} accessibilityRole="header">Configuración</Text>
-      </View>
-
       <BlindGestureContainer active={blindNavActive} welcomeMessage={welcome} style={{ flex: 1 }}>
+        <View style={s.header}>
+          <SelfVoicingTouchable
+            svActive={settingsSelfVoicingActive}
+            svScope={SCOPE}
+            svKey="back"
+            svLabel="Volver"
+            onPress={() => navigation.goBack()}
+            style={s.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Volver"
+          >
+            <Text style={s.backText}>{'< Volver'}</Text>
+          </SelfVoicingTouchable>
+          <Text style={s.title} accessibilityRole="header">Configuración</Text>
+        </View>
+
         <ScrollView
           ref={scrollViewRef}
           style={s.section}

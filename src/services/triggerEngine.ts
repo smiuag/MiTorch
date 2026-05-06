@@ -7,7 +7,8 @@ export type TriggerSideEffect =
   | { type: 'play_sound'; file: string; pan?: number }
   | { type: 'send'; command: string }
   | { type: 'notify'; title?: string; message: string }
-  | { type: 'floating'; message: string; level: FloatingMessageLevel; fg?: string; bg?: string };
+  | { type: 'floating'; message: string; level: FloatingMessageLevel; fg?: string; bg?: string }
+  | { type: 'start_timer'; label: string; seconds: number; level: FloatingMessageLevel };
 
 export interface ProcessResult {
   gagged: boolean;
@@ -403,6 +404,17 @@ class TriggerEngine {
         });
         return {};
 
+      case 'start_timer':
+        if (action.seconds > 0 && action.label) {
+          sideEffectsOut.push({
+            type: 'start_timer',
+            label: expandTemplate(action.label, match, null, null),
+            seconds: action.seconds,
+            level: action.level || 'info',
+          });
+        }
+        return {};
+
       case 'set_var': {
         if (!action.varName) return {};
         const value = applyReplacements(
@@ -460,6 +472,17 @@ class TriggerEngine {
           fg: action.fg,
           bg: action.bg,
         });
+        return;
+
+      case 'start_timer':
+        if (action.seconds > 0 && action.label) {
+          sideEffectsOut.push({
+            type: 'start_timer',
+            label: expandTemplate(action.label, null, oldVal, newVal),
+            seconds: action.seconds,
+            level: action.level || 'info',
+          });
+        }
         return;
 
       case 'set_var': {

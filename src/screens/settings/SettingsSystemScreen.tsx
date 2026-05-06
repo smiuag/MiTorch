@@ -3,11 +3,12 @@ import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Switch, Alert } f
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types';
-import { BlindGestureContainer, SelfVoicingRow } from '../../components/SelfVoicingControls';
+import { BlindGestureContainer, SelfVoicingRow, SelfVoicingTouchable } from '../../components/SelfVoicingControls';
 import { AccessibleSelectModal, AccessibleSelectOption } from '../../components/AccessibleSelectModal';
 import { requestNotificationPermission, openNotificationSettings } from '../../services/foregroundService';
 import { logService, ExportRange, slugifyServerName } from '../../services/logService';
 import { saveSettings, LogsMaxLines } from '../../storage/settingsStorage';
+import { applyScreenLock } from '../../utils/applyScreenLock';
 import { loadServers } from '../../storage/serverStorage';
 import {
   useSettings,
@@ -37,6 +38,12 @@ const ENCODING_OPTIONS = [
   { label: 'MACINTOSH', value: 'macintosh' },
 ];
 
+const LOCK_ORIENTATION_OPTIONS: { label: string; value: 'none' | 'horizontal' | 'vertical' }[] = [
+  { label: 'No (rota libre)', value: 'none' },
+  { label: 'Vertical (portrait)', value: 'vertical' },
+  { label: 'Horizontal (landscape)', value: 'horizontal' },
+];
+
 const LOG_SIZE_OPTIONS: { value: LogsMaxLines; mb: string }[] = [
   { value: 5000, mb: '~1 MB' },
   { value: 10000, mb: '~2 MB' },
@@ -50,7 +57,8 @@ export function SettingsSystemScreen({ navigation, route }: Props) {
   const { settings, setSettings, updateSetting, settingsSelfVoicingActive } = useSettings(sourceLocation);
   const [encodingModalVisible, setEncodingModalVisible] = useState(false);
   const [exportRangeModalVisible, setExportRangeModalVisible] = useState(false);
-  const anyModalOpen = encodingModalVisible || exportRangeModalVisible;
+  const [lockOrientationModalVisible, setLockOrientationModalVisible] = useState(false);
+  const anyModalOpen = encodingModalVisible || exportRangeModalVisible || lockOrientationModalVisible;
   const blindNavActive = settingsSelfVoicingActive && !anyModalOpen;
   useSettingsScope(SCOPE, settingsSelfVoicingActive);
   const { scrollViewRef, onScroll, onLayout } = useBlindNavAutoScroll(blindNavActive);
@@ -114,19 +122,23 @@ export function SettingsSystemScreen({ navigation, route }: Props) {
       edges={['top', 'left', 'right', 'bottom']}
       importantForAccessibility={settingsSelfVoicingActive ? 'no-hide-descendants' : 'auto'}
     >
-      <View style={s.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={s.backBtn}
-          accessibilityRole="button"
-          accessibilityLabel="Volver"
-        >
-          <Text style={s.backText}>{'< Volver'}</Text>
-        </TouchableOpacity>
-        <Text style={s.title} accessibilityRole="header">Sistema</Text>
-      </View>
-
       <BlindGestureContainer active={blindNavActive} welcomeMessage={welcome} style={{ flex: 1 }}>
+        <View style={s.header}>
+          <SelfVoicingTouchable
+            svActive={settingsSelfVoicingActive}
+            svScope={SCOPE}
+            svKey="back"
+            svLabel="Volver"
+            onPress={() => navigation.goBack()}
+            style={s.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Volver"
+          >
+            <Text style={s.backText}>{'< Volver'}</Text>
+          </SelfVoicingTouchable>
+          <Text style={s.title} accessibilityRole="header">Sistema</Text>
+        </View>
+
         <ScrollView
           ref={scrollViewRef}
           style={s.section}
@@ -164,6 +176,51 @@ export function SettingsSystemScreen({ navigation, route }: Props) {
               </TouchableOpacity>
             </SelfVoicingRow>
           )}
+
+          <SelfVoicingRow
+            svActive={settingsSelfVoicingActive}
+            svScope={SCOPE}
+            svKey="lock-orientation"
+            svLabel={`Bloquear pantalla: ${LOCK_ORIENTATION_OPTIONS.find(o => o.value === settings.screenLockOrientation)?.label ?? 'No'}. Pulsa para cambiar.`}
+            onActivate={() => setLockOrientationModalVisible(true)}
+            style={s.row}
+          >
+            <View style={s.rowInfo}>
+              <Text style={s.rowTitle}>Bloquear pantalla</Text>
+              <Text style={s.rowDesc}>Forzar orientación: vertical, horizontal o libre.</Text>
+            </View>
+            <TouchableOpacity
+              style={s.encodingBtn}
+              onPress={() => setLockOrientationModalVisible(true)}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Cambiar bloqueo de pantalla"
+            >
+              <Text style={s.encodingBtnText} numberOfLines={1} ellipsizeMode="tail">
+                {LOCK_ORIENTATION_OPTIONS.find(o => o.value === settings.screenLockOrientation)?.label ?? 'No'}
+              </Text>
+            </TouchableOpacity>
+          </SelfVoicingRow>
+
+          <SelfVoicingRow
+            svActive={settingsSelfVoicingActive}
+            svScope={SCOPE}
+            svKey="fix-mojibake"
+            svLabel={`Reparar texto mal codificado. ${settings.fixMojibake ? 'Activado' : 'Desactivado'}`}
+            onActivate={() => updateSetting('fixMojibake', !settings.fixMojibake)}
+            style={s.row}
+          >
+            <View style={s.rowInfo}>
+              <Text style={s.rowTitle}>Reparar texto mal codificado (experimental)</Text>
+              <Text style={s.rowDesc}>Útil cuando otro jugador escribe acentos y los ves como Ã©. Heurística — en casos raros puede causar artefactos.</Text>
+            </View>
+            <Switch
+              value={settings.fixMojibake}
+              onValueChange={(v) => updateSetting('fixMojibake', v)}
+              trackColor={{ false: '#333', true: '#0c0' }}
+              thumbColor={settings.fixMojibake ? '#000' : '#666'}
+            />
+          </SelfVoicingRow>
 
           <SelfVoicingRow
             svActive={settingsSelfVoicingActive}
@@ -366,6 +423,24 @@ export function SettingsSystemScreen({ navigation, route }: Props) {
           )}
         </ScrollView>
       </BlindGestureContainer>
+
+      <AccessibleSelectModal<'none' | 'horizontal' | 'vertical'>
+        visible={lockOrientationModalVisible}
+        title="Bloquear pantalla"
+        scope="lock-orientation-modal"
+        selfVoicingActive={settingsSelfVoicingActive}
+        options={LOCK_ORIENTATION_OPTIONS.map((opt) => ({
+          key: opt.value,
+          label: opt.label,
+          selected: settings.screenLockOrientation === opt.value,
+        }))}
+        onSelect={(value) => {
+          updateSetting('screenLockOrientation', value);
+          applyScreenLock(value);
+          setLockOrientationModalVisible(false);
+        }}
+        onCancel={() => setLockOrientationModalVisible(false)}
+      />
 
       <AccessibleSelectModal
         visible={encodingModalVisible}

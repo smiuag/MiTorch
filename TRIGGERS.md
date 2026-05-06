@@ -362,6 +362,44 @@ interface PlayerVariables { playerName: string; /* desde ServerProfile.username 
 interface AppSettings { speechCharDurationMs: number; /* default 20 */ }
 ```
 
+### Derivación empírica de duraciones de bloqueos (workflow 2026-05-03)
+
+Para los triggers `start_timer` necesitamos saber cuánto dura cada bloqueo del MUD. RdL no documenta los tiempos. Workflow probado con la suite de Eralie (curar ligeras/moderadas/serias/críticas):
+
+1. **Activar logs** (Ajustes → Sistema → Activar logs). El raw `log.txt` lleva timestamps con ms (`Date.toISOString()`); el HTML export trunca a HH:MM:SS — siempre tirar del `.txt` directo.
+2. **Tanda limpia**: lanzar 10+ veces cada hechizo, **esperando el "[El bloqueo ... termina]" antes del siguiente cast**. NO solapar bloqueos — el overlap añade ~1s de stdev y sesga las medidas hacia arriba (probable contención de eventos del MUD).
+3. **Pull del log**: `adb exec-out run-as com.smiaug.torchzhyla cat files/logs/log.txt > log_raw.txt`. Requiere APK debug instalada (release no permite `run-as`).
+4. **Análisis** ad-hoc en Node: parsear timestamps ISO, emparejar por severidad/spell name `"Curas algunas..."` con `"[El bloqueo 'X' termina]"`. **Dentro de cada nivel/spell el orden FIFO está garantizado** porque no puedes recastear durante el bloqueo. Cross-severidad sí puede reordenar (un bloqueo más corto cast más tarde puede terminar primero), pero el filtro por nombre del spell lo aísla. Calcular mediana, stdev, min/max del delta `Curas → termina`.
+5. **Política de redondeo**: **mediana ↑** (no max ↑). Razón empírica: los outliers altos vienen de mensaje `termina` que llega tarde por red, no de bloqueos realmente más largos — el server-side ya había pasado y el usuario puede recastear sin "todavía no" aunque la barra del cliente no haya llegado a 0. Max ↑ infla la barra contra una latencia que NO es bloqueo real.
+6. **Actualizar el build script** (`scripts/build-timers-*.js`) con los valores y regenerar el zip.
+
+Heurísticas observadas:
+- **Stdev típica de un bloqueo limpio: 0.3-0.7s.** Si sale >1s sospecha overlap o lag puntual de red.
+- **Cast time es prácticamente determinista** (stdev ~0.1s) y solo depende del hechizo. Útil para sanity check de que el log no tiene anomalías.
+- **No hay heartbeat detectable** en periodos 0.5s-5s (varianza circular `r` < 0.3 para todos los periodos probados con concentración angular). El jitter de bloqueo parece intrínseco al MUD; podría haber un tick más fino (50-100ms) pero a esa escala el ruido de red es comparable.
+- **Verifica el emparejamiento** con un script que compruebe que los eventos `land`/`end` alternan estrictamente dentro de cada severidad. Si encuentras dos `land` consecutivos sin `end` intermedio, hay un fallo de captura (probablemente regex roto por colores ANSI o una variante del mensaje).
+
+Para Eralie 2026-05-03 (Bardo / Sacerdote, no recuerdo): medianas 9.73/10.99/12.97/13.96 → timers 10/11/13/14.
+
+### Pruebas pendientes para refinar el modelo de bloqueos (2026-05-04)
+
+**Estado del modelo actual** (cerrado provisionalmente con destripar de Trotix):
+
+- El help del MUD (en hechizos que lo exponen, p.ej. destripar bárbaro) declara dos números: **velocidad** (cast time desde el comando hasta el hit) y **bloqueo** (cooldown desde el hit hasta poder volver a actuar).
+- Ejemplo destripar: velocidad 1.4s, bloqueo 12s. Medido `+ Extiendes` → `[bloqueo termina]`: mediana 14.89s, rango 13.87-15.75, stdev 0.6s.
+- **Modelo que cuadra**: bloqueo real = 12s. El mensaje `termina` llega tras un retardo extra ~0-2s (probablemente heartbeat del driver LDMud-like). Al `+ Extiendes` (cast start visible) hay que añadirle velocidad + bloqueo + jitter heartbeat = 1.4 + 12 + ~1.5 = ~14.9s. Match.
+- **Hipótesis descartadas con datos**:
+  - Tick global compartido entre hechizos (correlación de desviaciones entre pares solapados r ≈ −0.04 con N=122). Cada bloqueo tiene su propio jitter independiente.
+  - Comandos del usuario gatillan check oportunista del server (en trotix los buckets "idle" / "cmd cerca termina" / "cmd lejos" no muestran shortening del bloqueo cuando hay actividad — opuesto al esperado). Probable sesgo de confirmación en la observación inicial.
+
+**Pendiente probar (2026-05-05+)**: Eralie solapando **el mismo hechizo** repetido (no varios distintos). Hipótesis a verificar: ¿hay un pattern que aparece solo cuando el mismo cooldown se intenta refrescar mientras está activo? Quizás:
+- Refresh inmediato si el bloqueo expiró sub-heartbeat (server checkea bloqueo cuando recibe re-cast).
+- O timing peculiar al re-castear sobre cooldown propio (vs sobre cooldown de otro hechizo).
+
+Setup esperado: usuario lanza curar ligeras 20 veces seguidas tan rápido como pueda, esperando ver si en algún momento el termina-message coincide con el intento fallido y se "comprime" la duración medida.
+
+**Si los datos confirman algo nuevo**: actualizar la sección "Derivación empírica" con el modelo refinado. **Si no aparece nada nuevo**: dejar el modelo actual cerrado (heartbeat asíncrono ~2s, jitter independiente per-spell).
+
 ### Decisiones pendientes
 
 - **Orden entre plantillas** cuando un server tiene varias asignadas. Default actual: alfabético por nombre de plantilla. Reordenación manual entre plantillas se difiere a Fase 4 si hace falta. (La reordenación **dentro** de una plantilla ya está implementada con flechas ▲/▼.)

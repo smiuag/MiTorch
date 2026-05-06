@@ -63,6 +63,11 @@ class SelfVoicingPressTracker {
   setFocusFromHover(key: string, label: string): void {
     if (this.focusedKey === key) return;
     this.setFocus(key);
+    // Misma duración que BlindNavController.setFocusByKey (20ms) — feedback
+    // háptico al cruzar a otro botón al arrastrar el dedo. Coherente con la
+    // vibración que ya da la nav blind cuando cambia foco con swipes en
+    // settings/modales.
+    Vibration.vibrate(20);
     speechQueue.enqueue(label, 'high');
   }
 
@@ -92,6 +97,15 @@ interface ButtonRect {
   h: number;
   label: string;
   onLongPress?: () => void;
+  // Etiqueta opcional que se anuncia por TTS cuando el long-press se
+  // "arma" (timer cumplido pero todavía no se levantó el dedo). Si no
+  // se especifica, no se anuncia nada — solo vibración. Permite que
+  // cada tecla diga lo suyo: "con tilde" en vocales, "borrar palabra"
+  // en backspace, etc.
+  onLongPressLabel?: string;
+  // Tiempo en ms tras el cual el long-press se arma. Si no se
+  // especifica usa el default del consumer (típicamente 600ms).
+  onLongPressDelayMs?: number;
   scope: string;
   sequential: boolean;
   // Modelo BlindNav (audiogame-style, gestos globales de pantalla):
@@ -143,6 +157,12 @@ class ButtonRegistry {
       ...rect,
       label,
       onLongPress,
+      // Preservamos longPressLabel/Delay si fueron asignados aparte vía
+      // setActions o re-register. El register no los toma como param
+      // posicional para no inflar la firma — los callers que necesiten
+      // customizarlos lo hacen vía setActions.
+      onLongPressLabel: prev?.onLongPressLabel,
+      onLongPressDelayMs: prev?.onLongPressDelayMs,
       scope,
       sequential,
       onActivate: prev?.onActivate,
@@ -150,7 +170,7 @@ class ButtonRegistry {
     });
   }
 
-  setActions(key: string, actions: { onActivate?: () => void; onAdjust?: (dir: 'inc' | 'dec') => void }): void {
+  setActions(key: string, actions: { onActivate?: () => void; onAdjust?: (dir: 'inc' | 'dec') => void; onLongPressLabel?: string; onLongPressDelayMs?: number }): void {
     const entry = this.buttons.get(key);
     if (!entry) {
       // Aún no registrado (orden de useEffect). Lo guardamos parcial; el
@@ -162,6 +182,8 @@ class ButtonRegistry {
       return;
     }
     entry.onActivate = actions.onActivate;
+    if (actions.onLongPressLabel !== undefined) entry.onLongPressLabel = actions.onLongPressLabel;
+    if (actions.onLongPressDelayMs !== undefined) entry.onLongPressDelayMs = actions.onLongPressDelayMs;
     entry.onAdjust = actions.onAdjust;
   }
 
@@ -210,6 +232,62 @@ class ButtonRegistry {
 
   findPrev(currentKey: string | null): { key: string; label: string; rect: { x: number; y: number; w: number; h: number } } | null {
     return this.findRelative(currentKey, -1);
+  }
+
+  /**
+   * Encuentra el botón más cercano del scope activo en una dirección
+   * cardinal desde el botón con `fromKey`. Útil para navegación direccional
+   * con swipes (arriba/abajo/izquierda/derecha) sobre layouts en grid donde
+   * el orden secuencial de findNext/findPrev no aporta la semántica que
+   * busca el usuario. Salta huecos: si la celda inmediatamente adyacente
+   * está vacía, busca la siguiente en esa dirección.
+   *
+   * Algoritmo: filtra candidatos cuyo centro esté en la dirección dada
+   * (descartando los que estén "detrás" o muy desviados del eje), y
+   * devuelve el de menor distancia ponderada — favorece movimiento
+   * principalmente sobre el eje, penalizando desviaciones perpendiculares.
+   */
+  findInDirection(
+    fromKey: string,
+    dir: 'up' | 'down' | 'left' | 'right',
+  ): { key: string; label: string; rect: { x: number; y: number; w: number; h: number } } | null {
+    const from = this.buttons.get(fromKey);
+    if (!from) return null;
+    const fcx = from.x + from.w / 2;
+    const fcy = from.y + from.h / 2;
+
+    let best: { key: string; entry: ButtonRect; score: number } | null = null;
+    for (const [key, b] of this.buttons) {
+      if (key === fromKey) continue;
+      if (b.scope !== this.activeScope) continue;
+      const cx = b.x + b.w / 2;
+      const cy = b.y + b.h / 2;
+      const dx = cx - fcx;
+      const dy = cy - fcy;
+
+      // Filtra por dirección: solo elementos que están del lado correcto
+      // y donde el componente del eje principal domina.
+      let onAxis = 0, perp = 0;
+      if (dir === 'right') { if (dx <= 0) continue; onAxis = dx; perp = Math.abs(dy); }
+      else if (dir === 'left') { if (dx >= 0) continue; onAxis = -dx; perp = Math.abs(dy); }
+      else if (dir === 'down') { if (dy <= 0) continue; onAxis = dy; perp = Math.abs(dx); }
+      else { if (dy >= 0) continue; onAxis = -dy; perp = Math.abs(dx); }
+
+      // Cono de ~60°: rechazamos elementos con desviación perpendicular
+      // mayor que el avance en el eje (evita que un swipe a la derecha
+      // capture algo que está casi-arriba-derecha).
+      if (perp > onAxis) continue;
+
+      // Score = avance en eje + 2× perpendicular (penaliza desviación).
+      const score = onAxis + 2 * perp;
+      if (!best || score < best.score) best = { key, entry: b, score };
+    }
+    if (!best) return null;
+    return {
+      key: best.key,
+      label: best.entry.label,
+      rect: { x: best.entry.x, y: best.entry.y, w: best.entry.w, h: best.entry.h },
+    };
   }
 
   private findRelative(currentKey: string | null, dir: 1 | -1) {

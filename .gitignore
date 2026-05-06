@@ -57,10 +57,22 @@ sentry.properties
 # fuera del repo (página de descargas, USB encriptado…). Pesan cientos de MB
 # y bloatearían el historial. Ver memoria "TorchZhyla — paths externos al repo".
 /Config.zip
+/RL_Default_Config.zip
+/Timers_Eralie.zip
+/Timers_Bardo.zip
 /map.json
 /mapa.json
 /torchzhyla-defaults.zip
 /torchzhyla-defaults.backup.zip
+
+# Análisis ad-hoc (logs raw del MUD + scripts one-off para extraer
+# duraciones de bloqueos, correlación, etc.). No vale la pena versionarlos;
+# se regeneran cuando hace falta.
+/analyze-*.js
+/bardo.txt
+/trotix.txt
+/log_raw*.txt
+/*.jpg
 
 # Native folders
 # We work in "bare workflow": android/ IS committed to git.

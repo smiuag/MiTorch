@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -22,23 +22,42 @@ import { ConfigBackupScreen } from './src/screens/ConfigBackupScreen';
 import { UserVariablesScreen } from './src/screens/UserVariablesScreen';
 import { SoundProvider } from './src/contexts/SoundContext';
 import { FloatingMessagesProvider } from './src/contexts/FloatingMessagesContext';
+import { CountdownTimersProvider } from './src/contexts/CountdownTimersContext';
+import { BlindKeyboardProvider } from './src/contexts/BlindKeyboardContext';
+import { loadSettings } from './src/storage/settingsStorage';
+import { applyScreenLock } from './src/utils/applyScreenLock';
 
 Sentry.init({
   dsn: 'https://95bdcaa4f3edd2996d85375dd2f12807@o4511280046735360.ingest.de.sentry.io/4511280058597456',
   enabled: !__DEV__,
   tracesSampleRate: 0.0,
   integrations: [
-    captureConsoleIntegration({ levels: ['warn', 'error'] }),
+    // Solo `error` — `warn` capturaba ruido benigno (audio focus en
+    // background, refs legacy, etc.) que mancha el inbox sin aportar señal.
+    // Los warnings siguen visibles en logcat para debug local; lo que
+    // queremos en Sentry es lo que rompe experiencia del usuario.
+    captureConsoleIntegration({ levels: ['error'] }),
   ],
 });
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function App() {
+  // Aplica el bloqueo de orientación al arrancar — se respeta el setting
+  // persistido. Si el user lo cambia desde Settings se reaplica desde ahí.
+  useEffect(() => {
+    (async () => {
+      const s = await loadSettings();
+      applyScreenLock(s.screenLockOrientation);
+    })();
+  }, []);
+
   return (
     <SafeAreaProvider>
     <SoundProvider>
       <FloatingMessagesProvider>
+      <CountdownTimersProvider>
+      <BlindKeyboardProvider>
       <NavigationContainer
         theme={DarkTheme}
         documentTitle={{
@@ -134,6 +153,8 @@ function App() {
           />
         </Stack.Navigator>
       </NavigationContainer>
+      </BlindKeyboardProvider>
+      </CountdownTimersProvider>
       </FloatingMessagesProvider>
     </SoundProvider>
     </SafeAreaProvider>

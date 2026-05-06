@@ -161,6 +161,12 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
       await sound.playAsync();
       setTimeout(() => sound.unloadAsync().catch(() => {}), 8000);
     } catch (e) {
+      // App en background ⇒ expo-av no puede adquirir audio focus y tira
+      // excepción. Esperable: el usuario no está escuchando y el silent
+      // skip es correcto. Lo silenciamos para no manchar Sentry. Otros
+      // fallos de sonido SÍ siguen reportándose como error real.
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/audio focus could not be acquired/i.test(msg)) return;
       console.error(`[SoundContext.playSound] Error: ${e}`);
     }
   }, []);

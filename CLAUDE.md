@@ -190,6 +190,35 @@ Idea general: loop de música que cambia con el **tipo de sala** (17 categorías
 
 ## Temas Pendientes
 
+- **Reconocimiento de voz para envío manos-libres** (planteado: 2026-05-05, sin diseño cerrado). Idea del usuario: que la app escuche el micrófono continuamente y, según un "modo" activo, envíe lo capturado al MUD cuando detecte una pausa de N segundos. Modos: terminal (envía como comando), bando/canal-X (envía como `ba: <texto>`), sordo (off). Cambio de modo desde botón visible/audible.
+
+  **Tecnología**: `@react-native-voice/voice` (lib JS sobre `SpeechRecognizer` nativo de Android / `SFSpeechRecognizer` iOS). No hace falta backend ni API keys. El recognizer puede ser online (Google Speech) u offline (Android 13+ con paquete `es-ES`). En móviles chinos sin servicios Google podría no funcionar — evaluar caso a caso.
+
+  **Permiso nuevo** en AndroidManifest.xml: `RECORD_AUDIO`. Petición runtime al activar el modo.
+
+  **Restart entre frases**: SpeechRecognizer de Android no es continuo — corta la sesión al detectar silencio o resultado final. Hay que reiniciarlo. Mitigación: reiniciar EN EL momento en que llega el "final result", antes de la pausa de 3s, para que cuando el user vuelva a hablar el recognizer ya esté listo (gap residual ~50ms).
+
+  **TTS feedback loop**: si el TTS habla por altavoz mientras el mic escucha, captaría su propia salida. Solución: pausar `Voice` mientras `speechQueue` tiene utterance en curso. **Con auriculares (cable o BT) el problema desaparece** — el TTS sale por casco, no entra al mic.
+
+  **Background**: si la pantalla se apaga / app pasa a background, Android suspende el mic. Aceptable: el caso de uso es app abierta en foreground.
+
+  **Coste estimado**: ~1 día de implementación (native dep + setup, service + restart, mode router, UI toggle, polish del feedback loop). Plus iteraciones contra device real.
+
+  **Decisiones pendientes que el usuario va a contrastar**:
+  - **A.** ¿Cambio de modo por voz también (decir "modo bando")? O solo botones UI. Implementarlo añade reconocimiento de palabras-clave + filtrado del texto enviado.
+  - **B.** ¿Confirmación antes de enviar (audio cue tipo "voy a mandar X, cancela en 1s") o envío directo? Voto: directo + gesto/botón de "deshacer último".
+  - **C.** Set fijo de modos (terminal, bando, comercio, …) o configurables como aliases `{ nombre, prefijo }`. Más flexible si configurable.
+  - **D.** ¿Diferencia entre "sordo" (no envía pero sigue escuchando) y "off" (mic apagado)? Importante para batería y privacidad.
+  - **E.** Reconocimiento offline obligatorio o aceptable que dependa de net. Afecta a usuarios sin datos.
+  - **F.** Audio-cue corto al capturar el "final" antes del envío, para feedback al user blind. Tipo beep de medio segundo o palabra "captured".
+  - **G.** Idioma único `es-ES` o también `es-MX`/`es-AR`. Configurable en settings o fijo.
+  - **H.** Cancelación durante los 3s de pausa: ¿qué gesto? Doble-tap rápido cancela el buffer y reinicia.
+  - **I.** Auto-apagado tras X minutos de silencio total (ahorro batería) — opcional.
+  - **J.** Si self-voicing TTS está activo, ¿se anuncia el cambio de modo via TTS? "Modo bando activado". Recomendado.
+  - **K.** ¿Cómo se activa el modo "voz" inicialmente? Toggle en input row, swipe específico, hotkey, comando…
+
+  **Plan sugerido cuando se retome**: empezar por MVP minimalista de UN solo modo "terminal" (transcribe → envía como comando) con toggle on/off. Validar reconocimiento + latencia + accuracy contra device real. Si gusta, expandir a multi-modo.
+
 - **Self-voicing en blind mode** (rework: 2026-05-01). Primera iteración completa (Fases 0-7 de SELFVOICING.md): `react-native-tts` integrado, `speechQueueService` con dos backends (TalkBack / TTS propio), botones blind con doble-tap-para-activar via `selfVoicingPress` util, gestos del PanResponder habilitados en blind+selfVoicing reusando `GestureConfig` existente, `importantForAccessibility="no-hide-descendants"` en root para esconder de TalkBack, banner de aviso si TalkBack sigue activo, ducking automático del TTS sobre música ambiente. Setting `useSelfVoicing` (default OFF). **Pendiente Fase 8**: test en móvil real con usuario blind objetivo — latencia de gestos, claridad TTS, recuperación de errores, validación del modelo doble-tap. Doctrina y simplificaciones tomadas en **`SELFVOICING.md`**.
 
 ## Desarrollos por ahora no necesarios

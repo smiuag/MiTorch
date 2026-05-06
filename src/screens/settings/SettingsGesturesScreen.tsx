@@ -14,6 +14,8 @@ const GESTURE_SYMBOLS: Record<string, string> = {
   swipe_up_right: '↗', swipe_up_left: '↖', swipe_down_right: '↘', swipe_down_left: '↙',
   twofingers_up: '↑', twofingers_down: '↓', twofingers_left: '←', twofingers_right: '→',
   twofingers_up_right: '↗', twofingers_up_left: '↖', twofingers_down_right: '↘', twofingers_down_left: '↙',
+  threefingers_up: '↑', threefingers_down: '↓', threefingers_left: '←', threefingers_right: '→',
+  threefingers_up_right: '↗', threefingers_up_left: '↖', threefingers_down_right: '↘', threefingers_down_left: '↙',
   pinch_in: '→ ←', pinch_out: '← →',
   twofingers_doubletap: '··²',
   doubletap_hold_swipe_up: '↑', doubletap_hold_swipe_down: '↓',
@@ -42,6 +44,14 @@ const GESTURE_LABELS: Record<string, string> = {
   twofingers_up_left: 'Dos dedos arriba-izquierda',
   twofingers_down_right: 'Dos dedos abajo-derecha',
   twofingers_down_left: 'Dos dedos abajo-izquierda',
+  threefingers_up: 'Tres dedos arriba',
+  threefingers_down: 'Tres dedos abajo',
+  threefingers_left: 'Tres dedos izquierda',
+  threefingers_right: 'Tres dedos derecha',
+  threefingers_up_right: 'Tres dedos arriba-derecha',
+  threefingers_up_left: 'Tres dedos arriba-izquierda',
+  threefingers_down_right: 'Tres dedos abajo-derecha',
+  threefingers_down_left: 'Tres dedos abajo-izquierda',
   pinch_in: 'Pellizco hacia dentro',
   pinch_out: 'Pellizco hacia fuera',
   twofingers_doubletap: 'Doble toque con dos dedos',
@@ -59,6 +69,7 @@ function getSection(type: string): string {
   if (type === 'twofingers_doubletap') return '2 dedos doble tap';
   if (type.startsWith('swipe_')) return '1 dedo';
   if (type.startsWith('twofingers_')) return '2 dedos';
+  if (type.startsWith('threefingers_')) return '3 dedos';
   if (type.startsWith('pinch_')) return 'Pinch';
   if (type.startsWith('doubletap_hold_swipe_')) return 'Doble tap + arrastrar';
   return '';

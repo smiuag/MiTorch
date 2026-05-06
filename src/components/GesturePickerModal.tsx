@@ -43,7 +43,7 @@ export function GesturePickerModal({
   }, [visible, selfVoicingActive]);
 
   const welcomeMessage = options.length > 0
-    ? `${title}. ${options.length} opcione${options.length === 1 ? '' : 's'}. Desliza arriba o abajo para navegar, toca para elegir.`
+    ? `${title}. ${options.length} opcione${options.length === 1 ? '' : 's'}. Desliza para navegar, toca para elegir.`
     : `${title}. Sin opciones disponibles.`;
 
   return (
@@ -61,6 +61,7 @@ export function GesturePickerModal({
         <BlindGestureContainer
           active={selfVoicingActive}
           welcomeMessage={welcomeMessage}
+          horizontalAsNav={true}
           style={styles.cardWrapper}
         >
           <View style={styles.card}>
@@ -71,7 +72,8 @@ export function GesturePickerModal({
                 <Text style={styles.empty}>Sin opciones disponibles.</Text>
               ) : (
                 options.map((opt, idx) => {
-                  const label = `Opción ${idx + 1} de ${options.length}: ${opt}`;
+                  // Lee primero el contenido, luego la posición.
+                  const label = `${opt}. ${idx + 1} de ${options.length}`;
                   return (
                     <SelfVoicingRow
                       key={`${idx}-${opt}`}

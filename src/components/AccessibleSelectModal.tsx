@@ -74,10 +74,14 @@ export function AccessibleSelectModal<K extends string = string>({
                 <Text style={styles.empty}>Sin opciones disponibles.</Text>
               ) : (
                 options.map((opt, idx) => {
+                  // Lee primero la opción (lo que importa) y al final la
+                  // posición. Antes era al revés y obligaba al usuario a
+                  // esperar "opción 2 de 13" para llegar al contenido.
                   const spoken = [
-                    `Opción ${idx + 1} de ${options.length}: ${opt.label}`,
+                    opt.label,
                     opt.sublabel || null,
                     opt.selected ? 'seleccionado' : null,
+                    `${idx + 1} de ${options.length}`,
                   ].filter(Boolean).join('. ');
                   return (
                     <SelfVoicingRow
