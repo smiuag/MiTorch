@@ -16,7 +16,14 @@ import { Buffer } from 'buffer';
 // - Si una línea mezcla mojibake y texto bien (raro) intentará el fix
 //   sobre la línea entera y solo restaurará si no rompe nada.
 
-const MOJIBAKE_SIGNATURE = /Ã[©¡±´ºª¶¼½¾§¿¨]|Â[©¡´ºª¿¬-]|â[¦]/;
+// Cualquier carácter UTF-8 de 2 bytes (todo el latino acentuado europeo)
+// es `[C2-DF][80-BF]` a nivel de bytes. Cuando el pipeline del MUD lee
+// esos bytes como latin-1 y los re-encodea como UTF-8, en cliente
+// aparecen como dos chars con codepoint U+00C2..U+00DF + U+0080..U+00BF.
+// La regex los caza sin enumerar el alfabeto (cubre í/ó y mayúsculas
+// acentuadas que la lista anterior se dejaba fuera). La red de seguridad
+// del round-trip — bail si produce `�` — protege contra falsos positivos.
+const MOJIBAKE_SIGNATURE = /[Â-ß][-¿]/;
 
 export function fixMojibake(text: string): string {
   if (!text || !MOJIBAKE_SIGNATURE.test(text)) return text;

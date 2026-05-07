@@ -35,10 +35,13 @@ export function ServerListScreen({ navigation }: Props) {
   const [formPort, setFormPort] = useState('');
   const [formUsername, setFormUsername] = useState('');
   const [formPassword, setFormPassword] = useState('');
-  // Tipo de botonera del modo completo. Solo se elige al CREAR (inmutable
-  // tras creación; el modal de editar no muestra estos campos).
-  const [formLayoutKind, setFormLayoutKind] = useState<'standard' | 'custom'>('standard');
-  const [formCustomGridSize, setFormCustomGridSize] = useState<5 | 7 | 9>(9);
+  // === Dims del grid de botones (modo completo) — editables tanto al crear
+  // como al editar. El layout inicial se siembra adaptado a estas dims:
+  // switch en (0,0), direcciones centradas y acciones en row 0; ambas
+  // orientaciones independientes.
+  const [formGridCols, setFormGridCols] = useState<number>(9);
+  const [formGridRows, setFormGridRows] = useState<number>(6);
+  const [formGridSize, setFormGridSize] = useState<'normal' | 'reducido'>('normal');
   // Mapa asignado al server. Editable en cualquier momento — al cambiar
   // surte efecto en la próxima conexión (no se afecta una sesión activa).
   const [formMapId, setFormMapId] = useState<string | undefined>(undefined);
@@ -97,8 +100,9 @@ export function ServerListScreen({ navigation }: Props) {
     setFormPort('5001');
     setFormUsername('');
     setFormPassword('');
-    setFormLayoutKind('standard');
-    setFormCustomGridSize(9);
+    setFormGridCols(9);
+    setFormGridRows(6);
+    setFormGridSize('normal');
     // Default razonable: si crean un personaje en rlmud.org, asumir Reinos.
     // Si cambian el host a otra cosa, el usuario reasigna manualmente.
     setFormMapId('reinos-bundled');
@@ -113,6 +117,9 @@ export function ServerListScreen({ navigation }: Props) {
     setFormUsername(server.username || '');
     setFormPassword(server.password || '');
     setFormMapId(server.mapId);
+    setFormGridCols(server.gridCols ?? 9);
+    setFormGridRows(server.gridRows ?? 6);
+    setFormGridSize(server.gridSize ?? 'normal');
     setModalVisible(true);
   };
 
@@ -134,6 +141,9 @@ export function ServerListScreen({ navigation }: Props) {
               username: formUsername.trim() || undefined,
               password: formPassword.trim() || undefined,
               mapId: formMapId,
+              gridCols: formGridCols,
+              gridRows: formGridRows,
+              gridSize: formGridSize,
             }
           : s
       );
@@ -145,8 +155,9 @@ export function ServerListScreen({ navigation }: Props) {
         port,
         username: formUsername.trim() || undefined,
         password: formPassword.trim() || undefined,
-        layoutKind: formLayoutKind,
-        customGridSize: formLayoutKind === 'custom' ? formCustomGridSize : undefined,
+        gridCols: formGridCols,
+        gridRows: formGridRows,
+        gridSize: formGridSize,
         panels: [1, 2],
         mapId: formMapId,
       };
@@ -455,59 +466,87 @@ export function ServerListScreen({ navigation }: Props) {
               <Text style={styles.mapPickerBtnChevron}>▾</Text>
             </TouchableOpacity>
 
-            {!editingServer && appUiMode !== 'blind' && (
+            {appUiMode !== 'blind' && (
               <>
-                <Text style={[styles.label, { marginTop: 20 }]}>Tipo de botonera</Text>
+                <Text style={[styles.label, { marginTop: 20 }]}>Dimensiones del grid</Text>
                 <Text style={styles.helperText}>
-                  No se puede cambiar después de crear el personaje. La botonera es solo del modo completo (visual); el modo accesible no se afecta.
+                  Columnas y filas visibles del grid de botones (en vertical). Al pivotar el móvil se intercambian. Si después reduces el tamaño, los botones que caigan fuera quedan guardados pero no visibles hasta volver a ampliar.
                 </Text>
-                <View style={styles.layoutKindRow}>
+                <View style={styles.gridDimRow}>
+                  <Text style={styles.gridDimLabel}>Columnas</Text>
                   <TouchableOpacity
-                    style={[styles.layoutKindBtn, formLayoutKind === 'standard' && styles.layoutKindBtnActive]}
-                    onPress={() => setFormLayoutKind('standard')}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: formLayoutKind === 'standard' }}
-                    accessibilityLabel="Botonera estándar"
+                    style={[styles.gridDimBtn, formGridCols <= 5 && styles.gridDimBtnDisabled]}
+                    onPress={() => setFormGridCols(Math.max(5, formGridCols - 1))}
+                    disabled={formGridCols <= 5}
+                    accessibilityRole="button"
+                    accessibilityLabel="Reducir columnas"
+                    accessibilityState={{ disabled: formGridCols <= 5 }}
                   >
-                    <Text style={[styles.layoutKindBtnText, formLayoutKind === 'standard' && styles.layoutKindBtnTextActive]}>Estándar</Text>
-                    <Text style={[styles.layoutKindBtnHint, formLayoutKind === 'standard' && styles.layoutKindBtnTextActive]}>9×6 con direcciones</Text>
+                    <Text style={styles.gridDimBtnText}>−</Text>
                   </TouchableOpacity>
+                  <Text style={styles.gridDimValue} accessibilityLabel={`${formGridCols} columnas`}>{formGridCols}</Text>
                   <TouchableOpacity
-                    style={[styles.layoutKindBtn, formLayoutKind === 'custom' && styles.layoutKindBtnActive]}
-                    onPress={() => setFormLayoutKind('custom')}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: formLayoutKind === 'custom' }}
-                    accessibilityLabel="Botonera personalizada"
+                    style={[styles.gridDimBtn, formGridCols >= 9 && styles.gridDimBtnDisabled]}
+                    onPress={() => setFormGridCols(Math.min(9, formGridCols + 1))}
+                    disabled={formGridCols >= 9}
+                    accessibilityRole="button"
+                    accessibilityLabel="Aumentar columnas"
+                    accessibilityState={{ disabled: formGridCols >= 9 }}
                   >
-                    <Text style={[styles.layoutKindBtnText, formLayoutKind === 'custom' && styles.layoutKindBtnTextActive]}>Personalizada</Text>
-                    <Text style={[styles.layoutKindBtnHint, formLayoutKind === 'custom' && styles.layoutKindBtnTextActive]}>Tú la rellenas</Text>
+                    <Text style={styles.gridDimBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.gridDimRow}>
+                  <Text style={styles.gridDimLabel}>Filas</Text>
+                  <TouchableOpacity
+                    style={[styles.gridDimBtn, formGridRows <= 4 && styles.gridDimBtnDisabled]}
+                    onPress={() => setFormGridRows(Math.max(4, formGridRows - 1))}
+                    disabled={formGridRows <= 4}
+                    accessibilityRole="button"
+                    accessibilityLabel="Reducir filas"
+                    accessibilityState={{ disabled: formGridRows <= 4 }}
+                  >
+                    <Text style={styles.gridDimBtnText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.gridDimValue} accessibilityLabel={`${formGridRows} filas`}>{formGridRows}</Text>
+                  <TouchableOpacity
+                    style={[styles.gridDimBtn, formGridRows >= 6 && styles.gridDimBtnDisabled]}
+                    onPress={() => setFormGridRows(Math.min(6, formGridRows + 1))}
+                    disabled={formGridRows >= 6}
+                    accessibilityRole="button"
+                    accessibilityLabel="Aumentar filas"
+                    accessibilityState={{ disabled: formGridRows >= 6 }}
+                  >
+                    <Text style={styles.gridDimBtnText}>+</Text>
                   </TouchableOpacity>
                 </View>
 
-                {formLayoutKind === 'custom' && (
-                  <>
-                    <Text style={[styles.label, { marginTop: 12 }]}>Tamaño del grid</Text>
-                    <View style={styles.layoutKindRow}>
-                      {([
-                        { size: 5 as const, label: 'Pequeño', hint: '5×4 / 4×5' },
-                        { size: 7 as const, label: 'Mediano', hint: '7×5 / 5×7' },
-                        { size: 9 as const, label: 'Grande', hint: '9×6 / 6×9' },
-                      ]).map(({ size, label, hint }) => (
-                        <TouchableOpacity
-                          key={size}
-                          style={[styles.layoutKindBtn, formCustomGridSize === size && styles.layoutKindBtnActive]}
-                          onPress={() => setFormCustomGridSize(size)}
-                          accessibilityRole="radio"
-                          accessibilityState={{ selected: formCustomGridSize === size }}
-                          accessibilityLabel={`Tamaño ${label}`}
-                        >
-                          <Text style={[styles.layoutKindBtnText, formCustomGridSize === size && styles.layoutKindBtnTextActive]}>{label}</Text>
-                          <Text style={[styles.layoutKindBtnHint, formCustomGridSize === size && styles.layoutKindBtnTextActive]}>{hint}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </>
-                )}
+                <Text style={[styles.label, { marginTop: 16 }]}>Tamaño del grid</Text>
+                <Text style={styles.helperText}>
+                  En "reducido" las celdas se encogen un 35% (más alto/ancho para el terminal). En "normal" ocupan el espacio entero.
+                </Text>
+                <View style={styles.layoutKindRow}>
+                  <TouchableOpacity
+                    style={[styles.layoutKindBtn, formGridSize === 'normal' && styles.layoutKindBtnActive]}
+                    onPress={() => setFormGridSize('normal')}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: formGridSize === 'normal' }}
+                    accessibilityLabel="Tamaño normal"
+                  >
+                    <Text style={[styles.layoutKindBtnText, formGridSize === 'normal' && styles.layoutKindBtnTextActive]}>Normal</Text>
+                    <Text style={[styles.layoutKindBtnHint, formGridSize === 'normal' && styles.layoutKindBtnTextActive]}>Celdas grandes</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.layoutKindBtn, formGridSize === 'reducido' && styles.layoutKindBtnActive]}
+                    onPress={() => setFormGridSize('reducido')}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: formGridSize === 'reducido' }}
+                    accessibilityLabel="Tamaño reducido"
+                  >
+                    <Text style={[styles.layoutKindBtnText, formGridSize === 'reducido' && styles.layoutKindBtnTextActive]}>Reducido</Text>
+                    <Text style={[styles.layoutKindBtnHint, formGridSize === 'reducido' && styles.layoutKindBtnTextActive]}>Celdas al 65%</Text>
+                  </TouchableOpacity>
+                </View>
               </>
             )}
 
@@ -1169,6 +1208,47 @@ const styles = StyleSheet.create({
   },
   layoutKindBtnTextActive: {
     color: '#fff',
+  },
+  gridDimRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 8,
+  },
+  gridDimLabel: {
+    flex: 1,
+    color: '#88ccff',
+    fontSize: 13,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+  },
+  gridDimBtn: {
+    width: 44,
+    height: 44,
+    backgroundColor: '#0a2a3a',
+    borderWidth: 1,
+    borderColor: '#225588',
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  gridDimBtnDisabled: {
+    backgroundColor: '#1a1a1a',
+    borderColor: '#333',
+  },
+  gridDimBtnText: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+  },
+  gridDimValue: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+    minWidth: 24,
+    textAlign: 'center',
   },
   mapPickerBtn: {
     flexDirection: 'row',

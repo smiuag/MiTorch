@@ -40,6 +40,10 @@ export interface AppSettings {
   ambientEnabled: boolean;
   ambientVolume: number;
   effectsVolume: number;
+  // Mostrar barras de vida/energía en el modo completo (cabecera horizontal
+  // arriba en vertical, columna estrecha a la derecha en horizontal). Default
+  // ON. En blind no aplica — siempre ocultas.
+  vitalsVisible: boolean;
   // Self-voicing (modo blind sin TalkBack). Cuando `useSelfVoicing` es true Y
   // `uiMode === 'blind'`, la app desactiva su árbol de accesibilidad para
   // TalkBack y usa react-native-tts directamente. Los anuncios siguen
@@ -77,6 +81,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ambientEnabled: true,
   ambientVolume: 0.4,
   effectsVolume: 0.7,
+  vitalsVisible: true,
   useSelfVoicing: false,
   ttsEngine: '',
   ttsVoice: '',

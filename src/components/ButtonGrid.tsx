@@ -28,6 +28,11 @@ interface ButtonGridProps {
   sourceCol?: number;
   sourceRow?: number;
   onSwapButtons?: (targetCol: number, targetRow: number) => void;
+  // Cuando se renderiza el grid horizontal (móvil tumbado): el padre indica
+  // las cols visibles + cellSize; el ButtonGrid solo aplica el transform
+  // (swap+blindModeTransforms) cuando estamos en modo BLIND. En modo completo
+  // los botones ya vienen filtrados por orientation desde el padre y no se
+  // transforma nada.
   horizontalMode?: { cols: number; cellSize: number };
   uiMode?: 'completo' | 'blind';
   // Self-voicing on (TalkBack desactivado por el usuario): tap = anuncia
@@ -38,24 +43,20 @@ interface ButtonGridProps {
   minimalista?: boolean;
   minCols?: number;
   minRows?: number;
-  // Server con layoutKind='custom': el render NO transpone ni reorganiza
-  // direcciones al pivotar — solo recorta lo que cabe en el rectángulo
-  // visible (cellSize × minCols × minRows). Las coords de almacenamiento y
-  // visuales coinciden 1:1.
-  disableTransforms?: boolean;
-  // Override del cellSize en vertical (cuando no hay horizontalMode). Por
-  // defecto el grid calcula `width / displayCols`, que en custom haría
-  // botones gigantes (porque displayCols es la dim visible recortada). El
-  // padre puede pasar el cellSize calculado a partir del grid lógico para
-  // que los botones tengan el tamaño físico esperado.
-  verticalCellSize?: number;
+  // Override de las dimensiones del cell. cellWidth aplica al ancho de cada
+  // celda; cellHeight a la altura. Si no se pasan, el ButtonGrid los calcula
+  // como `width/displayCols` (cuadrados). El padre los pasa cuando quiere
+  // forzar un cell rectangular o un tamaño específico.
+  cellWidth?: number;
+  cellHeight?: number;
 }
 
 function ButtonCell({
   col,
   row,
   button,
-  cellSize,
+  cellWidth,
+  cellHeight,
   moveMode,
   isSource,
   horizontalMode,
@@ -71,7 +72,8 @@ function ButtonCell({
   col: number;
   row: number;
   button: LayoutButton | undefined;
-  cellSize: number;
+  cellWidth: number;
+  cellHeight: number;
   moveMode?: boolean;
   isSource?: boolean;
   horizontalMode?: any;
@@ -318,8 +320,9 @@ function ButtonCell({
       style={[
         styles.cell,
         {
-          width: cellSize,
-          height: cellSize,
+          width: cellWidth,
+          height: cellHeight,
+          minHeight: cellHeight < 38 ? cellHeight : undefined,
           backgroundColor: button ? button.color : '#222',
           // Prioridad de borde:
           //   - moveMode source (amarillo grueso) > self-voicing focus (cian
@@ -340,7 +343,9 @@ function ButtonCell({
         <Text
           style={[
             styles.buttonLabel,
-            { color: button.textColor || '#fff', fontSize: cellSize * 0.25 },
+            // Escalar la fuente por la dimensión menor para que quepa
+            // siempre — útil cuando reducido produce cells rectangulares.
+            { color: button.textColor || '#fff', fontSize: Math.min(cellWidth, cellHeight) * 0.25 },
           ]}
           numberOfLines={1}
         >
@@ -367,8 +372,8 @@ export function ButtonGrid({
   minimalista = false,
   minCols = GRID_COLS,
   minRows = GRID_ROWS,
-  disableTransforms = false,
-  verticalCellSize,
+  cellWidth: cellWidthProp,
+  cellHeight: cellHeightProp,
 }: ButtonGridProps) {
   const { width } = useWindowDimensions();
 
@@ -378,26 +383,14 @@ export function ButtonGrid({
   const displayCols = minimalista ? blindConfig.cols : minCols;
   const displayRows = minimalista ? blindConfig.rows : minRows;
 
-  // Additional transformations in horizontal mode (after swap col/row and row inversion)
-  // Normal mode: complex rearrangement of directions
-  const normalModeTransforms: { [key: string]: { col: number; row: number } } = {
-    '2,2': { col: 5, row: 2 }, // AR → FU
-    '3,2': { col: 5, row: 3 }, // AB → 3
-    '4,2': { col: 5, row: 4 }, // DE → 2
-    '5,2': { col: 5, row: 5 }, // FU → 1
-    '5,3': { col: 4, row: 5 }, // 3 → SO
-    '5,4': { col: 3, row: 5 }, // 2 → O
-    '5,5': { col: 2, row: 5 }, // 1 → NO
-    '2,5': { col: 2, row: 2 }, // NO → AR
-    '2,4': { col: 3, row: 2 }, // N → AB
-    '2,3': { col: 4, row: 2 }, // NE → DE
-    '3,3': { col: 4, row: 3 }, // E → SE
-    '4,3': { col: 4, row: 4 }, // SE → S
-    '3,4': { col: 3, row: 3 }, // 4 → E
-    '4,4': { col: 3, row: 4 }, // S → 4
-    '4,5': { col: 2, row: 4 }, // SO → N
-    '3,5': { col: 2, row: 3 }, // O → NE
-  };
+  // === Transforms al pivotar ===
+  //
+  // Modo completo (v3+): SIN transforms en runtime. Cada botón vive en una
+  // orientación; el padre filtra antes de pasarlo. Las coords de almacenamiento
+  // = coords visuales 1:1.
+  //
+  // Modo blind: aplica `blindModeTransforms` legacy — el modo blind sigue con
+  // un único layout (5×4 vertical / 4×5 horizontal) y los transforms viejos.
 
   // Blind mode: 90-degree rotation of directions
   const blindModeTransforms: { [key: string]: { col: number; row: number } } = {
@@ -415,9 +408,9 @@ export function ButtonGrid({
     '3,0': { col: 2, row: 1 }, // FU → AB position
   };
 
-  const additionalTransforms = disableTransforms
-    ? {}
-    : (minimalista ? blindModeTransforms : normalModeTransforms);
+  // Modo completo: sin transforms (v3+ usa orientation per-botón). Modo blind:
+  // mantiene los transforms legacy.
+  const additionalTransforms = minimalista ? blindModeTransforms : {};
   const verticalCols = minimalista ? BLIND_MODE.vertical.cols : NORMAL_MODE.vertical.cols;
 
   // Inverse of additionalTransforms: visual final → swapped intermediate
@@ -431,11 +424,11 @@ export function ButtonGrid({
   }, [additionalTransforms]);
 
   // Storage (col, row) → visual final (col, row).
-  // En custom (disableTransforms=true) no transponemos al pivotar — las
-  // coords de almacenamiento y visuales coinciden 1:1 en ambas orientaciones,
-  // y el grid simplemente recorta los botones que caen fuera de gridCols/Rows.
+  // - Modo completo: 1:1 (los botones ya están filtrados por orientation, sin
+  //   transforms en runtime).
+  // - Modo blind horizontal: swap + blindModeTransforms.
   const storageToVisual = (sCol: number, sRow: number): { col: number; row: number } => {
-    if (!horizontalMode || disableTransforms) return { col: sCol, row: sRow };
+    if (!horizontalMode || !minimalista) return { col: sCol, row: sRow };
     const swCol = sRow;
     const swRow = (verticalCols - 1) - sCol;
     const t = additionalTransforms[`${swCol},${swRow}`];
@@ -443,7 +436,7 @@ export function ButtonGrid({
   };
 
   const visualToStorage = (vCol: number, vRow: number): { col: number; row: number } => {
-    if (!horizontalMode || disableTransforms) return { col: vCol, row: vRow };
+    if (!horizontalMode || !minimalista) return { col: vCol, row: vRow };
     const inv = inverseAdditionalTransforms[`${vCol},${vRow}`];
     const swCol = inv ? inv.col : vCol;
     const swRow = inv ? inv.row : vRow;
@@ -465,17 +458,20 @@ export function ButtonGrid({
     onSendCommand(command);
   };
 
-  // Grid dimensions: horizontal mode or vertical
+  // Grid dimensions: horizontal mode (blind) o vertical.
   const gridCols = horizontalMode ? horizontalMode.cols : displayCols;
   const gridRows = horizontalMode ? minRows : displayRows;
-  const cellSize = horizontalMode
-    ? horizontalMode.cellSize
-    : (verticalCellSize ?? width / displayCols);
+  // Cell dims: si el padre pasa cellWidth/cellHeight, los usamos directamente;
+  // si no, fallback a cuadrado (legacy / blind). En blind horizontal se usa
+  // horizontalMode.cellSize como ancho y alto.
+  const fallbackCell = horizontalMode ? horizontalMode.cellSize : width / displayCols;
+  const cellWidth = cellWidthProp ?? fallbackCell;
+  const cellHeight = cellHeightProp ?? fallbackCell;
 
   return (
     <View style={styles.container}>
       {Array.from({ length: gridRows }).map((_, row) => (
-        <View key={`row-${row}`} style={[styles.row, { height: cellSize }]}>
+        <View key={`row-${row}`} style={[styles.row, { height: cellHeight }]}>
           {Array.from({ length: gridCols }).map((_, col) => {
             const button = buttonLookup.get(`${col},${row}`);
             const isSource = moveMode && col === sourceVisual.col && row === sourceVisual.row;
@@ -486,7 +482,8 @@ export function ButtonGrid({
                 col={col}
                 row={row}
                 button={button}
-                cellSize={cellSize}
+                cellWidth={cellWidth}
+                cellHeight={cellHeight}
                 moveMode={moveMode}
                 isSource={isSource}
                 horizontalMode={horizontalMode}

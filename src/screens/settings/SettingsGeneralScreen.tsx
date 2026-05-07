@@ -144,6 +144,29 @@ export function SettingsGeneralScreen({ navigation, route }: Props) {
                   </TouchableOpacity>
                 </View>
               </View>
+
+              {settings.uiMode !== 'blind' && (
+                <SelfVoicingRow
+                  svActive={settingsSelfVoicingActive}
+                  svScope={SCOPE}
+                  svKey="vitals-visible"
+                  svLabel={`Mostrar barras de vida y energía. ${settings.vitalsVisible ? 'Activado' : 'Desactivado'}`}
+                  onActivate={() => updateSetting('vitalsVisible', !settings.vitalsVisible)}
+                  style={s.row}
+                >
+                  <View style={s.rowInfo}>
+                    <Text style={s.rowTitle}>Barras de vida y energía</Text>
+                    <Text style={s.rowDesc}>Cabecera con HP/Energía (vertical) o columna a la derecha (horizontal). Si las ocultas, ese espacio se lo lleva el terminal.</Text>
+                  </View>
+                  <Switch
+                    value={settings.vitalsVisible}
+                    onValueChange={(v) => updateSetting('vitalsVisible', v)}
+                    trackColor={{ false: '#333', true: '#0c0' }}
+                    thumbColor={settings.vitalsVisible ? '#000' : '#666'}
+                    accessibilityLabel={`Mostrar barras de vida y energía. ${settings.vitalsVisible ? 'Activado' : 'Desactivado'}`}
+                  />
+                </SelfVoicingRow>
+              )}
             </>
           )}
 

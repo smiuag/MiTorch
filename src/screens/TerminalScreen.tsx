@@ -41,7 +41,7 @@ import { RoomSearchResults } from '../components/RoomSearchResults';
 import { loadSettings } from '../storage/settingsStorage';
 import { MapService, MapRoom } from '../services/mapService';
 import { loadMapContent } from '../storage/mapLibraryStorage';
-import { ButtonLayout, LayoutButton, createDefaultLayout, createBlindModeLayout, createCustomLayout, createPanelButtons, loadLayout, saveLayout, loadServerLayout, saveServerLayout } from '../storage/layoutStorage';
+import { ButtonLayout, LayoutButton, createAdaptiveLayout, createBlindModeLayout, createPanelButtons, loadServerLayout, saveServerLayout } from '../storage/layoutStorage';
 import { loadServers, saveServers } from '../storage/serverStorage';
 import { getTriggersForServer, loadPacks } from '../storage/triggerStorage';
 import { collectVarsReferencedByPacks } from '../utils/userVariablesUsage';
@@ -66,7 +66,7 @@ import { FloatingMessages } from '../components/FloatingMessages';
 import { useCountdownTimers } from '../contexts/CountdownTimersContext';
 import { CountdownTimers } from '../components/CountdownTimers';
 import { useBlindKeyboardActivation } from '../contexts/BlindKeyboardContext';
-import { NORMAL_MODE, BLIND_MODE, getCustomDisplayDimensions } from '../config/gridConfig';
+import { NORMAL_MODE, BLIND_MODE } from '../config/gridConfig';
 import { BlindChannelModal, ChannelMessage, nextMsgId } from '../components/BlindChannelModal';
 import { loadChannelAliases, saveChannelAliases, loadChannelOrder, saveChannelOrder } from '../storage/channelStorage';
 import { loadNicks, recordNickSeen, filterNicks } from '../storage/nickStorage';
@@ -127,6 +127,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [connecting, setConnecting] = useState(false);
   const [keepAwakeEnabled, setKeepAwakeEnabled] = useState(true);
   const [backgroundConnectionEnabled, setBackgroundConnectionEnabled] = useState(true);
+  const [vitalsVisible, setVitalsVisible] = useState(true);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [mapVisible, setMapVisible] = useState(true);
   const [currentRoom, setCurrentRoom] = useState<MapRoom | null>(null);
@@ -435,6 +436,9 @@ export function TerminalScreen({ route, navigation }: Props) {
     if (settings.ambientEnabled !== undefined) {
       setGlobalAmbientEnabled(settings.ambientEnabled);
     }
+    if (settings.vitalsVisible !== undefined) {
+      setVitalsVisible(settings.vitalsVisible);
+    }
     logService.configure(
       settings.logsEnabled ?? false,
       settings.logsMaxLines ?? 20000
@@ -654,7 +658,7 @@ export function TerminalScreen({ route, navigation }: Props) {
           ? serverLayout
           : uiMode === 'blind'
             ? createBlindModeLayout()
-            : (server.layoutKind === 'custom' ? createCustomLayout() : createDefaultLayout());
+            : createAdaptiveLayout(server.gridCols ?? 9, server.gridRows ?? 6);
 
       // Replace LOGIN_NAME placeholder with actual server name
       const buttons = layout.buttons.map(btn =>
@@ -1660,13 +1664,17 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   const handleEditButton = (col: number, row: number) => {
     // Don't allow editing fixed buttons (like SWITCH and IR)
-    // Filter by current panel for the active mode
+    // Filter by current panel + orientation for the active mode (en completo
+    // las dos orientaciones son botoneras independientes).
+    const editOrientation: 'vertical' | 'horizontal' = width > height ? 'horizontal' : 'vertical';
     const button = buttonLayout?.buttons.find(b => {
       if (b.col !== col || b.row !== row) return false;
       if (uiMode === 'blind') {
         return !b.blindPanel || b.blindPanel === currentBlindPanel;
       }
-      return !b.completoPanel || b.completoPanel === currentCompletoPanel;
+      const samePanel = !b.completoPanel || b.completoPanel === currentCompletoPanel;
+      const sameOrient = (b.orientation ?? 'vertical') === editOrientation;
+      return samePanel && sameOrient;
     });
     // Switch button del modo completo: long-press abre el modal de gestión
     // de paneles en lugar del editor (el switch es fixed/locked y no se
@@ -1689,20 +1697,24 @@ export function TerminalScreen({ route, navigation }: Props) {
     try {
       const storageCol = editButtonCol;
       const storageRow = editButtonRow;
+      // En completo, vertical y horizontal son layouts independientes — al
+      // editar un botón en una orientación NO debe tocarse el de la otra.
+      const currentOrientation: 'vertical' | 'horizontal' = width > height ? 'horizontal' : 'vertical';
 
       const updated = buttonLayout.buttons.filter(b => {
-        // Also check panel to avoid removing buttons from other panels in the same slot
         if (uiMode === 'blind') {
           return !(b.col === storageCol && b.row === storageRow && b.blindPanel === currentBlindPanel);
         }
-        return !(b.col === storageCol && b.row === storageRow && (b.completoPanel ?? currentCompletoPanel) === currentCompletoPanel);
+        const samePanel = (b.completoPanel ?? currentCompletoPanel) === currentCompletoPanel;
+        const sameOrient = (b.orientation ?? 'vertical') === currentOrientation;
+        return !(b.col === storageCol && b.row === storageRow && samePanel && sameOrient);
       });
       if (btn.label && btn.label !== '—') {
-        // Ensure the right panel is preserved when saving
         if (uiMode === 'blind') {
           btn.blindPanel = currentBlindPanel;
         } else {
           btn.completoPanel = currentCompletoPanel;
+          btn.orientation = currentOrientation;
         }
         updated.push(btn);
       }
@@ -1722,12 +1734,17 @@ export function TerminalScreen({ route, navigation }: Props) {
   const handleDeleteButton = async () => {
     if (!buttonLayout) return;
 
+    const currentOrientation: 'vertical' | 'horizontal' = width > height ? 'horizontal' : 'vertical';
     const updated = buttonLayout.buttons.filter(b => {
       if (b.col !== editButtonCol || b.row !== editButtonRow) return true;
       if (uiMode === 'blind') {
         return b.blindPanel !== undefined && b.blindPanel !== currentBlindPanel;
       }
-      return b.completoPanel !== undefined && b.completoPanel !== currentCompletoPanel;
+      // Solo borra el botón de la orientación + panel actual; deja intactos
+      // los de la otra orientación o de otro panel.
+      const samePanel = b.completoPanel !== undefined && b.completoPanel === currentCompletoPanel;
+      const sameOrient = (b.orientation ?? 'vertical') === currentOrientation;
+      return !(samePanel && sameOrient);
     });
 
     const newLayout = { buttons: updated };
@@ -1752,27 +1769,24 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   const handleSwapButtons = async (targetCol: number, targetRow: number) => {
     if (moveMode && buttonLayout) {
+      const currentOrientation: 'vertical' | 'horizontal' = width > height ? 'horizontal' : 'vertical';
+      const inCurrentScope = (b: LayoutButton): boolean => {
+        if (uiMode === 'blind') return !b.blindPanel || b.blindPanel === currentBlindPanel;
+        const samePanel = !b.completoPanel || b.completoPanel === currentCompletoPanel;
+        const sameOrient = (b.orientation ?? 'vertical') === currentOrientation;
+        return samePanel && sameOrient;
+      };
       const findButton = (col: number, row: number) => {
-        return buttonLayout.buttons.find(b => {
-          if (b.col !== col || b.row !== row) return false;
-          if (uiMode === 'blind') {
-            return !b.blindPanel || b.blindPanel === currentBlindPanel;
-          }
-          return !b.completoPanel || b.completoPanel === currentCompletoPanel;
-        });
+        return buttonLayout.buttons.find(b => b.col === col && b.row === row && inCurrentScope(b));
       };
 
       const sourceBtn = findButton(sourceCol, sourceRow);
       const targetBtn = findButton(targetCol, targetRow);
 
       const updated = buttonLayout.buttons.map(b => {
-        // Only swap buttons from the same panel as the active one
-        if (uiMode === 'blind' && b.blindPanel !== currentBlindPanel) {
-          return b;
-        }
-        if (uiMode !== 'blind' && b.completoPanel !== undefined && b.completoPanel !== currentCompletoPanel) {
-          return b;
-        }
+        // El swap solo afecta a la orientación + panel activos; el resto
+        // (otros paneles, otra orientación) permanece intacto.
+        if (!inCurrentScope(b)) return b;
         if (b.col === sourceCol && b.row === sourceRow) {
           return { ...b, col: targetCol, row: targetRow };
         }
@@ -2146,17 +2160,26 @@ export function TerminalScreen({ route, navigation }: Props) {
 
   const isHorizontal = width > height;
   const availableHeight = height - insets.top - insets.bottom;
-  const vitalsHeight = 35;
+  // vitals solo en uiMode='completo' Y si el usuario los tiene activados.
+  const showVitals = uiMode === 'completo' && vitalsVisible;
+  const vitalsHeight = showVitals ? 35 : 0;
   const inputHeight = uiMode === 'blind' ? 60 : 30;
 
   // Grid dimensions from config
   const isMinimalista = uiMode === 'blind';
 
-  // Filter buttons by current panel (per mode)
+  // Filter buttons by current panel (per mode) + por orientation en completo
+  // (v3+: cada botón vive en una orientación). Botones completo sin
+  // `orientation` (legacy pre-migración o slots vacíos) se tratan como
+  // 'vertical' por compatibilidad. Blind no filtra por orientation — su
+  // layout se transforma en runtime con `blindModeTransforms`.
+  const currentOrientation: 'vertical' | 'horizontal' = isHorizontal ? 'horizontal' : 'vertical';
   const filteredButtons = buttonLayout
     ? (uiMode === 'blind'
         ? buttonLayout.buttons.filter(btn => !btn.blindPanel || btn.blindPanel === currentBlindPanel)
-        : buttonLayout.buttons.filter(btn => !btn.completoPanel || btn.completoPanel === currentCompletoPanel))
+        : buttonLayout.buttons
+            .filter(btn => !btn.completoPanel || btn.completoPanel === currentCompletoPanel)
+            .filter(btn => (btn.orientation ?? 'vertical') === currentOrientation))
     : [];
   // Handlers de gestión de paneles del modo completo (modal abierto desde
   // long-press en el switch button).
@@ -2166,13 +2189,10 @@ export function TerminalScreen({ route, navigation }: Props) {
     if (!buttonLayout) return;
     if (serverPanels.length >= 6) return;
     const newId = Math.max(...serverPanels) + 1;
-    const kind = server.layoutKind === 'custom' ? 'custom' : 'standard';
-    // En estándar: clonar zona direcciones del panel 1 (botones del layout
-    // actual con completoPanel=1 en cols 3-6 / rows 2-5).
-    const sourcePanel = kind === 'standard'
-      ? buttonLayout.buttons.filter(b => b.completoPanel === 1)
-      : undefined;
-    const newButtons = createPanelButtons(newId, kind, sourcePanel);
+    // Panel nuevo siempre con switch + direcciones canónicas adaptadas a las
+    // dims actuales del server. Sin acciones (las direcciones bastan para
+    // navegar; el resto el usuario lo añade a mano si quiere).
+    const newButtons = createPanelButtons(newId, server.gridCols ?? 9, server.gridRows ?? 6);
     const updatedLayout: ButtonLayout = { buttons: [...buttonLayout.buttons, ...newButtons] };
     setButtonLayout(updatedLayout);
     await saveServerLayout(server.id, updatedLayout);
@@ -2218,58 +2238,60 @@ export function TerminalScreen({ route, navigation }: Props) {
     setPanelManagementVisible(false);
   }, []);
 
-  // Server con layoutKind='custom': el grid es cuadrado lógico (5/7/9) y en
-  // cada orientación se renderiza solo el sub-rectángulo que cabe (sin
-  // transponer). Custom solo aplica en modo completo. En blind se ignora.
-  const isCustomCompleto = uiMode === 'completo' && server.layoutKind === 'custom' && !!server.customGridSize;
-  const customVertical = isCustomCompleto ? getCustomDisplayDimensions(server.customGridSize as 5|7|9, 'vertical') : null;
-  const customHorizontal = isCustomCompleto ? getCustomDisplayDimensions(server.customGridSize as 5|7|9, 'horizontal') : null;
-
+  // === Dimensiones del grid (v3) ===
+  //
+  // Modo blind: dims fijas de BLIND_MODE (5×4 vertical / 4×5 horizontal),
+  // celdas cuadradas. Sin gridSize ni gridCols/Rows aplicables.
+  //
+  // Modo completo: el ÁREA de la botonera es fija — equivale a una rejilla
+  // canónica 9×6 (vertical) / 6×9 (horizontal) con celdas cuadradas a tamaño
+  // pantalla-completa. `gridSize='reducido'` encoge ese área un 35% (lado
+  // perpendicular al ancho de pantalla), dejando esa franja al terminal.
+  // El número de cols/rows que el usuario pide solo decide cómo se reparte
+  // ese área: menos cols → celdas más anchas; menos rows → celdas más altas.
   const modeConfig = isMinimalista ? BLIND_MODE : NORMAL_MODE;
-  const gridCols = customVertical ? customVertical.cols : modeConfig.vertical.cols;
-  const gridRows = customVertical ? customVertical.rows : modeConfig.vertical.rows;
+  const gridCols = isMinimalista ? modeConfig.vertical.cols : (server.gridCols ?? 9);
+  const gridRows = isMinimalista ? modeConfig.vertical.rows : (server.gridRows ?? 6);
+  const isReducidoCompleto = uiMode === 'completo' && server.gridSize === 'reducido';
   const BUTTON_PADDING_VERTICAL = 3 * 2;
   const BUTTON_GAP = 3;
   const BUTTON_GAPS_TOTAL = (gridRows - 1) * BUTTON_GAP;
+  const reductionFactor = isReducidoCompleto ? 0.65 : 1.0;
 
-  // Calculate cell size for square buttons, fill available space.
-  //
-  // En custom queremos que los botones tengan el tamaño físico que tendrían
-  // si el grid lógico (5/7/9) cupiera completo en pantalla, NO ampliados
-  // para llenar el sub-rectángulo visible. Por eso el denominador del
-  // cellSize en custom es `customGridSize`, no las dims visibles. Resultado:
-  //   - 9×9 portrait: cellSize ≈ width/9 (mismo que estándar 9×6).
-  //   - 7×7 portrait: cellSize ≈ width/7 (botones algo más grandes).
-  //   - 5×5 portrait: cellSize ≈ width/5 (botones aún más grandes).
-  // El sub-rectángulo visible ocupa solo el espacio que necesita; sobra el
-  // resto del ancho a la derecha.
-  const cellDenomCols = isCustomCompleto ? (server.customGridSize as number) : gridCols;
-  const cellDenomRows = isCustomCompleto ? (server.customGridSize as number) : gridRows;
-  const maxCellSizeByWidth = width / cellDenomCols;
-  const maxCellSizeByHeight = (availableHeight - inputHeight) / cellDenomRows;
-  const cellSize = Math.min(maxCellSizeByWidth, maxCellSizeByHeight);
-  const buttonGridHeight = gridRows * cellSize + BUTTON_GAPS_TOTAL + BUTTON_PADDING_VERTICAL;
+  // === VERTICAL ===
+  // Área de referencia: 9×6 cuadradas con cell = width/9 → área = width × 2w/3.
+  // En blind respetamos el cap clásico (cuadrado limitado por ancho/alto).
+  const REF_VERT_COLS = 9;
+  const REF_VERT_ROWS = 6;
+  const referenceAreaHeightVert = (width / REF_VERT_COLS) * REF_VERT_ROWS;
+  // Cap por seguridad: nunca pasar del espacio disponible bajo terminal+input.
+  const buttonGridHeight = isMinimalista
+    ? Math.min(width / gridCols, (availableHeight - inputHeight) / gridRows) * gridRows + BUTTON_GAPS_TOTAL + BUTTON_PADDING_VERTICAL
+    : Math.min(referenceAreaHeightVert * reductionFactor, availableHeight - inputHeight);
+  const cellWidthVertical = width / gridCols;
+  const cellHeightVertical = (buttonGridHeight - BUTTON_PADDING_VERTICAL - BUTTON_GAPS_TOTAL) / gridRows;
 
-  // Horizontal layout dimensions
-  const vitalsWidth = uiMode === 'blind' ? 0 : 30;
-  const horizontalGridCols = customHorizontal ? customHorizontal.cols : modeConfig.horizontal.cols;
-  const horizontalGridRows = customHorizontal ? customHorizontal.rows : modeConfig.horizontal.rows;
+  // === HORIZONTAL ===
+  // Swap: horizontalGridCols = gridRows, horizontalGridRows = gridCols.
+  // Área de referencia: 6×9 cuadradas con cell = availableHeight/9 → área
+  // ancho = (2/3) × availableHeight, alto = availableHeight.
+  const vitalsWidth = showVitals ? 30 : 0;
+  const horizontalGridCols = isMinimalista ? modeConfig.horizontal.cols : gridRows;
+  const horizontalGridRows = isMinimalista ? modeConfig.horizontal.rows : gridCols;
   const availableHorizontalWidthForButtons = width - vitalsWidth - insets.left - insets.right - 20;
-  // Mismo criterio en horizontal: denominador = gridSize lógico para que el
-  // tamaño del botón no dependa de cuántas cols visibles caben.
-  const hCellDenomCols = isCustomCompleto ? (server.customGridSize as number) : horizontalGridCols;
-  const hCellDenomRows = isCustomCompleto ? (server.customGridSize as number) : horizontalGridRows;
-  const maxHorizontalCellSizeByWidth = availableHorizontalWidthForButtons / hCellDenomCols;
-
-  // Height calculation differs by mode
-  let maxHorizontalCellSizeByHeight: number;
   const horizontalButtonGapsTotal = (horizontalGridRows - 1) * BUTTON_GAP;
 
-  // Account for internal gaps and padding in ButtonGrid container for both modes
-  maxHorizontalCellSizeByHeight = (availableHeight - horizontalButtonGapsTotal - BUTTON_PADDING_VERTICAL) / hCellDenomRows;
-
-  const horizontalCellSize = Math.min(maxHorizontalCellSizeByWidth, maxHorizontalCellSizeByHeight);
-  const horizontalButtonGridWidth = horizontalGridCols * horizontalCellSize + (horizontalGridCols - 1) * BUTTON_GAP;
+  const REF_HORIZ_COLS = 6;
+  const REF_HORIZ_ROWS = 9;
+  const referenceAreaWidthHoriz = (availableHeight / REF_HORIZ_ROWS) * REF_HORIZ_COLS;
+  const horizontalButtonGridWidth = isMinimalista
+    ? Math.min(
+        availableHorizontalWidthForButtons / horizontalGridCols,
+        (availableHeight - horizontalButtonGapsTotal - BUTTON_PADDING_VERTICAL) / horizontalGridRows,
+      ) * horizontalGridCols + (horizontalGridCols - 1) * BUTTON_GAP
+    : Math.min(referenceAreaWidthHoriz * reductionFactor, availableHorizontalWidthForButtons);
+  const horizontalCellWidth = horizontalButtonGridWidth / horizontalGridCols;
+  const horizontalCellHeight = (availableHeight - horizontalButtonGapsTotal - BUTTON_PADDING_VERTICAL) / horizontalGridRows;
   const horizontalRightPanelWidth = horizontalButtonGridWidth + vitalsWidth + 20;
   const horizontalTerminalWidth = width - horizontalRightPanelWidth - insets.left - insets.right;
 
@@ -2661,8 +2683,8 @@ export function TerminalScreen({ route, navigation }: Props) {
           )}
         </View>
 
-        {/* VitalBars - Hidden in minimalist mode */}
-        {uiMode === 'completo' && (
+        {/* VitalBars — solo en completo y si el setting `vitalsVisible` está on. */}
+        {showVitals && (
           <View style={[styles.vitalsSection, { height: vitalsHeight }]}>
             <VitalBars
               hp={hp}
@@ -2900,8 +2922,8 @@ export function TerminalScreen({ route, navigation }: Props) {
               minimalista={isMinimalista}
               minCols={gridCols}
               minRows={gridRows}
-              disableTransforms={isCustomCompleto}
-              verticalCellSize={isCustomCompleto ? cellSize : undefined}
+              cellWidth={isMinimalista ? undefined : cellWidthVertical}
+              cellHeight={isMinimalista ? undefined : cellHeightVertical}
             />
           </View>
         )}
@@ -3265,8 +3287,8 @@ export function TerminalScreen({ route, navigation }: Props) {
           </View>
         </View>
 
-        {/* VitalBars Vertical - Hidden in blind mode */}
-        {uiMode === 'completo' && (
+        {/* VitalBars Vertical — solo en completo y con setting on. */}
+        {showVitals && (
           <View style={{ width: vitalsWidth, height: availableHeight }}>
             <VitalBars
               hp={hp}
@@ -3293,13 +3315,14 @@ export function TerminalScreen({ route, navigation }: Props) {
                 sourceCol={sourceCol}
                 sourceRow={sourceRow}
                 onSwapButtons={handleSwapButtons}
-                horizontalMode={{cols: horizontalGridCols, cellSize: horizontalCellSize}}
+                horizontalMode={{cols: horizontalGridCols, cellSize: horizontalCellHeight}}
                 uiMode={uiMode}
                 selfVoicingActive={selfVoicingActive}
                 minimalista={isMinimalista}
                 minCols={gridCols}
                 minRows={horizontalGridRows}
-                disableTransforms={isCustomCompleto}
+                cellWidth={isMinimalista ? undefined : horizontalCellWidth}
+                cellHeight={isMinimalista ? undefined : horizontalCellHeight}
               />
             </View>
           </View>
@@ -3313,12 +3336,17 @@ export function TerminalScreen({ route, navigation }: Props) {
           - completo y blind+TalkBack → ButtonEditModal (UI visual completa
             con colores, preview, addText, etc.). */}
       {(() => {
+        const editOrientation: 'vertical' | 'horizontal' = width > height ? 'horizontal' : 'vertical';
         const targetButton = buttonLayout?.buttons.find(b => {
           if (b.col !== editButtonCol || b.row !== editButtonRow) return false;
           if (uiMode === 'blind') {
             return !b.blindPanel || b.blindPanel === currentBlindPanel;
           }
-          return !b.completoPanel || b.completoPanel === currentCompletoPanel;
+          // Vertical y horizontal son botoneras independientes en completo —
+          // el modal debe abrir el botón de la orientación activa.
+          const samePanel = !b.completoPanel || b.completoPanel === currentCompletoPanel;
+          const sameOrient = (b.orientation ?? 'vertical') === editOrientation;
+          return samePanel && sameOrient;
         }) || null;
         if (uiMode === 'blind' && selfVoicingActive) {
           return (
@@ -3534,7 +3562,7 @@ const styles = StyleSheet.create({
   terminalSection: {
     flex: 1,
     position: 'relative',
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#000',
     borderBottomWidth: 1,
     borderBottomColor: '#333',
     overflow: 'hidden',

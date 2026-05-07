@@ -199,8 +199,12 @@ export class TelnetService {
 
     const opt = data[0];
     if (opt === OPT_GMCP && data.length > 1) {
-      // GMCP message: option byte + "Module.Name <json data>"
-      const text = data.slice(1).map(b => String.fromCharCode(b)).join('');
+      // GMCP message: option byte + "Module.Name <json data>". El payload
+      // viene en UTF-8 (estándar de facto de GMCP). Decodificar byte a byte
+      // con String.fromCharCode lo trataría como latin-1 y un acento UTF-8
+      // (`C3 B3` = ó) acabaría como dos chars `Ã³` en el JSON parseado —
+      // exactamente el mojibake que veían los canales en cliente.
+      const text = Buffer.from(data.slice(1)).toString('utf8');
       const spaceIdx = text.indexOf(' ');
 
       let module: string;

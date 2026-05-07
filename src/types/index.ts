@@ -6,23 +6,28 @@ export interface ServerProfile {
   encoding?: string;
   username?: string;
   password?: string;
-  // Configuración del grid de botones del Terminal en modo completo. Se
-  // decide al CREAR el server y es inmutable después (la edición de server
-  // no muestra estos campos). Servers cargados sin estos campos se migran
-  // a defaults: layoutKind='standard', panels=[1, 2].
+  // Configuración del grid de botones del Terminal en modo completo (v3+).
+  // Editable per-server desde el modal en cualquier momento.
   //
-  // 'standard': grid 9×6 (vertical) / 6×9 (horizontal) con transformaciones
-  //   `normalModeTransforms` que reorganizan la zona de direcciones al
-  //   pivotar. Layout por defecto incluye Decir/Res/STOP/IR/SIG/LOC y la
-  //   cruz de direcciones. Al añadir paneles, se copia la zona de direcciones
-  //   del panel 1.
-  // 'custom': grid lógico cuadrado (5×5, 7×7, 9×9). En cada orientación se
-  //   renderiza solo el sub-rectángulo que cabe (Pequeño 4×5/5×4, Mediano
-  //   5×7/7×5, Grande 5×9/9×5). Sin transformaciones de landscape — solo
-  //   recortar. Botones fuera del rectángulo visible quedan guardados pero
-  //   inaccesibles hasta rotar el móvil. Empieza vacío excepto el switch
-  //   button en (0,0). Al añadir paneles, panel vacío.
-  layoutKind?: 'standard' | 'custom';
+  //   gridSize: 'normal' | 'reducido' — el grid ocupa el espacio entero o
+  //     el 65% (35% menos). En vertical reducido conserva el ancho 100% pero
+  //     reduce la altura del grid → cellHeight menor. En horizontal análogo.
+  //   gridCols: 5..9 — columnas visibles en vertical (filas en horizontal).
+  //   gridRows: 4..6 — filas visibles en vertical (columnas en horizontal).
+  //
+  // Layouts independientes por orientación: cada botón guarda `orientation`
+  // 'vertical' | 'horizontal' y solo se renderiza en la suya. Sin transforms
+  // de rotación en runtime. La migración v2→v3 traduce los layouts antiguos
+  // (standard / custom) aplicando una sola vez los transforms canónicos para
+  // generar el layout horizontal a partir del vertical.
+  gridSize?: 'normal' | 'reducido';
+  gridCols?: number;
+  gridRows?: number;
+  // === Campos legacy (deprecados desde v3, conservados para migración) ===
+  // 'standard' (alias 'normal') / 'custom' / 'reducida' — sólo lo lee el
+  // migrador para deducir gridCols/gridRows iniciales. No se escribe nunca
+  // tras migrar.
+  layoutKind?: 'normal' | 'reducida' | 'custom' | 'standard';
   customGridSize?: 5 | 7 | 9;
   // IDs de paneles del modo completo. Default [1, 2]. Cap máximo 6. Los
   // dos primeros no se pueden eliminar. Los IDs no necesitan ser

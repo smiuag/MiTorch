@@ -198,34 +198,60 @@ export function SettingsTerminalScreen({ navigation }: Props) {
           onLayout={onLayout}
         >
           {showAppearance && (
-            <View style={s.row}>
-              <View style={s.rowInfo}>
-                <Text style={s.rowTitle}>Tamaño de fuente</Text>
-                <Text style={s.rowDesc}>Tamaño de fuente del terminal y canales.</Text>
+            <>
+              <View style={s.row}>
+                <View style={s.rowInfo}>
+                  <Text style={s.rowTitle}>Tamaño de fuente</Text>
+                  <Text style={s.rowDesc}>Tamaño de fuente del terminal y canales.</Text>
+                </View>
+                <View style={s.fontSizeControls}>
+                  <TouchableOpacity
+                    style={[s.fontBtn, settings.fontSize <= 10 && s.fontBtnDisabled]}
+                    onPress={() => settings.fontSize > 10 && updateSetting('fontSize', settings.fontSize - 1)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Bajar tamaño de fuente"
+                    accessibilityState={{ disabled: settings.fontSize <= 10 }}
+                  >
+                    <Text style={[s.fontBtnText, settings.fontSize <= 10 && s.fontBtnTextDisabled]}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={s.fontSizeValue} accessibilityLabel={`Tamaño de fuente: ${settings.fontSize}`}>{settings.fontSize}</Text>
+                  <TouchableOpacity
+                    style={[s.fontBtn, settings.fontSize >= 20 && s.fontBtnDisabled]}
+                    onPress={() => settings.fontSize < 20 && updateSetting('fontSize', settings.fontSize + 1)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Subir tamaño de fuente"
+                    accessibilityState={{ disabled: settings.fontSize >= 20 }}
+                  >
+                    <Text style={[s.fontBtnText, settings.fontSize >= 20 && s.fontBtnTextDisabled]}>+</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-              <View style={s.fontSizeControls}>
-                <TouchableOpacity
-                  style={[s.fontBtn, settings.fontSize <= 10 && s.fontBtnDisabled]}
-                  onPress={() => settings.fontSize > 10 && updateSetting('fontSize', settings.fontSize - 1)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Bajar tamaño de fuente"
-                  accessibilityState={{ disabled: settings.fontSize <= 10 }}
+
+              {!isBlind && (
+                <SelfVoicingRow
+                  svActive={settingsSelfVoicingActive}
+                  svScope={SCOPE}
+                  svKey="vitals-visible"
+                  svLabel={`Mostrar barras de vida y energía. ${settings.vitalsVisible ? 'Activado' : 'Desactivado'}`}
+                  onActivate={() => updateSetting('vitalsVisible', !settings.vitalsVisible)}
+                  style={s.row}
                 >
-                  <Text style={[s.fontBtnText, settings.fontSize <= 10 && s.fontBtnTextDisabled]}>−</Text>
-                </TouchableOpacity>
-                <Text style={s.fontSizeValue} accessibilityLabel={`Tamaño de fuente: ${settings.fontSize}`}>{settings.fontSize}</Text>
-                <TouchableOpacity
-                  style={[s.fontBtn, settings.fontSize >= 20 && s.fontBtnDisabled]}
-                  onPress={() => settings.fontSize < 20 && updateSetting('fontSize', settings.fontSize + 1)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Subir tamaño de fuente"
-                  accessibilityState={{ disabled: settings.fontSize >= 20 }}
-                >
-                  <Text style={[s.fontBtnText, settings.fontSize >= 20 && s.fontBtnTextDisabled]}>+</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+                  <View style={s.rowInfo}>
+                    <Text style={s.rowTitle}>Barras de vida y energía</Text>
+                    <Text style={s.rowDesc}>Cabecera con HP/Energía (vertical) o columna a la derecha (horizontal). Si las ocultas, ese espacio se lo lleva el terminal.</Text>
+                  </View>
+                  <Switch
+                    value={settings.vitalsVisible}
+                    onValueChange={(v) => updateSetting('vitalsVisible', v)}
+                    trackColor={{ false: '#333', true: '#0c0' }}
+                    thumbColor={settings.vitalsVisible ? '#000' : '#666'}
+                    accessibilityLabel={`Mostrar barras de vida y energía. ${settings.vitalsVisible ? 'Activado' : 'Desactivado'}`}
+                  />
+                </SelfVoicingRow>
+              )}
+            </>
           )}
+
 
           <SelfVoicingRow
             svActive={settingsSelfVoicingActive}
