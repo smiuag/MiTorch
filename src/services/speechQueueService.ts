@@ -33,7 +33,7 @@ const DEFAULT_CHAR_DURATION_MS = 20;
 // utterances anuladas pisaban `isSpeakingTts` de las nuevas. Con coalesce,
 // varias high consecutivas <40ms colapsan a una sola: el usuario solo oye
 // la última, el motor recibe un único stop+speak.
-const HIGH_COALESCE_MS = 40;
+const HIGH_COALESCE_MS = 0;
 // Watchdog: si `isSpeakingTts` lleva true demasiado tiempo sin que llegue
 // `tts-finish` (engine murió, evento perdido, listener desuscrito), se
 // resetea y se reanuda la cola. 120s cubre líneas largas a 0.5x.
@@ -263,7 +263,13 @@ class SpeechQueueService {
       // texto se reemplaza pero el timer no se reprograma — solo cuando
       // expira hacemos el atropello real (clear queue + Tts.stop + speak).
       // Esto colapsa ráfagas de typingAnnounce y reduce la presión sobre
-      // el motor.
+      // el motor. Con HIGH_COALESCE_MS=0 saltamos el timer porque el propio
+      // setTimeout(fn,0) cuesta ~4ms en RN y para drag-explore queremos
+      // reacción inmediata.
+      if (HIGH_COALESCE_MS <= 0) {
+        this.preemptAndSpeak(trimmed);
+        return;
+      }
       this.pendingHighText = trimmed;
       if (this.highCoalesceTimer) return;
       this.highCoalesceTimer = setTimeout(() => {
@@ -375,11 +381,12 @@ class SpeechQueueService {
   }
 
   private stopTts(): void {
-    // Solo contamos pendingStop si había algo en marcha — un Tts.stop()
-    // sobre el motor ya parado no produce tts-cancel.
-    if (this.isSpeakingTts) {
-      this.pendingStopCount++;
-    }
+    // Si no hay utterance en curso, evitar la bridge call entera. Tts.stop()
+    // viaja a nativo aunque el motor no tenga nada que parar y, según
+    // engine, encola ese "stop" en la misma cola que el siguiente speak —
+    // dead latency entre que el dedo cruza una tecla nueva y oímos algo.
+    if (!this.isSpeakingTts) return;
+    this.pendingStopCount++;
     Tts.stop();
     this.markUtteranceEnded();
   }
