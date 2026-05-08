@@ -2801,6 +2801,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                 autoCorrect={false}
                 spellCheck={false}
                 showSoftInputOnFocus={blindKbInput.showSoftInputOnFocus}
+                disableFullscreenUI={true}
                 accessible={true}
                 accessibilityLabel="Entrada de comando"
                 accessibilityHint="Escribe un comando y presiona enviar o enter"
@@ -3195,6 +3196,7 @@ export function TerminalScreen({ route, navigation }: Props) {
                   autoCorrect={false}
                   spellCheck={false}
                   showSoftInputOnFocus={blindKbInput.showSoftInputOnFocus}
+                  disableFullscreenUI={true}
                   accessible={true}
                   accessibilityLabel="Entrada de comando"
                   accessibilityHint="Escribe un comando y presiona enviar o enter"
