@@ -2,7 +2,7 @@
   "expo": {
     "name": "TorchZhyla",
     "slug": "torch-zhyla",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "sensor",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
