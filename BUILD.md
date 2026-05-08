@@ -4,31 +4,22 @@ Guía de build, troubleshooting, firma y versionado de TorchZhyla. CLAUDE.md la 
 
 ## Build Guide
 
+Los flujos de build (debug, release, AAB store) están encapsulados en la skill **`/build`** (ver `.claude/skills/build/SKILL.md`). Pide en lenguaje natural ("instálame el debug", "saca un AAB para Play patch") o usa el slash command (`/build debug`, `/build release`, `/build store [patch|minor|major]`).
+
 ### Outputs
 
 - Debug APK: `android/app/build/outputs/apk/debug/app-debug.apk`
 - Release APK: `android/app/build/outputs/apk/release/app-release.apk`
 - Release AAB (Play): `android/app/build/outputs/bundle/release/app-release.aab`
 
-### Flujos
+### Desarrollo con Metro
 
-**Desarrollo (debug, con Metro):**
+`/build debug` instala la APK pero el JS lo sirve Metro en runtime. Flujo manual del Metro:
+
 ```powershell
-# Terminal 1
-. .\reset-dev.ps1
-npm start
-# Terminal 2
-npm run android
+. .\reset-dev.ps1   # mata Node/Java, resetea ADB, adb reverse tcp:8081 tcp:8081
+npm start           # Metro en 8081 (SIEMPRE 8081, no 8082/8083)
 ```
-Siempre puerto 8081. Si parece ocupado → `reset-dev.ps1` (mata Node/Java, resetea ADB, hace `adb reverse tcp:8081 tcp:8081`). NO cambiar a 8082/8083.
-
-**Release APK (sin Metro, optimizado):**
-```powershell
-cd android && ./gradlew.bat assembleRelease && cd ..
-adb install -r android/app/build/outputs/apk/release/app-release.apk
-```
-
-**Release AAB (Play Store):** `cd android && ./gradlew.bat bundleRelease && cd ..`
 
 ### Troubleshooting
 
@@ -50,8 +41,9 @@ Logcat: `adb logcat | Select-String "TorchZhyla|SOUND|BM|BLIND|Telnet"`. Reset d
 
 ### Versionado (semver estricto desde 1.0.0, decidido 2026-04-25)
 
+Doctrina (la skill `/build store` la enforza):
 - `versionName` semver: PATCH = bugfix, MINOR = feature compatible, MAJOR = breaking/UX grande.
-- `versionCode`: `+1` por cada release publicada en Play. Solo sube, nunca baja.
-- **Sincronizar siempre** `android/app/build.gradle` (versionCode + versionName) y `app.json` (`expo.version`). Si divergen, manda `build.gradle`.
-- **NO bumpear automáticamente.** Solo cuando el usuario diga "vamos a publicar" / "release". Si hay duda de PATCH/MINOR/MAJOR → **preguntar**.
-- Última publicada en Play: **1.0.1 (versionCode 2)** — internal testing (2026-05-03)
+- `versionCode`: `+1` por cada release publicada. Solo sube, nunca baja.
+- Sincronizar `android/app/build.gradle` (versionCode + versionName) y `app.json` (`version`). Si divergen, manda `build.gradle`.
+
+Última publicada en Play: **1.0.1 (versionCode 2)** — internal testing (2026-05-03). Actualizar a mano cuando subas la siguiente al portal de Play.

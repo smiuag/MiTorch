@@ -80,12 +80,11 @@ Ambos se distribuyen fuera del repo (gestor de contraseñas, USB encriptado, etc
 
 ## Build, release, troubleshooting
 
-Guía completa en **`BUILD.md`** (no se carga automáticamente — léela cuando trabajes en el flujo de build, signing o versionado).
+Builds vía skill **`/build`** (`.claude/skills/build/SKILL.md`): `/build debug` (APK debug + install), `/build release` (APK release sin install), `/build store [patch|minor|major]` (AAB para Play, bumpea versión y commitea). También funciona en lenguaje natural ("instálame el debug", "saca un AAB minor").
 
-Cheat sheet:
-- Debug con Metro: `reset-dev.ps1` → `npm start` → `npm run android`. Puerto SIEMPRE 8081.
-- Release APK: `cd android && ./gradlew.bat assembleRelease`.
-- Logcat filtrado: `adb logcat | Select-String "TorchZhyla|SOUND|BM|BLIND|Telnet"`.
+Doctrina detallada en **`BUILD.md`** — outputs, signing, versionado, troubleshooting, recordatorio de actualizar "Última publicada" cuando subas a Play. No se carga automáticamente.
+
+Logcat: `adb logcat | Select-String "TorchZhyla|SOUND|BM|BLIND|Telnet"`.
 
 ## Important Implementation Notes
 
