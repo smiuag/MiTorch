@@ -46,4 +46,4 @@ Doctrina (la skill `/build store` la enforza):
 - `versionCode`: `+1` por cada release publicada. Solo sube, nunca baja.
 - Sincronizar `android/app/build.gradle` (versionCode + versionName) y `app.json` (`version`). Si divergen, manda `build.gradle`.
 
-Última publicada en Play: **1.0.2 (versionCode 3)** — internal testing (2026-05-08). Actualizar a mano cuando subas la siguiente al portal de Play.
+Última publicada en Play: **1.0.3 (versionCode 4)** — internal testing (2026-05-10). Actualizar a mano cuando subas la siguiente al portal de Play.
