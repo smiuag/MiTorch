@@ -33,6 +33,9 @@ export interface BlindKeyboardHandlers {
   onBackspaceLetter: () => void;
   onBackspaceWord: () => void;
   onEnter: () => void;
+  // Cerrar teclado (blur del TextInput dueño). Disparado por swipe-abajo
+  // con dos dedos sobre el container.
+  onClose: () => void;
 }
 
 interface BlindKeyboardProps extends BlindKeyboardHandlers {
@@ -78,6 +81,7 @@ export function BlindKeyboard({
   onBackspaceLetter,
   onBackspaceWord,
   onEnter,
+  onClose,
   onLayout,
   value = '',
   history,
@@ -138,7 +142,16 @@ export function BlindKeyboard({
   // a otra tecla antes de soltar, se cancela.
   const armedLongPressRef = useRef<(() => void) | null>(null);
   const lastFocusKeyRef = useRef<string | null>(null);
-
+  // Tecla muerta de acento (estilo teclado físico español): se pulsa una vez
+  // y la siguiente letra que se tipee saldrá acentuada si es vocal, o se
+  // tipeará '´' antes del char si no lo es. Ref para lectura síncrona en
+  // handleKey, state para resaltar la tecla `´` mientras está pendiente.
+  const [pendingAccent, setPendingAccent] = useState(false);
+  const pendingAccentRef = useRef(false);
+  const setPending = useCallback((v: boolean) => {
+    pendingAccentRef.current = v;
+    setPendingAccent(v);
+  }, []);
   // --- Handlers de teclas ---
 
   const applyShiftIfNeeded = (c: string): string => {
@@ -155,37 +168,64 @@ export function BlindKeyboard({
 
   const handleKey = useCallback((rawChar: string) => {
     const char = applyShiftIfNeeded(rawChar);
+
+    // Tecla muerta de acento pendiente: la siguiente letra sale acentuada si
+    // es vocal, o con '´' delante si no lo es. Se consume en este uso.
+    if (pendingAccentRef.current) {
+      setPending(false);
+      const lc = rawChar.toLowerCase();
+      const accentedLower = ACCENT_MAP[lc];
+      if (accentedLower) {
+        const isUpper = char === char.toUpperCase() && char !== char.toLowerCase();
+        const final = isUpper ? accentedLower.toUpperCase() : accentedLower;
+        onKey(final);
+        speechQueue.enqueue(final, 'high');
+        wordBufferRef.current += final;
+        consumeShiftOneshot();
+        return;
+      }
+      // No es vocal: tipear el acento suelto antes del char.
+      onKey('´');
+      wordBufferRef.current += '´';
+    }
+
     onKey(char);
     speechQueue.enqueue(char, 'high');
     wordBufferRef.current += char;
     consumeShiftOneshot();
-  }, [shift, onKey]);
+  }, [shift, onKey, setPending]);
 
-  const handleAccent = useCallback((vowel: string) => {
-    const accented = ACCENT_MAP[vowel] || vowel;
-    const final = shift !== 'off' ? accented.toUpperCase() : accented;
-    onKey(final);
-    speechQueue.enqueue(final, 'high');
-    wordBufferRef.current += final;
-    consumeShiftOneshot();
-  }, [shift, onKey]);
+  const handleAccentDeadKey = useCallback(() => {
+    const next = !pendingAccentRef.current;
+    setPending(next);
+    speechQueue.enqueue(next ? 'acento' : 'acento cancelado', 'high');
+  }, [setPending]);
 
   const handleSpace = useCallback(() => {
+    if (pendingAccentRef.current) setPending(false);
     onKey(' ');
     const word = wordBufferRef.current.trim();
     if (word) speechQueue.enqueue(word, 'high');
     wordBufferRef.current = '';
     consumeShiftOneshot();
-  }, [onKey, shift]);
+  }, [onKey, shift, setPending]);
 
   const handleEnter = useCallback(() => {
+    if (pendingAccentRef.current) setPending(false);
     const word = wordBufferRef.current.trim();
     if (word) speechQueue.enqueue(word, 'high');
     wordBufferRef.current = '';
     onEnter();
-  }, [onEnter]);
+  }, [onEnter, setPending]);
 
   const handleBackspaceLetter = useCallback(() => {
+    // Si hay acento pendiente, backspace lo cancela en lugar de borrar
+    // (analogía con teclado físico: dead-key + backspace = cancelar).
+    if (pendingAccentRef.current) {
+      setPending(false);
+      speechQueue.enqueue('acento cancelado', 'high');
+      return;
+    }
     const v = valueRef.current;
     const deleted = v.length > 0 ? v.slice(-1) : '';
     onBackspaceLetter();
@@ -193,9 +233,10 @@ export function BlindKeyboard({
       wordBufferRef.current = wordBufferRef.current.slice(0, -1);
     }
     speechQueue.enqueue(deleted ? `${deleted} borrada` : 'nada que borrar', 'high');
-  }, [onBackspaceLetter]);
+  }, [onBackspaceLetter, setPending]);
 
   const handleBackspaceWord = useCallback(() => {
+    if (pendingAccentRef.current) setPending(false);
     const v = valueRef.current;
     // La palabra que se va a borrar es el último token tras el último
     // espacio (ignorando trailing spaces, mismo criterio que la lógica
@@ -206,7 +247,7 @@ export function BlindKeyboard({
     onBackspaceWord();
     wordBufferRef.current = '';
     speechQueue.enqueue(deleted ? `${deleted} borrada` : 'nada que borrar', 'high');
-  }, [onBackspaceWord]);
+  }, [onBackspaceWord, setPending]);
 
   // Shift: tap = one-shot. Doble-tap (<300ms) = lock. Otro tap sobre lock
   // = off. La detección de doble-tap se hace dentro del activate callback
@@ -237,22 +278,58 @@ export function BlindKeyboard({
   }, []);
 
   // --- Touch handling (a nivel del container) ---
-  // Tracking del touch para swipe detection en PROPOSAL.
-  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  // Tracking del touch. `swipeStartRef` se usa para detectar dirección de
+  // swipe en PROPOSAL al lift. Sobre las teclas no hay flick direccional
+  // (probado y descartado): el modelo es drag-explore + lift-to-type.
+  const swipeStartRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  // Tracking del gesto de 2 dedos (swipe-abajo cierra teclado). Mientras
+  // active, se desactiva drag-explore y proposal swipe.
+  const twoFingerRef = useRef<{ startY: number; currentY: number } | null>(null);
+  const TWO_FINGER_CLOSE_DY = 80;
 
   const handleTouchStart = useCallback((evt: any) => {
-    const t = evt.nativeEvent.touches?.[0];
+    const touches = evt.nativeEvent.touches;
+    if (touches && touches.length >= 2) {
+      // Activar/inicializar tracking de 2 dedos. Cancelar cualquier
+      // estado pendiente del flujo single-touch.
+      const avgY = (touches[0].pageY + touches[1].pageY) / 2;
+      if (!twoFingerRef.current) {
+        twoFingerRef.current = { startY: avgY, currentY: avgY };
+      }
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+      armedLongPressRef.current = null;
+      lastFocusKeyRef.current = null;
+      swipeStartRef.current = null;
+      return;
+    }
+    const t = touches?.[0];
     if (!t) return;
-    swipeStartRef.current = { x: t.pageX, y: t.pageY };
+    swipeStartRef.current = { x: t.pageX, y: t.pageY, t: Date.now() };
     if (proposalMode) return; // teclado congelado en PROPOSAL
     handleTouchPos(evt);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proposalMode]);
 
   const handleTouchPos = useCallback((evt: any) => {
+    const touches = evt.nativeEvent.touches;
+    if (twoFingerRef.current || (touches && touches.length >= 2)) {
+      if (touches && touches.length >= 2) {
+        const avgY = (touches[0].pageY + touches[1].pageY) / 2;
+        if (!twoFingerRef.current) {
+          twoFingerRef.current = { startY: avgY, currentY: avgY };
+        } else {
+          twoFingerRef.current.currentY = avgY;
+        }
+      }
+      return;
+    }
     if (proposalMode) return; // drag-explore desactivado en PROPOSAL
-    const t = evt.nativeEvent.touches?.[0];
+    const t = touches?.[0];
     if (!t) return;
+
     const hit = buttonRegistry.findAtPoint(t.pageX, t.pageY);
     if (!hit) {
       if (longPressTimerRef.current) {
@@ -288,6 +365,21 @@ export function BlindKeyboard({
   }, [proposalMode]);
 
   const handleTouchEnd = useCallback((evt: any) => {
+    // 2-finger gesture: solo procesamos al levantar TODOS los dedos.
+    if (twoFingerRef.current) {
+      const remaining = evt.nativeEvent.touches;
+      if (remaining && remaining.length > 0) return; // aún quedan dedos
+      const state = twoFingerRef.current;
+      twoFingerRef.current = null;
+      const dy = state.currentY - state.startY;
+      if (dy > TWO_FINGER_CLOSE_DY) {
+        Vibration.vibrate(40);
+        speechQueue.enqueue('teclado cerrado', 'high');
+        onClose();
+      }
+      return;
+    }
+
     // En PROPOSAL: detectar dirección del swipe y aplicar.
     if (proposalMode) {
       const start = swipeStartRef.current;
@@ -305,6 +397,9 @@ export function BlindKeyboard({
       handleProposalSwipe(dir);
       return;
     }
+
+    // Limpieza del estado de touch.
+    swipeStartRef.current = null;
 
     // IDLE: lift-to-type tradicional. Si hay acción long-press armada
     // (porque el timer cumplió y el dedo no se ha movido), ejecutar esa
@@ -325,7 +420,7 @@ export function BlindKeyboard({
     const entry = buttonRegistry.getEntry(focusedKey);
     entry?.onActivate?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [proposalMode]);
+  }, [proposalMode, onClose]);
 
   // Resolver swipe en PROPOSAL.
   const handleProposalSwipe = useCallback((dir: 'up' | 'down' | 'left' | 'right') => {
@@ -412,17 +507,24 @@ export function BlindKeyboard({
         highlighted={!!proposalMode}
         dim={!currentWord}
       />
-      <Row keys={row1} onKey={handleKey} displayChar={displayChar} accentMap={!symbolLayer ? ACCENT_MAP : {}} onAccent={handleAccent} />
-      <Row keys={row2} onKey={handleKey} displayChar={displayChar} accentMap={!symbolLayer ? ACCENT_MAP : {}} onAccent={handleAccent} />
-      <Row keys={row3} onKey={handleKey} displayChar={displayChar} accentMap={!symbolLayer ? ACCENT_MAP : {}} onAccent={handleAccent} />
+      <Row keys={row1} onKey={handleKey} displayChar={displayChar} />
+      <Row keys={row2} onKey={handleKey} displayChar={displayChar} />
+      <Row keys={row3} onKey={handleKey} displayChar={displayChar} />
 
       <View style={styles.row}>
         <SpecialKey
           label={shift === 'lock' ? '⇧⇧' : '⇧'}
           announceLabel={shift === 'lock' ? 'bloqueo mayúsculas' : 'mayúsculas'}
           onActivate={handleShiftActivate}
-          flex={1.5}
+          flex={1}
           highlighted={shift !== 'off'}
+        />
+        <SpecialKey
+          label="´"
+          announceLabel="acento"
+          onActivate={handleAccentDeadKey}
+          flex={1}
+          highlighted={pendingAccent}
         />
         {row4.map((c) => (
           <Key
@@ -430,7 +532,6 @@ export function BlindKeyboard({
             char={c}
             display={displayChar(c)}
             onTap={handleKey}
-            onLongPress={ACCENT_MAP[c] && !symbolLayer ? () => handleAccent(c) : undefined}
           />
         ))}
         <SpecialKey
@@ -439,7 +540,7 @@ export function BlindKeyboard({
           onActivate={handleBackspaceLetter}
           onLongPress={handleBackspaceWord}
           onLongPressLabel="borrar palabra"
-          flex={1.5}
+          flex={1}
         />
       </View>
 
@@ -458,7 +559,7 @@ export function BlindKeyboard({
         />
         <SpecialKey
           label="⏎"
-          announceLabel="enter"
+          announceLabel="enviar"
           onActivate={handleEnter}
           flex={1.5}
         />
@@ -469,31 +570,21 @@ export function BlindKeyboard({
 
 // --- Sub-componentes ---
 
-function Row({ keys, onKey, displayChar, accentMap, onAccent }: {
+function Row({ keys, onKey, displayChar }: {
   keys: string[];
   onKey: (c: string) => void;
   displayChar: (c: string) => string;
-  accentMap: Record<string, string>;
-  onAccent: (c: string) => void;
 }) {
   return (
     <View style={styles.row}>
-      {keys.map((c) => {
-        const isVowel = !!accentMap[c];
-        return (
-          <Key
-            key={c}
-            char={c}
-            display={displayChar(c)}
-            onTap={onKey}
-            onLongPress={isVowel ? () => onAccent(c) : undefined}
-            onLongPressLabel={isVowel ? 'con tilde' : undefined}
-            // Delay extra largo en vocales para evitar tildes accidentales
-            // al cruzar el dedo despacio sobre una vocal en drag-explore.
-            onLongPressDelayMs={isVowel ? 1200 : undefined}
-          />
-        );
-      })}
+      {keys.map((c) => (
+        <Key
+          key={c}
+          char={c}
+          display={displayChar(c)}
+          onTap={onKey}
+        />
+      ))}
     </View>
   );
 }

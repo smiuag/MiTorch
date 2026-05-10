@@ -340,8 +340,17 @@ export const remeasureBus = new RemeasureBus();
 
 class BlindNavController {
   private currentKey: string | null = null;
+  // Listeners para que componentes (SelfVoicingRow) puedan dibujar un
+  // borde de foco cuando son el item activo. Mismo patrón que
+  // SelfVoicingPressTracker.listeners pero para el modelo BlindNav.
+  private listeners = new Set<FocusListener>();
 
   getCurrentKey(): string | null { return this.currentKey; }
+
+  subscribe(listener: FocusListener): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
 
   /**
    * Entrar a una pantalla blind. Anuncia el mensaje de bienvenida y, tras
@@ -355,12 +364,16 @@ class BlindNavController {
   }
 
   exit(): void {
-    this.currentKey = null;
+    if (this.currentKey !== null) {
+      this.currentKey = null;
+      this.listeners.forEach((l) => l(null));
+    }
   }
 
   private setFocusByKey(key: string | null): void {
     if (key === this.currentKey) return;
     this.currentKey = key;
+    this.listeners.forEach((l) => l(key));
     if (!key) return;
     const entry = buttonRegistry.getEntry(key);
     if (entry) {

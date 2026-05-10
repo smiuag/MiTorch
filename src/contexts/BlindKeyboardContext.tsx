@@ -36,6 +36,12 @@ interface ConsumerCtxValue {
   activeConsumer: ConsumerHandlers | null;
   setActiveConsumer: (c: ConsumerHandlers | null) => void;
   setLive: (s: LiveState) => void;
+  // True cuando un componente externo (típicamente dentro de otro Modal)
+  // está renderizando el slot del teclado por su cuenta. El overlay por
+  // defecto del provider devuelve null en ese caso, para que no haya dos
+  // instancias del BlindKeyboard registradas a la vez.
+  externalSlotMounted: boolean;
+  setExternalSlotMounted: (v: boolean) => void;
 }
 
 interface LiveCtxValue {
@@ -49,12 +55,13 @@ let nextConsumerId = 1;
 export function BlindKeyboardProvider({ children }: { children: React.ReactNode }) {
   const [activeConsumer, setActiveConsumer] = useState<ConsumerHandlers | null>(null);
   const [live, setLive] = useState<LiveState>({ value: '', history: undefined });
+  const [externalSlotMounted, setExternalSlotMounted] = useState(false);
 
   // setActiveConsumer y setLive son estables por contrato de useState —
   // no incluirlos en deps del useMemo evita re-crear el value innecesariamente.
   const consumerVal = useMemo<ConsumerCtxValue>(
-    () => ({ activeConsumer, setActiveConsumer, setLive }),
-    [activeConsumer],
+    () => ({ activeConsumer, setActiveConsumer, setLive, externalSlotMounted, setExternalSlotMounted }),
+    [activeConsumer, externalSlotMounted],
   );
   const liveVal = useMemo<LiveCtxValue>(
     () => ({ live }),
@@ -71,13 +78,17 @@ export function BlindKeyboardProvider({ children }: { children: React.ReactNode 
   );
 }
 
-function BlindKeyboardOverlay() {
+// Renderiza el teclado custom como View absoluto con pointerEvents="box-none"
+// para que los toques sobre la zona vacía pasen al view de debajo (el
+// terminal). NO usamos <Modal> porque la ventana nativa del Modal absorbe
+// TODOS los toques en su área, bloqueando interacción con el contenido
+// arriba del teclado.
+function KeyboardView() {
   const consumerCtx = useContext(ConsumerCtx);
   const liveCtx = useContext(LiveCtx);
   if (!consumerCtx?.activeConsumer || !liveCtx) return null;
   const c = consumerCtx.activeConsumer;
   const live = liveCtx.live;
-
   return (
     <View style={styles.overlay} pointerEvents="box-none">
       <View style={styles.keyboardWrapper}>
@@ -88,11 +99,37 @@ function BlindKeyboardOverlay() {
           onBackspaceLetter={c.onBackspaceLetter}
           onBackspaceWord={c.onBackspaceWord}
           onEnter={c.onEnter}
+          onClose={c.onClose}
           onReplaceCurrentWord={c.onReplaceCurrentWord}
         />
       </View>
     </View>
   );
+}
+
+// Overlay por defecto del provider — sirve para Terminal y cualquier
+// pantalla "raíz". Se desactiva cuando un slot externo (dentro de otro
+// Modal) lo está renderizando; ver `BlindKeyboardSlot`.
+function BlindKeyboardOverlay() {
+  const consumerCtx = useContext(ConsumerCtx);
+  if (consumerCtx?.externalSlotMounted) return null;
+  return <KeyboardView />;
+}
+
+// Componente para renderizar el teclado dentro de OTRO Modal (p. ej.
+// BlindButtonEditModal). Cuando la ventana nativa del Modal absorbe los
+// toques, el teclado debe estar DENTRO de esa misma ventana — no en el
+// árbol principal — para ser interactivo. Este slot reclama la
+// renderización del teclado mientras está montado, suprimiendo el overlay
+// por defecto del provider para que no haya duplicado.
+export function BlindKeyboardSlot() {
+  const consumerCtx = useContext(ConsumerCtx);
+  useEffect(() => {
+    consumerCtx?.setExternalSlotMounted(true);
+    return () => consumerCtx?.setExternalSlotMounted(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return <KeyboardView />;
 }
 
 interface UseBlindKeyboardOpts {
@@ -146,7 +183,14 @@ export function useBlindKeyboardActivation({
   useEffect(() => { onSubmitRef.current = onSubmit; }, [onSubmit]);
 
   // Helper: actualizar texto + selection a la vez.
+  // OJO: actualizamos valueRef.current SÍNCRONAMENTE además del setState
+  // para que dos handlers consecutivos en el mismo tick (p. ej.
+  // onBackspaceLetter() + onKey('á') desde handleAccent del chord) vean el
+  // valor coherente. El useEffect que sincroniza valueRef desde la prop
+  // `value` correrá después del re-render, pero para entonces el ref ya
+  // tendrá el valor correcto y el efecto solo lo confirmará.
   const updateText = (newVal: string) => {
+    valueRef.current = newVal;
     setValueRef.current(newVal);
     setSelectionRef.current?.({ start: newVal.length, end: newVal.length });
   };
@@ -193,6 +237,17 @@ export function useBlindKeyboardActivation({
       },
       onEnter: () => {
         onSubmitRef.current?.();
+      },
+      onClose: () => {
+        // Blur del TextInput dueño + desactivar consumer. El check de
+        // `ctx.activeConsumer.id` no funciona aquí: el `ctx` capturado por
+        // esta closure tiene activeConsumer=null (estado del render donde
+        // se creó). `ctx.setActiveConsumer` sí es estable (viene de
+        // useState) — lo llamamos directo. El gesto solo dispara desde
+        // nuestro propio keyboard, así que no hay riesgo de carrera.
+        textInputRef.current?.blur();
+        ctx.setActiveConsumer(null);
+        consumerIdRef.current = null;
       },
       onReplaceCurrentWord: (replacement: string) => {
         // Reemplaza el último token (después del último espacio) por

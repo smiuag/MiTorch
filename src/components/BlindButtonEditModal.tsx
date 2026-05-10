@@ -3,6 +3,7 @@ import { Modal, View, StyleSheet, Text, TextInput } from 'react-native';
 import { LayoutButton } from '../storage/layoutStorage';
 import { buttonRegistry } from '../utils/selfVoicingPress';
 import { SelfVoicingRow, SelfVoicingTextInput, BlindGestureContainer } from './SelfVoicingControls';
+import { BlindKeyboardSlot } from '../contexts/BlindKeyboardContext';
 import { ButtonFormState, loadButtonFormState, buildLayoutButton } from './buttonEditShared';
 
 // Modal de edición de botón dedicado a blind + self-voicing.
@@ -88,7 +89,7 @@ export function BlindButtonEditModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      <View style={styles.overlay} pointerEvents="box-none">
         <View style={styles.modal}>
           <BlindGestureContainer
             active={visible}
@@ -206,6 +207,12 @@ export function BlindButtonEditModal({
             </View>
           </BlindGestureContainer>
         </View>
+        {/* Teclado custom blind dentro de la misma ventana del Modal —
+            si lo dejásemos en el overlay del provider, la ventana nativa
+            del Modal lo dejaría detrás (no interactivo). El slot reclama
+            la renderización mientras está montado para evitar duplicado
+            con el overlay por defecto. */}
+        <BlindKeyboardSlot />
       </View>
     </Modal>
   );

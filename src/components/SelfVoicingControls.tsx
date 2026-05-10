@@ -11,6 +11,7 @@ import {
 import { selfVoicingPress, buttonRegistry, remeasureBus, blindNav } from '../utils/selfVoicingPress';
 import { speechQueue } from '../services/speechQueueService';
 import { announceTyping } from '../utils/typingAnnounce';
+import { useBlindKeyboardActivation } from '../contexts/BlindKeyboardContext';
 
 // Wrappers que aplican el modelo de self-voicing a controles de UI dentro
 // de modales (ButtonEditModal, SettingsScreen abierto desde Terminal). Cada
@@ -65,10 +66,24 @@ export function SelfVoicingTouchable({
     return selfVoicingPress.subscribe(update);
   }, [svActive, fullKey]);
 
+  // onPress por ref para que `measureAndRegister` no dependa del callback
+  // del caller (típicamente recreado en cada render). Mismo patrón que
+  // SelfVoicingRow.
+  const onPressRef = useRef(onPress);
+  useEffect(() => { onPressRef.current = onPress; }, [onPress]);
+
   const measureAndRegister = useCallback(() => {
     if (!svActive) return;
     ref.current?.measure((_x, _y, w, h, pageX, pageY) => {
       buttonRegistry.register(fullKey, { x: pageX, y: pageY, w, h }, svLabel, undefined, svScope, svSequential);
+      // Registramos onActivate para que el modelo BlindNav (audiogame —
+      // swipes para navegar + tap para activar, vía BlindGestureContainer)
+      // pueda activar este botón. Sin esto, el tap del BlindGestureContainer
+      // llamaría a `blindNav.activate()` pero `entry.onActivate` sería
+      // undefined y el botón quedaría "navegable pero no activable".
+      buttonRegistry.setActions(fullKey, {
+        onActivate: () => onPressRef.current?.(),
+      });
     });
   }, [svActive, fullKey, svLabel, svScope, svSequential]);
 
@@ -129,6 +144,10 @@ interface SelfVoicingTextInputProps extends TextInputProps {
   // focus() al activar un row contenedor (modelo BlindNav: tap en el row
   // enfoca el input). Recibe null al desmontar.
   svInputRef?: (node: TextInput | null) => void;
+  // Callback opcional cuando el usuario pulsa Enter en el teclado custom
+  // blind. Recibe el valor actual. Default: blur del input + anuncio
+  // "[svLabel] establecido como :[value]:".
+  svOnSubmit?: (value: string) => void;
 }
 
 export function SelfVoicingTextInput({
@@ -138,8 +157,10 @@ export function SelfVoicingTextInput({
   svLabel,
   svValueRead = true,
   svInputRef,
+  svOnSubmit,
   onLayout,
   onFocus,
+  onBlur,
   onChangeText,
   value,
   ...rest
@@ -160,6 +181,33 @@ export function SelfVoicingTextInput({
     onChangeText?.(text);
   }, [svActive, onChangeText]);
 
+  // Cuando svActive=true, el TextInput debe usar el teclado custom blind
+  // en lugar del nativo. `useBlindKeyboardActivation` registra/desregistra
+  // los handlers en el provider según foco; el overlay del teclado lo
+  // muestra automáticamente. `setValue` se mapea a `onChangeText`.
+  const blindKb = useBlindKeyboardActivation({
+    enabled: svActive,
+    textInputRef: ref,
+    value: typeof value === 'string' ? value : '',
+    setValue: (v: string) => {
+      if (svActive) announceTyping(lastValueRef.current, v);
+      lastValueRef.current = v;
+      onChangeText?.(v);
+    },
+    onSubmit: () => {
+      // Enter en el teclado custom: cierra teclado (blur) y anuncia el
+      // valor establecido. Si el caller define `svOnSubmit`, delega ahí
+      // (puede saltar al siguiente campo, etc.).
+      const currentValue = lastValueRef.current;
+      ref.current?.blur();
+      if (svOnSubmit) {
+        svOnSubmit(currentValue);
+      } else if (svActive) {
+        speechQueue.enqueue(`${svLabel} establecido como: ${currentValue || 'vacío'}`, 'high');
+      }
+    },
+  });
+
   // El TextInput NO se auto-registra en buttonRegistry: el caller siempre
   // lo envuelve en un `SelfVoicingRow` que ya cubre el área del input,
   // anuncia el label completo al recibir foco y al activarlo hace focus()
@@ -173,12 +221,18 @@ export function SelfVoicingTextInput({
 
   const handleFocus = useCallback((e: any) => {
     onFocus?.(e);
+    blindKb.onFocus();
     if (!svActive) return;
     const announceText = svValueRead && value
       ? `${svLabel}: ${value}`
       : svLabel;
     speechQueue.enqueue(announceText, 'high');
-  }, [svActive, svLabel, svValueRead, value, onFocus]);
+  }, [svActive, svLabel, svValueRead, value, onFocus, blindKb]);
+
+  const handleBlur = useCallback((e: any) => {
+    onBlur?.(e);
+    blindKb.onBlur();
+  }, [onBlur, blindKb]);
 
   return (
     <TextInput
@@ -187,7 +241,9 @@ export function SelfVoicingTextInput({
       value={value}
       onLayout={handleLayout}
       onFocus={handleFocus}
+      onBlur={handleBlur}
       onChangeText={handleChangeText}
+      showSoftInputOnFocus={blindKb.showSoftInputOnFocus}
     />
   );
 }
@@ -345,12 +401,31 @@ export function SelfVoicingRow({
     return remeasureBus.subscribe(measureAndRegister);
   }, [svActive, measureAndRegister]);
 
+  // Borde visual cuando este row es el item activo de blindNav. Permite
+  // ver el foco a usuarios con visión parcial / desarrolladores debugando.
+  // Suscripción separada de selfVoicingPress.focusedKey (que es para el
+  // modelo TalkBack-style de selfVoicingPress.tap, distinto al blindNav).
+  const [hasNavFocus, setHasNavFocus] = useState(false);
+  useEffect(() => {
+    if (!svActive) {
+      setHasNavFocus(false);
+      return;
+    }
+    const update = (key: string | null) => setHasNavFocus(key === fullKey);
+    update(blindNav.getCurrentKey());
+    return blindNav.subscribe(update);
+  }, [svActive, fullKey]);
+
   if (!svActive) {
     return <View style={style}>{children}</View>;
   }
 
   return (
-    <View ref={ref} onLayout={measureAndRegister} style={style}>
+    <View
+      ref={ref}
+      onLayout={measureAndRegister}
+      style={[style, hasNavFocus && { borderColor: '#00ffff', borderWidth: 3 }]}
+    >
       <View pointerEvents="none">{children}</View>
     </View>
   );

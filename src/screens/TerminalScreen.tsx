@@ -296,13 +296,11 @@ export function TerminalScreen({ route, navigation }: Props) {
   // dispara `doubletap_hold_swipe_X`. Si se suelta sin moverse, no dispara
   // nada (eliminamos el doubletap-simple del sistema). Reset en release.
   const doubleTapHoldRef = useRef(false);
-  // Hover-hold: longpress disparado por drag-explore. El usuario arrastra
-  // hasta un botón y se queda quieto sobre él 800 ms — al cumplir el
-  // umbral, ARMAMOS un callback en `pendingHoverLongPressRef` y damos un
-  // aviso de audio. El editor se abre solo cuando el usuario LEVANTA el
-  // dedo (en `onTouchEnd`), no mientras todavía mantiene. Si antes de
-  // soltar el foco cambia o el dedo sale a zona vacía, se cancela el
-  // pending — no se abre nada.
+  // Hover-hold legacy: drag-explore + 800ms quieto sobre un botón armaba
+  // el editor. Sustituido por chord doble-tap+hold en ButtonGrid (más
+  // deliberado, no se dispara al pausar accidentalmente sobre un botón
+  // mientras exploras). Refs mantenidos como null defensivos — el
+  // touchEnd los chequea pero ya nadie los arma.
   const hoverHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingHoverLongPressRef = useRef<(() => void) | null>(null);
   // Swipe direccional sobre la botonera (blind+selfVoicing). Trackeamos el
@@ -2350,8 +2348,23 @@ export function TerminalScreen({ route, navigation }: Props) {
       // PanResponders existentes. Además gestiona el hover-hold timer:
       // 800 ms quieto sobre un botón después de drag = longpress.
       onTouchStart={selfVoicingActive ? (evt) => {
+        // Cuando un modal con su propio scope (ButtonEdit, Settings, etc.)
+        // está activo, sus gestos los maneja BlindGestureContainer dentro
+        // del modal. El SafeAreaView del Terminal NO debe procesar swipes
+        // ni drag-explore — sus plain onTouch* siguen burbujeando porque
+        // no los bloquea el PanResponder hijo, y eso provoca colisiones
+        // (e.g. "Sin botón" del swipe direccional pisa los anuncios del
+        // modal). Reservamos los handlers para scope='default' (Terminal).
+        if (buttonRegistry.getActiveScope() !== 'default') return;
         const t = evt.nativeEvent.touches?.[0];
         if (!t) return;
+        // Solo procesamos swipe self-voicing y drag-explore si el touch
+        // empieza sobre un botón de la botonera. Si empieza en otra zona
+        // (terminal, channels), dejamos que sus PanResponders propios
+        // procesen los gestos. swipeStartRef queda null y `onTouchMove` /
+        // `onTouchEnd` lo usan como gate para no interferir.
+        const startHit = buttonRegistry.findAtPoint(t.pageX, t.pageY);
+        if (!startHit) return;
         swipeStartRef.current = { x: t.pageX, y: t.pageY, t: Date.now() };
         swipeFastModeRef.current = false;
         // Capturamos el foco actual para usar como ANCHOR del swipe — al
@@ -2359,9 +2372,14 @@ export function TerminalScreen({ route, navigation }: Props) {
         // El foco actual ya refleja dónde apoyó el dedo (el sistema marca
         // foco al hover); si justo antes del touchstart el usuario tenía
         // foco en otro botón por blind-nav, también es un anchor válido.
-        swipeStartFocusKeyRef.current = selfVoicingPress.getFocusedKey();
+        swipeStartFocusKeyRef.current = selfVoicingPress.getFocusedKey() ?? startHit.key;
       } : undefined}
       onTouchMove={selfVoicingActive ? (evt) => {
+        if (buttonRegistry.getActiveScope() !== 'default') return;
+        // Gate: si onTouchStart no detectó botón bajo el dedo (touch en
+        // terminal o zona vacía), no interferimos con drag-explore ni
+        // velocidad. El PanResponder del terminal procesa sus gestos.
+        if (!swipeStartRef.current) return;
         // Si hay un modal abierto que NO migró todavía a scopes, el
         // `buttonRegistry.activeScope` sigue siendo 'default' y los
         // botones del Terminal se anunciarían bajo el modal (no son
@@ -2380,10 +2398,13 @@ export function TerminalScreen({ route, navigation }: Props) {
         const t = evt.nativeEvent.touches?.[0];
         if (!t) return;
 
-        // Detección de swipe rápido. Si la velocidad cruza el umbral en
-        // cualquier momento, sellamos el modo y dejamos de hacer
+        // Detección de swipe direccional. Si la velocidad cruza el umbral
+        // en cualquier momento, sellamos el modo y dejamos de hacer
         // drag-explore (no anunciamos los botones intermedios). El swipe
         // se resuelve en onTouchEnd usando la dirección dominante.
+        // Umbral 0.8 px/ms (= 800 px/s): permisivo para que el usuario no
+        // tenga que ser excesivamente rápido. Drag-explore deliberado va a
+        // 0.2-0.4 px/ms, así que el margen evita falsos positivos.
         const start = swipeStartRef.current;
         if (start) {
           const elapsed = Date.now() - start.t;
@@ -2391,7 +2412,7 @@ export function TerminalScreen({ route, navigation }: Props) {
             const dx = t.pageX - start.x;
             const dy = t.pageY - start.y;
             const velocity = Math.hypot(dx, dy) / elapsed;
-            if (velocity > 1.5) {
+            if (velocity > 0.8) {
               swipeFastModeRef.current = true;
               // Cancelamos hover-hold timer — el usuario está haciendo un
               // swipe, no manteniendo el dedo quieto.
@@ -2415,20 +2436,12 @@ export function TerminalScreen({ route, navigation }: Props) {
             // onLongPress).
             if (hoverHoldTimerRef.current) clearTimeout(hoverHoldTimerRef.current);
             pendingHoverLongPressRef.current = null;
-            const cb = hit.onLongPress;
-            const hitLabel = hit.label;
-            if (cb) {
-              hoverHoldTimerRef.current = setTimeout(() => {
-                // 800 ms en el mismo botón: ARMAMOS pending. Editor se
-                // abre en touchEnd. Audio cue: el usuario sabe que ya
-                // puede soltar.
-                pendingHoverLongPressRef.current = cb;
-                speechQueue.enqueue(`Suelta para editar ${hitLabel}`, 'high');
-                hoverHoldTimerRef.current = null;
-              }, 800);
-            } else {
-              hoverHoldTimerRef.current = null;
-            }
+            // Drag-explore en self-voicing solo navega/anuncia. La edición
+            // exige el chord doble-tap+hold del PanResponder de la celda
+            // (ver ButtonGrid). Antes había un hoverHold de 800ms aquí que
+            // armaba el editor por hover-hold; se eliminó para evitar que
+            // el "longpress normal" abriera el editor.
+            hoverHoldTimerRef.current = null;
           }
         } else {
           // Dedo sobre zona vacía: cancelar timer + pending. El usuario
@@ -2441,6 +2454,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         }
       } : undefined}
       onTouchEnd={selfVoicingActive ? (evt) => {
+        if (buttonRegistry.getActiveScope() !== 'default') return;
         if (hoverHoldTimerRef.current) {
           clearTimeout(hoverHoldTimerRef.current);
           hoverHoldTimerRef.current = null;

@@ -91,24 +91,49 @@ function ButtonCell({
   const isDraggingRef = useRef(false);
   const isLongPressTriggeredRef = useRef(false);
   const cellViewRef = useRef<View>(null);
+  // Modo self-voicing: para abrir el editor exigimos doble-tap+mantener
+  // (chord) en vez de longpress simple. `firstTapAtRef` guarda el ts del
+  // primer tap (solo si fue un tap "limpio" — sin drag, sin armar). El
+  // siguiente Grant en este mismo cell dentro de la ventana lo trata como
+  // segundo tap y arma el timer del hold.
+  const firstTapAtRef = useRef<number | null>(null);
+  // Anuncio diferido del primer tap. Sin esto, el primer tap del chord
+  // doble-tap+hold lee el label inmediatamente — el usuario que sí va a
+  // editar oye el nombre antes de que sepamos si es chord. Con timer:
+  // esperamos la ventana de doble-tap; si llega un segundo Grant, el
+  // anuncio se cancela. Si no llega, el timer dispara el anuncio.
+  const pendingTapAnnounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Marca en Grant cuando detectamos que esta es la segunda pulsación
+  // del chord. En Release lo usamos para saltar el delay del anuncio
+  // (segundo tap NO debe anunciar — fue parte de chord).
+  const isSecondTapRef = useRef(false);
+  // Ventana entre el primer lift y el segundo grant del chord. 500 ms da
+  // margen cómodo a usuarios ciegos que necesitan localizar la celda; bajar
+  // de aquí hace que se sienta exigente (reportado por el usuario).
+  const DOUBLE_TAP_WINDOW_MS = 500;
+  const SECOND_TAP_HOLD_MS = 600;
+  const LEGACY_LONGPRESS_MS = 800;
   // Key estable para el registro global usado por drag-explore. Prefijo
   // `default:` indica que pertenece al scope principal del Terminal — los
   // modales (ButtonEditModal, SettingsScreen) usan otros prefijos para
   // evitar colisiones y filtrarse correctamente cuando ese modal está
   // activo (`buttonRegistry.activeScope`).
-  const registryKey = button ? `default:cell-${col}-${row}-${button.label || button.command || ''}` : null;
+  // Registramos TODAS las celdas (con o sin botón) cuando self-voicing
+  // está activo. Esto permite que swipes y drag-explore sobre la botonera
+  // funcionen también sobre huecos vacíos — el chord doble-tap+hold sobre
+  // un hueco abre el editor para crear un botón nuevo en esa posición.
+  // Las celdas vacías se anuncian como "vacío".
+  const registryKey = button
+    ? `default:cell-${col}-${row}-${button.label || button.command || ''}`
+    : `default:cell-${col}-${row}-empty`;
 
-  // Registro/desregistro en buttonRegistry para que el drag-explore del
-  // SafeAreaView del TerminalScreen pueda anunciar este botón al pasar el
-  // dedo encima. Solo registramos si self-voicing está activo Y la celda
-  // tiene botón. measureInWindow da coordenadas absolutas de pantalla.
   useEffect(() => {
-    if (!selfVoicingActive || !registryKey || !button) return;
+    if (!selfVoicingActive || !registryKey) return;
     return () => buttonRegistry.unregister(registryKey);
-  }, [selfVoicingActive, registryKey, button]);
+  }, [selfVoicingActive, registryKey]);
 
   const handleLayoutForRegistry = useCallback(() => {
-    if (!selfVoicingActive || !registryKey || !button) return;
+    if (!selfVoicingActive || !registryKey) return;
     // Usamos `measure` y los valores `pageX/pageY` que devuelve, no
     // `measureInWindow`. Los `pageX/pageY` están documentados para
     // coincidir con los del MotionEvent (`evt.nativeEvent.pageX/pageY`)
@@ -116,15 +141,15 @@ function ButtonCell({
     // puede divergir en Android con la status bar oculta o flag
     // translúcido — coordenadas window vs page no son idénticas.
     cellViewRef.current?.measure((_x, _y, w, h, pageX, pageY) => {
-      // Pasamos `onEditButton` como `onLongPress` (a no ser que el botón
-      // sea fixed) para que el SafeAreaView pueda disparar longpress por
-      // hover-hold sobre este botón cuando el usuario llega vía drag y se
-      // queda quieto sobre él 800 ms.
-      const longPressAction = !button.fixed ? () => onEditButton() : undefined;
+      // onLongPress (= chord doble-tap+hold disparado por el SafeAreaView):
+      // abre el editor. Botones `fixed` lo bloquean (p.ej. el switch de
+      // paneles); huecos vacíos siempre lo aceptan (sirve para crear).
+      const longPressAction = (!button || !button.fixed) ? () => onEditButton() : undefined;
+      const label = button ? (button.label || button.command || '') : 'vacío';
       buttonRegistry.register(
         registryKey,
         { x: pageX, y: pageY, w, h },
-        button.label || button.command || '',
+        label,
         longPressAction,
         'default',
       );
@@ -145,6 +170,21 @@ function ButtonCell({
     return selfVoicingPress.subscribe(update);
   }, [selfVoicingActive, registryKey]);
 
+  // Limpiar timers pendientes al desmontar para no disparar callbacks
+  // sobre props/state stale.
+  useEffect(() => {
+    return () => {
+      if (pendingTapAnnounceTimerRef.current) {
+        clearTimeout(pendingTapAnnounceTimerRef.current);
+        pendingTapAnnounceTimerRef.current = null;
+      }
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const panResponder = useMemo(
     () =>
       PanResponder.create({
@@ -158,11 +198,40 @@ function ButtonCell({
           isDraggingRef.current = false;
           isLongPressTriggeredRef.current = false;
 
+          // Cualquier Grant cancela el anuncio diferido del tap previo —
+          // si el usuario está volviendo a tocar este (o cualquier) cell,
+          // ya no queremos que aparezca el anuncio del tap 1.
+          if (pendingTapAnnounceTimerRef.current) {
+            clearTimeout(pendingTapAnnounceTimerRef.current);
+            pendingTapAnnounceTimerRef.current = null;
+          }
+
+          // Detección del segundo tap del chord (self-voicing). Si el
+          // primer tap fue reciente sobre esta misma celda, este Grant es
+          // el "tap 2": arrancamos el timer del hold (más corto que el
+          // longpress legacy porque el gesto ya es deliberado).
+          const now = Date.now();
+          const isSecondTap =
+            selfVoicingActive &&
+            firstTapAtRef.current !== null &&
+            (now - firstTapAtRef.current) < DOUBLE_TAP_WINDOW_MS;
+          if (isSecondTap) {
+            firstTapAtRef.current = null;
+          }
+          isSecondTapRef.current = isSecondTap;
+
+          // En self-voicing solo arrancamos el hold-timer en el segundo
+          // tap. En modos no-self-voicing, longpress simple legacy de
+          // 800ms (sin cambio).
+          const shouldStartHoldTimer = !selfVoicingActive || isSecondTap;
+          if (!shouldStartHoldTimer) return;
+
+          const holdMs = isSecondTap ? SECOND_TAP_HOLD_MS : LEGACY_LONGPRESS_MS;
           longPressTimerRef.current = setTimeout(() => {
-            // 800 ms cumplidos: ARMAMOS el longpress. NO abrimos el editor
+            // Hold cumplido: ARMAMOS el longpress. NO abrimos el editor
             // todavía — el editor se abre en `onPanResponderRelease` solo
-            // si el usuario suelta sin haberse movido. Si se mueve antes de
-            // soltar, en `onPanResponderMove` se cancela el flag.
+            // si el usuario suelta sin haberse movido. Si se mueve antes
+            // de soltar, en `onPanResponderMove` se cancela el flag.
             isLongPressTriggeredRef.current = true;
             // Audio cue del cruce del umbral: el usuario sabe que ya puede
             // soltar para confirmar (o moverse para cancelar).
@@ -174,7 +243,7 @@ function ButtonCell({
                 speechQueue.enqueue('Suelta para crear botón nuevo', 'high');
               }
             }
-          }, 800);
+          }, holdMs);
         },
         onPanResponderMove: (evt) => {
           // Si el dedo se mueve más allá del umbral, cancelamos tanto el
@@ -229,6 +298,9 @@ function ButtonCell({
             // en el último botón hovered vía `setFocusFromHover` desde el
             // SafeAreaView padre. Saltamos sin hacer nada más.
             if (selfVoicingActive) {
+              // Drag invalida el primer tap del chord — el usuario no está
+              // haciendo doble-tap.
+              firstTapAtRef.current = null;
               return;
             }
             // Modo completo / blind+TalkBack: drag = secondary command.
@@ -262,8 +334,58 @@ function ButtonCell({
             // primer tap (foco) + segundo tap (ejecuta) automáticamente.
             // El foco también se mueve por drag-explore (ver buttonRegistry
             // y onTouchMove del SafeAreaView de TerminalScreen).
-            if (selfVoicingActive && button && registryKey) {
-              selfVoicingPress.tap(true, registryKey, button.label || button.command || '', executePrimary);
+            //
+            // Las celdas VACÍAS también participan en el ciclo de chord —
+            // primer tap enfoca + anuncia "vacío", chord (doble-tap+hold)
+            // abre el editor para crear un botón. La diferencia con celdas
+            // con botón es que las vacías no tienen primary que ejecutar.
+            if (selfVoicingActive && registryKey) {
+              const isSecondTap = isSecondTapRef.current;
+              isSecondTapRef.current = false;
+              const cellLabel = button ? (button.label || button.command || '') : 'vacío';
+              const tapAction = button ? executePrimary : () => {};
+              if (isSecondTap) {
+                // Segundo tap del chord pero release rápido (no llegó al
+                // hold). Para celdas con botón = ejecutar primary; para
+                // huecos vacíos = no-op (no hay primary). El chord real
+                // ya se habría disparado vía hold timer + onEditButton.
+                tapAction();
+              } else if (selfVoicingPress.getFocusedKey() === registryKey) {
+                // Foco coincide → execute (no-op si vacía) sin re-anuncio.
+                // ADEMÁS registramos firstTap para que un siguiente tap+hold
+                // pueda disparar el chord. Antes el foco previo (p.ej. tras
+                // navegar por swipe a la celda) bloqueaba el ciclo: primer
+                // tap caía aquí sin armar firstTap, y el chord nunca llegaba.
+                tapAction();
+                const ts = Date.now();
+                firstTapAtRef.current = ts;
+                setTimeout(() => {
+                  if (firstTapAtRef.current === ts) firstTapAtRef.current = null;
+                }, DOUBLE_TAP_WINDOW_MS);
+              } else {
+                // Primer tap sobre celda no enfocada. NO anunciamos todavía
+                // — esperamos la ventana de doble-tap por si llega un
+                // segundo Grant que dispare el chord. Si pasa la ventana
+                // sin más toques, el timer hace `selfVoicingPress.tap`
+                // (que entonces solo enfoca + anuncia, ya que en ese
+                // momento el foco no es esta key).
+                if (pendingTapAnnounceTimerRef.current) {
+                  clearTimeout(pendingTapAnnounceTimerRef.current);
+                }
+                pendingTapAnnounceTimerRef.current = setTimeout(() => {
+                  pendingTapAnnounceTimerRef.current = null;
+                  selfVoicingPress.tap(true, registryKey, cellLabel, tapAction);
+                }, DOUBLE_TAP_WINDOW_MS);
+                // Marcamos como primer tap del chord. PanResponderGrant
+                // del próximo touch dentro de la ventana lo detectará como
+                // segundo tap; al hacerlo, también cancela el timer de
+                // arriba (cancelando el anuncio).
+                const ts = Date.now();
+                firstTapAtRef.current = ts;
+                setTimeout(() => {
+                  if (firstTapAtRef.current === ts) firstTapAtRef.current = null;
+                }, DOUBLE_TAP_WINDOW_MS);
+              }
             } else {
               executePrimary();
             }
