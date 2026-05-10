@@ -23,6 +23,7 @@ import {
 } from '../storage/customSoundsStorage';
 import { loadPacks } from '../storage/triggerStorage';
 import { useSounds } from '../contexts/SoundContext';
+import { useBackGesture } from '../utils/useBackGesture';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MySounds'>;
 
@@ -51,6 +52,7 @@ export function MySoundsScreen({ navigation }: Props) {
   const [renameTarget, setRenameTarget] = useState<CustomSound | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const { playSound } = useSounds();
+  const backGesture = useBackGesture(() => navigation.goBack());
 
   const refresh = useCallback(async () => {
     const [list, packList] = await Promise.all([loadCustomSounds(), loadPacks()]);
@@ -122,7 +124,7 @@ export function MySoundsScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']} {...backGesture}>
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}

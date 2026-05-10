@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types';
 import { BlindGestureContainer, SelfVoicingRow, SelfVoicingTouchable } from '../../components/SelfVoicingControls';
+import { useBackGesture } from '../../utils/useBackGesture';
 import { AccessibleSelectModal, AccessibleSelectOption } from '../../components/AccessibleSelectModal';
 import { requestNotificationPermission, openNotificationSettings } from '../../services/foregroundService';
 import { logService, ExportRange, slugifyServerName } from '../../services/logService';
@@ -63,6 +64,7 @@ export function SettingsSystemScreen({ navigation, route }: Props) {
   useSettingsScope(SCOPE, settingsSelfVoicingActive);
   const { scrollViewRef, onScroll, onLayout } = useBlindNavAutoScroll(blindNavActive);
   const welcome = useSettingsWelcomeMessage('Sistema');
+  const backGesture = useBackGesture(() => navigation.goBack());
 
   // Codificación solo se puede cambiar fuera del MUD (cambiarla mid-session
   // dejaría el socket leyendo bytes con el encoding nuevo).
@@ -121,6 +123,7 @@ export function SettingsSystemScreen({ navigation, route }: Props) {
       style={s.container}
       edges={['top', 'left', 'right', 'bottom']}
       importantForAccessibility={settingsSelfVoicingActive ? 'no-hide-descendants' : 'auto'}
+      {...backGesture}
     >
       <BlindGestureContainer active={blindNavActive} welcomeMessage={welcome} style={{ flex: 1 }}>
         <View style={s.header}>

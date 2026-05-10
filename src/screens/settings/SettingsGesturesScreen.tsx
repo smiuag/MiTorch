@@ -5,6 +5,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, GestureConfig, GestureAction, GesturePickSource } from '../../types';
 import { DEFAULT_SETTINGS } from '../../storage/settingsStorage';
 import { useSettings, settingsStyles as s } from './settingsShared';
+import { useBackGesture } from '../../utils/useBackGesture';
 import { pickSourceLabel } from '../../utils/gesturePickSources';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SettingsGestures'>;
@@ -97,6 +98,7 @@ function changeActionKind(prev: GestureAction, kind: GestureAction['kind']): Ges
 export function SettingsGesturesScreen({ navigation, route }: Props) {
   const sourceLocation = route.params?.sourceLocation ?? 'serverlist';
   const { settings, updateSetting } = useSettings(sourceLocation);
+  const backGesture = useBackGesture(() => navigation.goBack());
 
   const gestures: GestureConfig[] = (() => {
     let gs = settings.gestures || [];
@@ -110,7 +112,7 @@ export function SettingsGesturesScreen({ navigation, route }: Props) {
   })();
 
   return (
-    <SafeAreaView style={s.container} edges={['top', 'left', 'right', 'bottom']}>
+    <SafeAreaView style={s.container} edges={['top', 'left', 'right', 'bottom']} {...backGesture}>
       <View style={s.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}

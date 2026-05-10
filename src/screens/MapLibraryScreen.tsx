@@ -23,6 +23,7 @@ import {
   deleteMap,
 } from '../storage/mapLibraryStorage';
 import { parseMudletJson, DirectionPreset } from '../services/mudletMapParser';
+import { useBackGesture } from '../utils/useBackGesture';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MyMaps'>;
 
@@ -33,6 +34,7 @@ interface PendingImport {
 
 export function MapLibraryScreen({ navigation }: Props) {
   const [entries, setEntries] = useState<MapLibraryEntry[]>([]);
+  const backGesture = useBackGesture(() => navigation.goBack());
   const [renameTarget, setRenameTarget] = useState<MapLibraryEntry | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [pending, setPending] = useState<PendingImport | null>(null);
@@ -160,7 +162,7 @@ export function MapLibraryScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']} {...backGesture}>
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}

@@ -5,6 +5,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Tts from 'react-native-tts';
 import { RootStackParamList } from '../../types';
 import { BlindGestureContainer, SelfVoicingRow, SelfVoicingTouchable } from '../../components/SelfVoicingControls';
+import { useBackGesture } from '../../utils/useBackGesture';
 import { VolumeAdjuster } from '../../components/VolumeAdjuster';
 import { AccessibleSelectModal, AccessibleSelectOption } from '../../components/AccessibleSelectModal';
 import { speechQueue } from '../../services/speechQueueService';
@@ -50,6 +51,7 @@ export function SettingsGeneralScreen({ navigation, route }: Props) {
   useSettingsScope(SCOPE, settingsSelfVoicingActive);
   const { scrollViewRef, onScroll, onLayout } = useBlindNavAutoScroll(blindNavActive);
   const welcome = useSettingsWelcomeMessage('General');
+  const backGesture = useBackGesture(() => navigation.goBack());
 
   // Self-voicing show condition: solo en blind
   const showVoice = settings.uiMode === 'blind';
@@ -88,6 +90,7 @@ export function SettingsGeneralScreen({ navigation, route }: Props) {
       style={s.container}
       edges={['top', 'left', 'right', 'bottom']}
       importantForAccessibility={settingsSelfVoicingActive ? 'no-hide-descendants' : 'auto'}
+      {...backGesture}
     >
       <BlindGestureContainer active={blindNavActive} welcomeMessage={welcome} style={{ flex: 1 }}>
         <View style={s.header}>

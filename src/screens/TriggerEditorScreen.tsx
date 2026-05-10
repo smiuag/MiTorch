@@ -16,11 +16,13 @@ import { RootStackParamList, Trigger, TriggerPack, ServerProfile } from '../type
 import { loadPacks, upsertPack, newTriggerId } from '../storage/triggerStorage';
 import { loadServers } from '../storage/serverStorage';
 import { TriggerEditModal } from '../components/TriggerEditModal';
+import { useBackGesture } from '../utils/useBackGesture';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TriggerEditor'>;
 
 export function TriggerEditorScreen({ route, navigation }: Props) {
   const { packId, autoOpenTriggerId } = route.params;
+  const backGesture = useBackGesture(() => navigation.goBack());
   const [pack, setPack] = useState<TriggerPack | null>(null);
   const [editingTrigger, setEditingTrigger] = useState<Trigger | null>(null);
   const [editorVisible, setEditorVisible] = useState(false);
@@ -140,14 +142,14 @@ export function TriggerEditorScreen({ route, navigation }: Props) {
 
   if (!pack) {
     return (
-      <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']} {...backGesture}>
         <Text style={styles.loadingText}>Cargando…</Text>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']} {...backGesture}>
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}

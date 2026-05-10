@@ -23,6 +23,7 @@ import { CustomSound, loadCustomSounds } from '../storage/customSoundsStorage';
 import { ambientPlayer } from '../services/ambientPlayer';
 import { categorizeRoom, listCategories } from '../services/roomCategorizer';
 import { useSounds } from '../contexts/SoundContext';
+import { useBackGesture } from '../utils/useBackGesture';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MyAmbients'>;
 
@@ -75,6 +76,7 @@ export function MyAmbientsScreen({ navigation }: Props) {
   const [expanded, setExpanded] = useState<RoomCategory | null>(null);
   const [pickerCategory, setPickerCategory] = useState<RoomCategory | null>(null);
   const { playSound } = useSounds();
+  const backGesture = useBackGesture(() => navigation.goBack());
 
   const refresh = useCallback(async () => {
     const [m, s, cs] = await Promise.all([
@@ -149,14 +151,14 @@ export function MyAmbientsScreen({ navigation }: Props) {
 
   if (!mappings || !counts) {
     return (
-      <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']} {...backGesture}>
         <Text style={styles.loading}>Cargando…</Text>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']} {...backGesture}>
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}

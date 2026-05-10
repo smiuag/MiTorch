@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types';
 import { BlindGestureContainer, SelfVoicingRow, SelfVoicingTouchable } from '../../components/SelfVoicingControls';
+import { useBackGesture } from '../../utils/useBackGesture';
 import { DEFAULT_SETTINGS } from '../../storage/settingsStorage';
 import {
   useSettings,
@@ -24,6 +25,7 @@ export function SettingsAdvancedScreen({ navigation, route }: Props) {
   useSettingsScope(SCOPE, settingsSelfVoicingActive);
   const { scrollViewRef, onScroll, onLayout } = useBlindNavAutoScroll(blindNavActive);
   const welcome = useSettingsWelcomeMessage('Avanzado');
+  const backGesture = useBackGesture(() => navigation.goBack());
 
   // Gestos en blind+TalkBack (sin self-voicing) los consume el lector — el
   // editor se vuelve inutilizable. Replicamos el gating del Settings antiguo.
@@ -46,6 +48,7 @@ export function SettingsAdvancedScreen({ navigation, route }: Props) {
       style={s.container}
       edges={['top', 'left', 'right', 'bottom']}
       importantForAccessibility={settingsSelfVoicingActive ? 'no-hide-descendants' : 'auto'}
+      {...backGesture}
     >
       <BlindGestureContainer active={blindNavActive} welcomeMessage={welcome} style={{ flex: 1 }}>
         <View style={s.header}>

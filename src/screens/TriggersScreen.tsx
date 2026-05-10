@@ -16,11 +16,13 @@ import * as Sharing from 'expo-sharing';
 import { RootStackParamList, TriggerPack } from '../types';
 import { loadPacks, savePacks, newPackId, deletePack as removePack, duplicatePack } from '../storage/triggerStorage';
 import { exportPackToZip } from '../services/triggerPackExport';
+import { useBackGesture } from '../utils/useBackGesture';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Triggers'>;
 
 export function TriggersScreen({ navigation }: Props) {
   const [packs, setPacks] = useState<TriggerPack[]>([]);
+  const backGesture = useBackGesture(() => navigation.goBack());
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [newPackName, setNewPackName] = useState('');
 
@@ -96,7 +98,7 @@ export function TriggersScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']} {...backGesture}>
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}

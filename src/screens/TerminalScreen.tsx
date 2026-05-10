@@ -20,7 +20,7 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import { useKeepAwake } from 'expo-keep-awake';
 import { startBackgroundConnection, stopBackgroundConnection } from '../services/foregroundService';
 import TorchZhylaForeground, { addWalkStepListener, addWalkDoneListener } from '../../modules/torchzhyla-foreground';
 import { fireNotification, stripAnsi } from '../services/notificationService';
@@ -102,6 +102,15 @@ const MOVEMENT_FIRST_WORDS = new Set<string>([
   // Verbos de movimiento que toman una dirección como argumento
   'sigilar', 'escabullir', 'correr', 'huir', 'saltar',
 ]);
+
+// Activa el keep-awake mientras esté montado. Se renderiza condicionalmente
+// desde TerminalScreen para que el lifecycle de mount/unmount lo aplique y
+// retire automáticamente. Usar este patrón en lugar del imperativo evita el
+// fallo de FLAG_KEEP_SCREEN_ON perdido al pausar la Activity.
+function KeepAwakeWhileActive() {
+  useKeepAwake('mud-session');
+  return null;
+}
 
 export function TerminalScreen({ route, navigation }: Props) {
   const { width, height } = useWindowDimensions();
@@ -1401,14 +1410,13 @@ export function TerminalScreen({ route, navigation }: Props) {
     cancelSelection();
   }, [lines, selectionRange, cancelSelection]);
 
-  useEffect(() => {
-    if (connected && keepAwakeEnabled) {
-      activateKeepAwakeAsync('mud-session');
-      return () => {
-        deactivateKeepAwake('mud-session');
-      };
-    }
-  }, [connected, keepAwakeEnabled]);
+  // Keep-awake vía hook en componente hijo. El imperativo
+  // activateKeepAwakeAsync/deactivateKeepAwake en useEffect tenía un fallo
+  // observable en Android: cuando la Activity se pausa brevemente (notif
+  // drawer, recents, navegación a otra screen del Stack) el flag
+  // FLAG_KEEP_SCREEN_ON se pierde y el effect no se vuelve a disparar
+  // (sus deps no cambiaron), así que la pantalla se apagaba sola con la
+  // conexión viva. El hook gestiona mount/unmount correctamente.
 
   useEffect(() => {
     if (connected && backgroundConnectionEnabled) {
@@ -2014,6 +2022,20 @@ export function TerminalScreen({ route, navigation }: Props) {
     setGesturePickerState((s) => ({ ...s, visible: false }));
   };
 
+  // Escape duro del GesturePickerModal: cierra la lista Y vacía el input.
+  // Lo dispara el 2-finger-swipe-down del modal — siempre disponible, no
+  // depende de la configuración de gestos del usuario. Útil cuando el user
+  // disparó un gesto pick por error y el input quedó pre-rellenado por una
+  // acción `prepare` previa, o cuando simplemente quiere abortar.
+  const cancelGesturePickerAndResetPrompt = () => {
+    setGesturePickerState((s) => ({ ...s, visible: false }));
+    setInputText('');
+    setInputSelection({ start: 0, end: 0 });
+    if (uiMode === 'blind') {
+      speechQueue.enqueue('Lista cancelada, comando reseteado', 'high');
+    }
+  };
+
   const triggerGesture = (type: GestureType) => {
     if (!gesturesEnabledRef.current || !gesturesAvailable) return;
     const gesture = gesturesRef.current.find(g => g.type === type && g.enabled);
@@ -2173,14 +2195,27 @@ export function TerminalScreen({ route, navigation }: Props) {
   // `orientation` (legacy pre-migración o slots vacíos) se tratan como
   // 'vertical' por compatibilidad. Blind no filtra por orientation — su
   // layout se transforma en runtime con `blindModeTransforms`.
+  //
+  // Fallback de orientación: si el filtro deja la grid vacía pero la otra
+  // orientación tiene botones, caemos a esa. Cubre el race en el que
+  // `useWindowDimensions` reporta un frame transitorio en la orientación
+  // contraria al lock del OS — sin esto, el usuario veía la grid vacía hasta
+  // forzar un re-render. Más defensivo que jugar con el ciclo de mount.
   const currentOrientation: 'vertical' | 'horizontal' = isHorizontal ? 'horizontal' : 'vertical';
-  const filteredButtons = buttonLayout
-    ? (uiMode === 'blind'
-        ? buttonLayout.buttons.filter(btn => !btn.blindPanel || btn.blindPanel === currentBlindPanel)
-        : buttonLayout.buttons
-            .filter(btn => !btn.completoPanel || btn.completoPanel === currentCompletoPanel)
-            .filter(btn => (btn.orientation ?? 'vertical') === currentOrientation))
-    : [];
+  const filteredButtons = (() => {
+    if (!buttonLayout) return [];
+    if (uiMode === 'blind') {
+      return buttonLayout.buttons.filter(btn => !btn.blindPanel || btn.blindPanel === currentBlindPanel);
+    }
+    const panelButtons = buttonLayout.buttons.filter(
+      btn => !btn.completoPanel || btn.completoPanel === currentCompletoPanel,
+    );
+    const matching = panelButtons.filter(btn => (btn.orientation ?? 'vertical') === currentOrientation);
+    if (matching.length > 0) return matching;
+    const otherOrientation = currentOrientation === 'vertical' ? 'horizontal' : 'vertical';
+    const fallback = panelButtons.filter(btn => (btn.orientation ?? 'vertical') === otherOrientation);
+    return fallback.length > 0 ? fallback : matching;
+  })();
   // Handlers de gestión de paneles del modo completo (modal abierto desde
   // long-press en el switch button).
   const serverPanels = server.panels && server.panels.length >= 2 ? server.panels : [1, 2];
@@ -2302,6 +2337,8 @@ export function TerminalScreen({ route, navigation }: Props) {
     // (el banner detector + el TTS propio toman el control). Sin self-
     // voicing, la prop está en su default ('auto') y los accessibilityLabel
     // se respetan normalmente.
+    <>
+    {connected && keepAwakeEnabled && <KeepAwakeWhileActive />}
     <SafeAreaView
       style={styles.safeArea}
       importantForAccessibility={selfVoicingActive ? 'no-hide-descendants' : 'auto'}
@@ -3399,6 +3436,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         selfVoicingActive={selfVoicingActive}
         onPick={gesturePickerState.onPick}
         onCancel={closeGesturePicker}
+        onCancelAndReset={cancelGesturePickerAndResetPrompt}
       />
 
       {/* Channel Modal */}
@@ -3530,6 +3568,7 @@ export function TerminalScreen({ route, navigation }: Props) {
       <FloatingMessages />
       {uiMode === 'completo' && <CountdownTimers />}
     </SafeAreaView>
+    </>
   );
 }
 

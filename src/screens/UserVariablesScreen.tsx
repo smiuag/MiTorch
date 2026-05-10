@@ -17,6 +17,7 @@ import { isValidUserVarName, userVariablesService } from '../services/userVariab
 import { isPredefinedVariable } from '../utils/variableMap';
 import { loadPacks } from '../storage/triggerStorage';
 import { findTriggersUsingVar, VarUsage } from '../utils/userVariablesUsage';
+import { useBackGesture } from '../utils/useBackGesture';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'UserVariables'>;
 
@@ -31,6 +32,7 @@ export function UserVariablesScreen({ navigation }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [newName, setNewName] = useState('');
+  const backGesture = useBackGesture(() => navigation.goBack());
 
   const refresh = useCallback(async () => {
     // Make sure the persisted declared list is loaded before rendering.
@@ -141,7 +143,7 @@ export function UserVariablesScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']} {...backGesture}>
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}

@@ -30,6 +30,7 @@ import { ambientPlayer } from '../services/ambientPlayer';
 import { triggerEngine } from '../services/triggerEngine';
 import { loadCustomSounds, removeCustomSound } from '../storage/customSoundsStorage';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings } from '../storage/settingsStorage';
+import { useBackGesture } from '../utils/useBackGesture';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ConfigBackup'>;
 
@@ -55,6 +56,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ConfigBackup'>;
 // - Settings: blob completo sustituye al actual.
 
 export function ConfigBackupScreen({ navigation }: Props) {
+  const backGesture = useBackGesture(() => navigation.goBack());
   // ----- Estado de exportación -------------------------------------------
   const [packs, setPacks] = useState<TriggerPack[]>([]);
   const [selectedPackIds, setSelectedPackIds] = useState<Set<string>>(new Set());
@@ -654,7 +656,7 @@ export function ConfigBackupScreen({ navigation }: Props) {
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']} {...backGesture}>
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}

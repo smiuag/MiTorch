@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { Modal, View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Modal, View, Text, TouchableOpacity, ScrollView, StyleSheet, GestureResponderEvent } from 'react-native';
 import { BlindGestureContainer, SelfVoicingRow } from './SelfVoicingControls';
 import { buttonRegistry } from '../utils/selfVoicingPress';
 
@@ -27,10 +27,14 @@ interface GesturePickerModalProps {
   selfVoicingActive: boolean;
   onPick: (option: string) => void;
   onCancel: () => void;
+  // Escape gesture: 2-finger swipe-down sobre el modal cierra la lista Y
+  // resetea el input del Terminal. Siempre activo, independiente de la
+  // configuración de gestos del usuario.
+  onCancelAndReset: () => void;
 }
 
 export function GesturePickerModal({
-  visible, title, options, selfVoicingActive, onPick, onCancel,
+  visible, title, options, selfVoicingActive, onPick, onCancel, onCancelAndReset,
 }: GesturePickerModalProps) {
   // Cambiar el scope activo cuando el modal abre/cierra. Sin esto, los
   // botones del Terminal seguirían siendo navegables por drag-explore aunque
@@ -41,6 +45,46 @@ export function GesturePickerModal({
     buttonRegistry.setActiveScope(PICKER_SCOPE);
     return () => { buttonRegistry.setActiveScope(prev); };
   }, [visible, selfVoicingActive]);
+
+  // Detección de 2-finger-swipe-down sobre el overlay. Los onTouch* burbujean
+  // aunque BlindGestureContainer reclame el responder, así que la captura
+  // funciona en ambos modos (TalkBack/completo y self-voicing). El umbral de
+  // 30px replica el de TerminalScreen.tsx para coherencia.
+  const twoStartRef = useRef({ x: 0, y: 0 });
+  const twoFiredRef = useRef(false);
+
+  const handleTouchStart = (evt: GestureResponderEvent) => {
+    const touches = evt.nativeEvent.touches;
+    if (touches.length === 2) {
+      const [t1, t2] = touches;
+      twoStartRef.current = {
+        x: (t1.pageX + t2.pageX) / 2,
+        y: (t1.pageY + t2.pageY) / 2,
+      };
+      twoFiredRef.current = false;
+    }
+  };
+
+  const handleTouchMove = (evt: GestureResponderEvent) => {
+    if (twoFiredRef.current) return;
+    const touches = evt.nativeEvent.touches;
+    if (touches.length !== 2) return;
+    const [t1, t2] = touches;
+    const cx = (t1.pageX + t2.pageX) / 2;
+    const cy = (t1.pageY + t2.pageY) / 2;
+    const dx = cx - twoStartRef.current.x;
+    const dy = cy - twoStartRef.current.y;
+    if (dy > 30 && Math.abs(dy) > Math.abs(dx)) {
+      twoFiredRef.current = true;
+      onCancelAndReset();
+    }
+  };
+
+  const handleTouchEnd = (evt: GestureResponderEvent) => {
+    if (evt.nativeEvent.touches.length === 0) {
+      twoFiredRef.current = false;
+    }
+  };
 
   const welcomeMessage = options.length > 0
     ? `${title}. ${options.length} opcione${options.length === 1 ? '' : 's'}. Desliza para navegar, toca para elegir.`
@@ -57,6 +101,9 @@ export function GesturePickerModal({
         style={styles.overlay}
         accessibilityViewIsModal
         importantForAccessibility="yes"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
         <BlindGestureContainer
           active={selfVoicingActive}

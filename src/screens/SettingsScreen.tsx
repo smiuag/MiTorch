@@ -8,6 +8,7 @@ import { DEFAULT_SETTINGS } from '../storage/settingsStorage';
 import { speechQueue } from '../services/speechQueueService';
 import { settingsStyles as s } from './settings/settingsShared';
 import { SettingsTerminalScreen } from './settings/SettingsTerminalScreen';
+import { useBackGesture } from '../utils/useBackGesture';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
@@ -29,6 +30,7 @@ export function SettingsScreen(props: Props) {
 function SettingsRootMenu({ navigation, route }: Props) {
   const sourceLocation = route.params?.sourceLocation ?? 'serverlist';
   const [settings, setSettings] = useState<AppSettings>(() => ({ ...DEFAULT_SETTINGS }));
+  const backGesture = useBackGesture(() => navigation.goBack());
 
   useEffect(() => {
     loadSettings().then(setSettings);
@@ -43,7 +45,7 @@ function SettingsRootMenu({ navigation, route }: Props) {
   };
 
   return (
-    <SafeAreaView style={s.container} edges={['top', 'left', 'right', 'bottom']}>
+    <SafeAreaView style={s.container} edges={['top', 'left', 'right', 'bottom']} {...backGesture}>
       <View style={s.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
