@@ -7,6 +7,11 @@
   <uses-permission android:name="android.permission.VIBRATE"/>
   <uses-permission android:name="android.permission.WAKE_LOCK"/>
   <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+  <!-- RECORD_AUDIO implica android.hardware.microphone required=true por defecto, lo que
+       excluiría tablets/TVs/Chromebooks sin mic. Lo declaramos NO requerido: el dictado
+       por voz no funciona en esos dispositivos (voiceDictationService devuelve
+       'unavailable') pero el resto de la app sí. -->
+  <uses-feature android:name="android.hardware.microphone" android:required="false"/>
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove"/>
   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove"/>
   <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" tools:node="remove"/>
