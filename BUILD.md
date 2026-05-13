@@ -46,4 +46,6 @@ Doctrina (la skill `/build store` la enforza):
 - `versionCode`: `+1` por cada release publicada. Solo sube, nunca baja.
 - Sincronizar `android/app/build.gradle` (versionCode + versionName) y `app.json` (`version`). Si divergen, manda `build.gradle`.
 
-Última publicada en Play: **1.0.3 (versionCode 4)** — internal testing (2026-05-10). Actualizar a mano cuando subas la siguiente al portal de Play.
+Última publicada en Play: **1.0.4 (versionCode 6)** — internal testing (2026-05-13). Actualizar a mano cuando subas la siguiente al portal de Play.
+
+Nota sobre versionCode 5 (saltado): Play Console "quema" el versionCode al subir un AAB aunque luego descartes la release, así que el primer AAB de 1.0.4 con código 5 obligó a rebuildar con código 6.
