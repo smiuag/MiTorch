@@ -63,6 +63,17 @@ class SpeechQueueService {
   private ttsReady = false;
   private duckingOn = false;
   private maxQueueSize = 10;
+  // Suspended: cuando otra subsistema necesita silencio absoluto (típicamente
+  // captura de voz por dictado push-to-talk). Mientras suspended:
+  //   - enqueue acumula en cola pero NO procesa (no llama flushNext).
+  //   - 'high' deja de atropellar; entra al inicio de la cola sin pisar la
+  //     voz en curso (que ya se cortó al suspender).
+  //   - utterance en curso se aborta al pasar a suspended=true.
+  // Al resume, se drena la cola pendiente con flushNext. Hay watchdog para
+  // que un suspend olvidado no nos deje mudos para siempre.
+  private suspended = false;
+  private suspendWatchdog: ReturnType<typeof setTimeout> | null = null;
+  private static SUSPEND_MAX_MS = 30_000;
   // Coalesce timer + buffer de la última high pendiente.
   private highCoalesceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingHighText: string | null = null;
@@ -257,6 +268,15 @@ class SpeechQueueService {
       return;
     }
 
+    if (this.suspended) {
+      // Silencio total durante captura: nada se procesa. Si llegan items
+      // mientras estamos suspended, se acumulan al final (incluso 'high') y
+      // se reproducirán al resume(). Cap por maxQueueSize abajo.
+      if (this.queue.length >= this.maxQueueSize) this.queue.shift();
+      this.queue.push({ text: trimmed, priority });
+      return;
+    }
+
     if (priority === 'high') {
       // Coalescing: en lugar de speak inmediato, guardamos el texto y
       // programamos un timer corto. Si llegan más high en la ventana, el
@@ -391,7 +411,52 @@ class SpeechQueueService {
     this.markUtteranceEnded();
   }
 
+  /**
+   * Pausa la salida de voz. Mientras `suspended=true`:
+   *   - los enqueue se acumulan pero no se procesan,
+   *   - cualquier utterance en curso se corta,
+   *   - high prioridad pierde su atropello (se encola normal).
+   * Pensado para captura push-to-talk: el dictado necesita silencio absoluto
+   * del altavoz para que el micrófono no se grabe a sí mismo, y al soltar el
+   * dedo queremos que se reanude todo lo pendiente.
+   *
+   * Watchdog interno: si nadie llama a setSuspended(false) en 30s, se libera
+   * solo para no dejar el TTS mudo si el subsistema que pausó murió.
+   */
+  setSuspended(suspended: boolean): void {
+    if (this.suspended === suspended) return;
+    this.suspended = suspended;
+    if (suspended) {
+      // Corta lo que esté hablando ahora; la cola se mantiene para resume.
+      if (this.speakingTimer) {
+        clearTimeout(this.speakingTimer);
+        this.speakingTimer = null;
+      }
+      if (this.highCoalesceTimer) {
+        clearTimeout(this.highCoalesceTimer);
+        this.highCoalesceTimer = null;
+        this.pendingHighText = null;
+      }
+      if (this.activeBackend() === 'tts') {
+        this.stopTts();
+      }
+      this.suspendWatchdog = setTimeout(() => {
+        console.warn('[speechQueue] suspend watchdog fired (30s sin resume) — auto-resume.');
+        this.setSuspended(false);
+      }, SpeechQueueService.SUSPEND_MAX_MS);
+    } else {
+      if (this.suspendWatchdog) {
+        clearTimeout(this.suspendWatchdog);
+        this.suspendWatchdog = null;
+      }
+      if (!this.isSpeakingTts && this.queue.length > 0) {
+        this.flushNext();
+      }
+    }
+  }
+
   private flushNext = (): void => {
+    if (this.suspended) return;
     const next = this.queue.shift();
     if (!next) {
       this.speakingTimer = null;

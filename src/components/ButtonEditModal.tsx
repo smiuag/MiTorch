@@ -89,15 +89,22 @@ export function ButtonEditModal({
     }
   }, [visible, selfVoicingActive]);
 
+  // Carga inicial al abrir el modal o cambiar de botón objetivo. NO depender
+  // de `maxCommands`: cambia con `kind` (state local), y volver a cargar
+  // pisaría la elección del usuario con el `kind` del botón guardado.
+  // Cargamos el array de commands al máximo posible del modo (2 en completo,
+  // 1 en blind) y en render hacemos slice según el kind actual; así alternar
+  // command↔floating no pierde el comando alternativo ni recorta el array.
   useEffect(() => {
-    const s = loadButtonFormState(button, maxCommands);
+    const maxForMode = uiMode === 'blind' ? 1 : 2;
+    const s = loadButtonFormState(button, maxForMode);
     setLabel(s.label);
     setCommands(s.commands);
     setColor(s.color);
     setTextColor(s.textColor);
     setAddText(s.addText);
     setKind(s.kind);
-  }, [button, visible, uiMode, maxCommands]);
+  }, [button, visible, uiMode]);
 
   const handleSave = () => {
     const newButton = buildLayoutButton(
@@ -217,7 +224,7 @@ export function ButtonEditModal({
                 : 'El primero se ejecuta al pulsar. El segundo aparece como alternativa. Variables disponibles: ${vida}, ${energia}…')
             }</Text>
 
-            {commands.map((cmd, idx) => {
+            {commands.slice(0, maxCommands).map((cmd, idx) => {
               const cmdLabelName = idx === 0
                 ? (kind === 'floating' ? 'Mensaje primario' : 'Comando primario')
                 : `Comando alternativo ${idx}`;

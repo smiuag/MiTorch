@@ -53,6 +53,8 @@ import { playerStatsService } from '../services/playerStatsService';
 import { promptParser } from '../services/promptParser';
 import { userVariablesService } from '../services/userVariablesService';
 import { speechQueue } from '../services/speechQueueService';
+import { voiceDictation, DictationErrorKind } from '../services/voiceDictationService';
+import { recordConnect, recordDisconnect, setUiModeContext, setFlagsContext } from '../services/sentryContext';
 import { selfVoicingPress, buttonRegistry } from '../utils/selfVoicingPress';
 import { SelfVoicingTouchable } from '../components/SelfVoicingControls';
 import { announceTyping } from '../utils/typingAnnounce';
@@ -257,6 +259,12 @@ export function TerminalScreen({ route, navigation }: Props) {
   // `processingAndAddLine` cuando una línea matchea el patrón de tell, y lo
   // leemos cuando un gesto `pick` con source==='recentTells' se dispara.
   const recentTellsRef = useRef<string[]>([]);
+  // Comandos enviados al MUD recientemente. Lo usa `processingAndAddLine`
+  // para suprimir el TTS del eco que el MUD nos devuelve en modo blind:
+  // no leemos lo que enviamos (sea por botón, gesto o input), solo la
+  // respuesta del MUD. La línea sigue mostrándose en el terminal — solo
+  // se silencia el announce. TTL ~5s; cap 20 entries.
+  const recentSentCommandsRef = useRef<{ command: string; sentAt: number }[]>([]);
   const notificationsEnabledRef = useRef(false);
   const appStateRef = useRef(AppState.currentState);
   const exitPendingRef = useRef(false);
@@ -275,6 +283,13 @@ export function TerminalScreen({ route, navigation }: Props) {
   // 2 dedos: centroid de los tres puntos al `onTouchStart` con touchCount=3,
   // detección de swipe en `onTouchMove` mientras siga habiendo 3 dedos.
   const threeFingersStartRef = useRef({ x: 0, y: 0 });
+  // Posición del PRIMER dedo desde que tocó la pantalla. Usado como
+  // referencia robusta para detectar 3-dedos swipe en lugar del centroide
+  // de los 3 (que solo empieza a medir cuando los 3 dedos ya están abajo,
+  // perdiéndose el desplazamiento previo si el usuario apoya los dedos
+  // mientras desliza, no antes). Además MIUI filtra el centroide más
+  // agresivamente que el dedo individual.
+  const firstTouchStartRef = useRef({ x: 0, y: 0 });
   const threeFingersActiveRef = useRef(false);
   const threeFingersMovedRef = useRef(false);
   // Detección del doble-tap con 2 dedos. `tapStart` se setea al apoyar 2
@@ -954,13 +969,41 @@ export function TerminalScreen({ route, navigation }: Props) {
       return;
     }
 
+    // Eco del propio comando: el MUD nos devuelve en una línea el texto que
+    // acabamos de mandar (a veces precedido de prompt tipo "> "). En blind
+    // no lo leemos — el usuario ya sabe qué envió. La línea sigue visible en
+    // el terminal; solo se silencia el announce de TTS. Hace match contra el
+    // buffer rellenado en sendCommand y consume la entrada al matchear.
+    let isCommandEcho = false;
+    if (uiMode === 'blind' && recentSentCommandsRef.current.length > 0) {
+      const arr = recentSentCommandsRef.current;
+      const now = Date.now();
+      while (arr.length > 0 && now - arr[0].sentAt > 5000) arr.shift();
+      const lineLower = stripped.trim().toLowerCase();
+      if (lineLower) {
+        const idx = arr.findIndex((e) => {
+          if (lineLower === e.command) return true;
+          // Eco con prompt: "> norte", "]> norte", etc.
+          if (lineLower.length > e.command.length && lineLower.endsWith(e.command)) {
+            const prefix = lineLower.slice(0, lineLower.length - e.command.length);
+            return /[>:\]]\s*$/.test(prefix);
+          }
+          return false;
+        });
+        if (idx >= 0) {
+          arr.splice(idx, 1);
+          isCommandEcho = true;
+        }
+      }
+    }
+
     // Non-channel messages: Announce filtered content in blind mode (only if silent mode is disabled)
-    if (shouldAnnounce && uiMode === 'blind' && !silentModeEnabledRef.current) {
+    if (shouldAnnounce && uiMode === 'blind' && !silentModeEnabledRef.current && !isCommandEcho) {
       blindModeService.announceMessage(announcementText, 'normal');
     }
 
     // Read all messages when silent mode is disabled (if not already announced by filters and not a channel)
-    if (!silentModeEnabledRef.current && uiMode === 'blind' && !shouldAnnounce && !isChannelMessage) {
+    if (!silentModeEnabledRef.current && uiMode === 'blind' && !shouldAnnounce && !isChannelMessage && !isCommandEcho) {
       // Only read if it's not already announced by blind mode filters
       const cleanText = displayText.replace(/\x1b\[[0-9;]*m/g, '').trim();
       if (cleanText.length > 0) {
@@ -1239,6 +1282,11 @@ export function TerminalScreen({ route, navigation }: Props) {
         if (!server.username || !server.password) {
           logService.markLoginComplete();
         }
+        recordConnect({
+          character: server.username ?? null,
+          server: server.name,
+          host: server.host,
+        });
         if (uiMode === 'blind') {
           speechQueue.enqueue('Conectado');
         }
@@ -1249,6 +1297,7 @@ export function TerminalScreen({ route, navigation }: Props) {
         autoLoginRef.current = 'pending';
         setLoginFailed(false);
         logService.logDisconnect();
+        recordDisconnect();
         if (uiMode === 'blind') {
           speechQueue.enqueue('Desconectado');
         }
@@ -1424,6 +1473,22 @@ export function TerminalScreen({ route, navigation }: Props) {
       };
     }
   }, [connected, server.name, backgroundConnectionEnabled]);
+
+  // Sentry context sync — mantener al día tags/contextos que correlacionan
+  // crashes con el modo de uso del usuario. Sin esto, los reports solo
+  // traen un UUID anónimo. El useEffect re-aplica al cambiar cualquiera
+  // de las deps; las APIs de Sentry son idempotentes.
+  useEffect(() => {
+    setUiModeContext({ uiMode, selfVoicing: useSelfVoicing, screenReaderOn });
+  }, [uiMode, useSelfVoicing, screenReaderOn]);
+
+  useEffect(() => {
+    setFlagsContext({
+      ambient: globalAmbientEnabled,
+      sounds: globalSoundsEnabled,
+      backgroundConnection: backgroundConnectionEnabled,
+    });
+  }, [globalAmbientEnabled, globalSoundsEnabled, backgroundConnectionEnabled]);
 
   const stopWalk = useCallback(() => {
     if (walkActiveRef.current) {
@@ -1633,6 +1698,16 @@ export function TerminalScreen({ route, navigation }: Props) {
 
     if (connected) {
       telnetRef.current?.send(command);
+      // Registrar el comando para suprimir su eco TTS en blind (ver
+      // processingAndAddLine). Cap a 20 para evitar growth con ráfagas
+      // tipo "norte;;sur;;este;;...".
+      const echoKey = command.trim().toLowerCase();
+      if (echoKey) {
+        recentSentCommandsRef.current.push({ command: echoKey, sentAt: Date.now() });
+        if (recentSentCommandsRef.current.length > 20) {
+          recentSentCommandsRef.current.shift();
+        }
+      }
       if (!skipHistory) setCommandHistory([command, ...commandHistory]);
     }
 
@@ -2066,6 +2141,102 @@ export function TerminalScreen({ route, navigation }: Props) {
   const triggerGestureRef = useRef(triggerGesture);
   triggerGestureRef.current = triggerGesture;
 
+  // --- Dictado por voz push-to-talk (3 dedos izq/dcha en blind+self-voicing) ---
+  // En modo blind con self-voicing, el gesto de 3 dedos a la izquierda o
+  // derecha abre una sesión de reconocimiento de voz mientras los dedos
+  // están abajo. Al soltar, el texto capturado se envía: derecha como
+  // comando del terminal, izquierda al canal grupo. El TTS se suspende
+  // durante la captura y reanuda al terminar; el texto final se lee tras
+  // enviarlo, porque el reconocedor puede capturar algo raro y el usuario
+  // necesita oír qué se mandó.
+  const dictationDirectionRef = useRef<'left' | 'right' | null>(null);
+  const channelAliasesLiveRef = useRef<Record<string, string>>({});
+  channelAliasesLiveRef.current = channelAliases;
+
+  const startDictation = useCallback((direction: 'left' | 'right') => {
+    if (dictationDirectionRef.current) return;
+    dictationDirectionRef.current = direction;
+    voiceDictation
+      .start({
+        lang: 'es-ES',
+        onReady: () => {
+          // En este punto el motor está escuchando. Como speechQueue está
+          // suspendido, no podemos usarlo. Damos feedback con Tts directo,
+          // pero `Tts.speak` re-activaría el motor y volvería a capturarse
+          // por el mic — así que usamos la propia accessibility API que
+          // sale fuera del flujo TTS (en TalkBack-off es no-op, pero el
+          // usuario ya sabrá por la vibración del gesto). Si en pruebas
+          // resulta confuso, se añade beep de sistema.
+          AccessibilityInfo.announceForAccessibility('Escuchando');
+        },
+        onError: (kind: DictationErrorKind, _msg: string) => {
+          dictationDirectionRef.current = null;
+          const text =
+            kind === 'unavailable' ? 'Reconocimiento de voz no disponible'
+            : kind === 'permission' ? 'Permiso de micrófono denegado'
+            : kind === 'language' ? 'Idioma no disponible'
+            : 'Error de dictado';
+          speechQueue.enqueue(text, 'high');
+        },
+      })
+      .catch((err: { kind?: DictationErrorKind; message?: string }) => {
+        dictationDirectionRef.current = null;
+        const text =
+          err?.kind === 'unavailable' ? 'Reconocimiento de voz no disponible'
+          : err?.kind === 'permission' ? 'Permiso de micrófono denegado'
+          : err?.kind === 'language' ? 'Idioma no disponible'
+          : err?.kind === 'busy' ? ''  // silenciar — no debería pasar
+          : 'Error de dictado';
+        if (text) speechQueue.enqueue(text, 'high');
+      });
+  }, []);
+
+  const finishDictation = useCallback(async () => {
+    const direction = dictationDirectionRef.current;
+    if (!direction) return;
+    dictationDirectionRef.current = null;
+    const { text, hadAudio } = await voiceDictation.stop();
+    if (!text) {
+      speechQueue.enqueue(hadAudio ? 'No entendido' : 'Sin voz', 'high');
+      return;
+    }
+    if (direction === 'right') {
+      sendCommand(text);
+      // sendCommand ya hizo speechQueue.clear(). El enqueue post-clear
+      // sobrevive y lee qué se envió — feedback explícito que NO ocurre
+      // para comandos normales (decisión del usuario: el texto dictado
+      // puede haberse reconocido mal, conviene oírlo).
+      speechQueue.enqueue(text, 'high');
+    } else {
+      const alias = channelAliasesLiveRef.current['grupo'] || 'grupo';
+      const cmd = `${alias} ${text}`;
+      telnetRef.current?.send(cmd);
+      lastSentChannelTime.current = Date.now();
+      // Aquí no pasa por sendCommand, así que la cola TTS no se ha
+      // tocado. Limpiamos manualmente para que el feedback no quede
+      // detrás del backlog acumulado durante la captura.
+      speechQueue.clear();
+      speechQueue.enqueue(`Al grupo: ${text}`, 'high');
+    }
+  }, [sendCommand]);
+
+  const startDictationRef = useRef(startDictation);
+  startDictationRef.current = startDictation;
+  const finishDictationRef = useRef(finishDictation);
+  finishDictationRef.current = finishDictation;
+
+  // Si el componente se desmonta mientras hay sesión de dictado, cancelar
+  // para que speechQueue salga de suspended (sino el TTS quedaría mudo en
+  // próxima pantalla hasta el watchdog de 30s).
+  useEffect(() => {
+    return () => {
+      if (dictationDirectionRef.current || voiceDictation.isActive()) {
+        voiceDictation.cancel();
+        dictationDirectionRef.current = null;
+      }
+    };
+  }, []);
+
   const handleDoubleTap = (touchCount: number) => {
     if (!gesturesEnabledRef.current || !gesturesAvailable || touchCount !== 1) {
       lastTapRef.current = 0;
@@ -2115,15 +2286,83 @@ export function TerminalScreen({ route, navigation }: Props) {
         offset: currentScrollOffsetRef.current,
       };
     },
-    onMoveShouldSetPanResponder: (_, gs) => {
+    onMoveShouldSetPanResponder: (evt, gs) => {
       if (!gesturesAvailable) return false;
+      // Multi-touch (2+ dedos): reclamamos siempre — la detección de
+      // pinch, twofingers y threefingers swipe vive dentro de
+      // onPanResponderMove. Confiar en onTouchMove del View padre fallaba
+      // de forma intermitente porque FlatList/Pressable hijos pueden
+      // capturar el responder y bloquear la propagación de eventos
+      // multi-touch.
+      if (evt.nativeEvent.touches.length >= 2) return true;
       const isHorizontal = Math.abs(gs.dx) > Math.abs(gs.dy) && Math.abs(gs.dx) > 30;
       const isFastVertical = Math.abs(gs.dy) > Math.abs(gs.dx) && Math.abs(gs.vy) > 0.8 && Math.abs(gs.dy) > 50;
       const isSlowVertical = Math.abs(gs.dy) > Math.abs(gs.dx) && Math.abs(gs.dy) > 10;
       return isHorizontal || isFastVertical || isSlowVertical;
     },
-    onPanResponderMove: (_, gs) => {
+    onPanResponderMove: (evt, gs) => {
       if (!gesturesAvailable) return;
+      const touches = evt.nativeEvent.touches;
+      const touchCount = touches.length;
+      console.log('[GEST] panMove touchCount=', touchCount);
+
+      // 3 dedos: dictado push-to-talk en blind+self-voicing, o gesto
+      // configurado en el resto de casos. Solo se dispara la primera vez
+      // que cruza el umbral (`threeFingersMovedRef` previene re-disparos
+      // durante el mismo gesto).
+      if (touchCount === 3 && threeFingersActiveRef.current && !threeFingersMovedRef.current) {
+        // Referencia: el PRIMER dedo desde que tocó la pantalla, NO el
+        // centroide. MIUI/HyperOS filtra el centroide más agresivamente
+        // que el dedo individual, y si el usuario apoya los 3 dedos uno
+        // por uno mientras desliza, el centroide-desde-3-dedos empieza
+        // tarde y captura muy poco desplazamiento. Usar el primer dedo
+        // captura la trayectoria completa.
+        const t0 = touches[0];
+        const cdx = t0.pageX - firstTouchStartRef.current.x;
+        const cdy = t0.pageY - firstTouchStartRef.current.y;
+        if (Math.hypot(cdx, cdy) > 15) {
+          const direction = detectSwipeDirection(cdx, cdy) as GestureType;
+          if (selfVoicingActive && (direction === 'swipe_left' || direction === 'swipe_right')) {
+            startDictationRef.current(direction === 'swipe_left' ? 'left' : 'right');
+          } else {
+            const gestureType = direction.replace('swipe_', 'threefingers_') as GestureType;
+            triggerGestureRef.current(gestureType);
+          }
+          threeFingersMovedRef.current = true;
+        }
+        return;
+      }
+
+      // 2 dedos: pinch o swipe direccional. Mismas reglas que el
+      // detector inline anterior, pero ejecutadas desde el PanResponder
+      // que sí recibe los events fiablemente con multi-touch.
+      if (touchCount === 2 && pinchActiveRef.current && !twoFingersMovedRef.current) {
+        const [t1, t2] = touches;
+        const centroidX = (t1.pageX + t2.pageX) / 2;
+        const centroidY = (t1.pageY + t2.pageY) / 2;
+        const centroidDx = centroidX - twoFingersStartRef.current.x;
+        const centroidDy = centroidY - twoFingersStartRef.current.y;
+        const centroidMove = Math.hypot(centroidDx, centroidDy);
+        const newDist = Math.hypot(t2.pageX - t1.pageX, t2.pageY - t1.pageY);
+        const pinchDelta = Math.abs(newDist - pinchStartDistanceRef.current);
+        if (centroidMove > 30) {
+          const direction = detectSwipeDirection(centroidDx, centroidDy) as GestureType;
+          const gestureType = direction.replace('swipe_', 'twofingers_') as GestureType;
+          triggerGestureRef.current(gestureType);
+          pinchActiveRef.current = false;
+          twoFingersMovedRef.current = true;
+          twoFingersTapStartRef.current = 0;
+        } else if (pinchDelta > 40) {
+          const pinchType = newDist > pinchStartDistanceRef.current ? 'pinch_out' : 'pinch_in';
+          triggerGestureRef.current(pinchType as GestureType);
+          pinchActiveRef.current = false;
+          twoFingersMovedRef.current = true;
+          twoFingersTapStartRef.current = 0;
+        }
+        return;
+      }
+
+      // 1 dedo: scroll lento vertical (comportamiento existente).
       const isSlowVertical = Math.abs(gs.dy) > Math.abs(gs.dx) && Math.abs(gs.dy) > 10;
       if (isSlowVertical && Math.abs(gs.vy) < 0.5) {
         // FlatList is inverted: dragging finger down (gs.dy > 0) reveals older
@@ -2135,7 +2374,31 @@ export function TerminalScreen({ route, navigation }: Props) {
         scrollVelocityRef.current = gs.vy * 50;
       }
     },
+    onPanResponderTerminationRequest: () => {
+      console.log('[GEST] panTerminationRequest — algo pide que sueltes el responder');
+      return true;
+    },
+    onPanResponderTerminate: (evt) => {
+      console.log('[GEST] panTerminate remaining=', evt.nativeEvent.touches.length);
+    },
     onPanResponderRelease: (evt, gs) => {
+      console.log('[GEST] panRelease dictation=', dictationDirectionRef.current);
+      // Cierre del dictado push-to-talk si había sesión activa. Esto se
+      // hace aquí (no en onTouchEnd del View) porque el View se vuelve
+      // poco fiable para multi-touch end events cuando el PanResponder
+      // tiene el responder. Confirmado empíricamente con logs.
+      if (dictationDirectionRef.current) {
+        finishDictationRef.current();
+      }
+      // Reset flags multi-touch — los handlers de twofingers/pinch/3dedos
+      // los necesitan limpios para el próximo gesto.
+      threeFingersActiveRef.current = false;
+      threeFingersMovedRef.current = false;
+      pinchActiveRef.current = false;
+      twoFingersActiveRef.current = false;
+      twoFingersMovedRef.current = false;
+      handleTwoFingersTouchEnd();
+
       // Si el gesto pasó por 2 dedos en algún momento, el handler de
       // twofingers/pinch ya disparó (o decidió no disparar). Saltar la
       // detección de swipe-1-dedo para no mandar DOS comandos.
@@ -2529,6 +2792,8 @@ export function TerminalScreen({ route, navigation }: Props) {
               // dispara ⇒ flag queda true), el primer 1-finger después se
               // comería el flag y bloquearía el swipe.
               multiTouchGestureRef.current = false;
+              const t0 = evt.nativeEvent.touches[0];
+              firstTouchStartRef.current = { x: t0.pageX, y: t0.pageY };
               handleDoubleTap(1);
             } else {
               lastTapRef.current = 0;
@@ -2561,9 +2826,19 @@ export function TerminalScreen({ route, navigation }: Props) {
               threeFingersActiveRef.current = true;
               threeFingersMovedRef.current = false;
             }
+            console.log('[GEST] start touchCount=', touchCount, 'gesturesEnabled=', gesturesEnabledRef.current, 'gesturesAvailable=', gesturesAvailable, 'selfVoicingActive=', selfVoicingActive);
           }}
           onTouchMove={(evt) => {
             const touchCount = evt.nativeEvent.touches.length;
+            console.log('[GEST] move touchCount=', touchCount);
+            if (touchCount === 3) {
+              const [t1, t2, t3] = evt.nativeEvent.touches;
+              const cx = (t1.pageX + t2.pageX + t3.pageX) / 3;
+              const cy = (t1.pageY + t2.pageY + t3.pageY) / 3;
+              const cdx = cx - threeFingersStartRef.current.x;
+              const cdy = cy - threeFingersStartRef.current.y;
+              console.log('[GEST] move-3 cdx=', cdx.toFixed(1), 'cdy=', cdy.toFixed(1), 'hypot=', Math.hypot(cdx, cdy).toFixed(1), 'active=', threeFingersActiveRef.current, 'moved=', threeFingersMovedRef.current);
+            }
             // 3 dedos: solo direccional. Misma lógica que 2 dedos pero con
             // centroide de 3 puntos.
             if (touchCount === 3 && threeFingersActiveRef.current && !threeFingersMovedRef.current) {
@@ -2574,8 +2849,17 @@ export function TerminalScreen({ route, navigation }: Props) {
               const cdy = cy - threeFingersStartRef.current.y;
               if (Math.hypot(cdx, cdy) > 30) {
                 const direction = detectSwipeDirection(cdx, cdy) as GestureType;
-                const gestureType = direction.replace('swipe_', 'threefingers_') as GestureType;
-                triggerGestureRef.current(gestureType);
+                console.log('[GEST] fire direction=', direction, 'selfVoicingActive=', selfVoicingActive);
+                // En blind+self-voicing las direcciones izquierda/derecha
+                // con 3 dedos son push-to-talk (NO disparan gesto
+                // configurado). Empezamos sesión de dictado y el release
+                // de los dedos cierra y envía.
+                if (selfVoicingActive && (direction === 'swipe_left' || direction === 'swipe_right')) {
+                  startDictationRef.current(direction === 'swipe_left' ? 'left' : 'right');
+                } else {
+                  const gestureType = direction.replace('swipe_', 'threefingers_') as GestureType;
+                  triggerGestureRef.current(gestureType);
+                }
                 threeFingersMovedRef.current = true;
               }
               return;
@@ -2607,6 +2891,7 @@ export function TerminalScreen({ route, navigation }: Props) {
             }
           }}
           onTouchEnd={(evt) => {
+            console.log('[GEST] end remaining=', evt.nativeEvent.touches.length);
             // `onTouchEnd` se dispara por cada dedo que se levanta. Solo
             // contamos el tap cuando ya no hay dedos en pantalla — si vamos
             // de 2→1, el segundo dedo aún sigue presionado y la lógica de
@@ -2615,6 +2900,14 @@ export function TerminalScreen({ route, navigation }: Props) {
               handleTwoFingersTouchEnd();
               threeFingersActiveRef.current = false;
               threeFingersMovedRef.current = false;
+              // Cierre de sesión de dictado push-to-talk si la había. Lo
+              // hacemos aquí (no en cada onTouchEnd intermedio) porque la
+              // captura debe durar mientras CUALQUIER dedo siga abajo —
+              // así el usuario puede levantar un dedo accidentalmente sin
+              // perder la sesión.
+              if (dictationDirectionRef.current) {
+                finishDictationRef.current();
+              }
             }
             pinchActiveRef.current = false;
             twoFingersActiveRef.current = false;
@@ -2983,8 +3276,17 @@ export function TerminalScreen({ route, navigation }: Props) {
       ) : (
       // HORIZONTAL LAYOUT
       <View style={[styles.container, styles.containerHorizontal]}>
-        {/* Terminal + Input Left Column */}
-        <View style={{ width: horizontalTerminalWidth, flex: 0, flexDirection: 'column' }}>
+        {/* Terminal + Input Left Column.
+            En horizontal el input está al fondo. Con target SDK 35+ Android
+            no encoge la ventana al aparecer el IME (pasa los insets vía
+            WindowInsets y RN no los aplica solo), así que `adjustResize` no
+            basta para mantener visible la fila de input. PaddingBottom =
+            keyboardHeight encoge el área útil de la columna: el terminal
+            (flex:1) se contrae y el input queda justo encima del teclado.
+            Con teclado oculto keyboardHeight=0 y no afecta. En blind+self
+            voicing el teclado del sistema no se muestra (showSoftInputOnFocus
+            =false) y keyboardHeight permanece 0. */}
+        <View style={{ width: horizontalTerminalWidth, flex: 0, flexDirection: 'column', paddingBottom: keyboardHeight }}>
           {/* Terminal */}
           <View
             style={[styles.terminalSection, { flex: 1 }]}
@@ -3043,8 +3345,14 @@ export function TerminalScreen({ route, navigation }: Props) {
                 const cdy = cy - threeFingersStartRef.current.y;
                 if (Math.hypot(cdx, cdy) > 30) {
                   const direction = detectSwipeDirection(cdx, cdy) as GestureType;
-                  const gestureType = direction.replace('swipe_', 'threefingers_') as GestureType;
-                  triggerGestureRef.current(gestureType);
+                  // Mismo intercepto que en portrait: 3 dedos izq/dcha en
+                  // blind+self-voicing = push-to-talk.
+                  if (selfVoicingActive && (direction === 'swipe_left' || direction === 'swipe_right')) {
+                    startDictationRef.current(direction === 'swipe_left' ? 'left' : 'right');
+                  } else {
+                    const gestureType = direction.replace('swipe_', 'threefingers_') as GestureType;
+                    triggerGestureRef.current(gestureType);
+                  }
                   threeFingersMovedRef.current = true;
                 }
                 return;
@@ -3080,6 +3388,9 @@ export function TerminalScreen({ route, navigation }: Props) {
                 handleTwoFingersTouchEnd();
                 threeFingersActiveRef.current = false;
                 threeFingersMovedRef.current = false;
+                if (dictationDirectionRef.current) {
+                  finishDictationRef.current();
+                }
               }
               pinchActiveRef.current = false;
               twoFingersActiveRef.current = false;

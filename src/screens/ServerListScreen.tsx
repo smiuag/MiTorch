@@ -47,6 +47,7 @@ export function ServerListScreen({ navigation }: Props) {
   const [formMapId, setFormMapId] = useState<string | undefined>(undefined);
   const [mapLibrary, setMapLibrary] = useState<MapLibraryEntry[]>([]);
   const [mapPickerVisible, setMapPickerVisible] = useState(false);
+  const [gridSizePickerVisible, setGridSizePickerVisible] = useState(false);
   const [helpModalVisible, setHelpModalVisible] = useState(false);
   const [welcomeModalVisible, setWelcomeModalVisible] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState(true);
@@ -525,34 +526,24 @@ export function ServerListScreen({ navigation }: Props) {
                 <Text style={styles.helperText}>
                   En "reducido" las celdas se encogen un 35% (más alto/ancho para el terminal). En "normal" ocupan el espacio entero.
                 </Text>
-                <View style={styles.layoutKindRow}>
-                  <TouchableOpacity
-                    style={[styles.layoutKindBtn, formGridSize === 'normal' && styles.layoutKindBtnActive]}
-                    onPress={() => setFormGridSize('normal')}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: formGridSize === 'normal' }}
-                    accessibilityLabel="Tamaño normal"
-                  >
-                    <Text style={[styles.layoutKindBtnText, formGridSize === 'normal' && styles.layoutKindBtnTextActive]}>Normal</Text>
-                    <Text style={[styles.layoutKindBtnHint, formGridSize === 'normal' && styles.layoutKindBtnTextActive]}>Celdas grandes</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.layoutKindBtn, formGridSize === 'reducido' && styles.layoutKindBtnActive]}
-                    onPress={() => setFormGridSize('reducido')}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: formGridSize === 'reducido' }}
-                    accessibilityLabel="Tamaño reducido"
-                  >
-                    <Text style={[styles.layoutKindBtnText, formGridSize === 'reducido' && styles.layoutKindBtnTextActive]}>Reducido</Text>
-                    <Text style={[styles.layoutKindBtnHint, formGridSize === 'reducido' && styles.layoutKindBtnTextActive]}>Celdas al 65%</Text>
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity
+                  style={styles.mapPickerBtn}
+                  onPress={() => setGridSizePickerVisible(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Tamaño del grid: ${formGridSize === 'normal' ? 'Normal' : 'Reducido'}`}
+                  accessibilityHint="Pulsa para elegir el tamaño del grid"
+                >
+                  <Text style={styles.mapPickerBtnText}>
+                    {formGridSize === 'normal' ? 'Normal — celdas grandes' : 'Reducido — celdas al 65%'}
+                  </Text>
+                  <Text style={styles.mapPickerBtnChevron}>▾</Text>
+                </TouchableOpacity>
               </>
             )}
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={styles.cancelBtn}
+                style={[styles.cancelBtn, styles.modalButtonHalf]}
                 onPress={() => setModalVisible(false)}
                 accessible={true}
                 accessibilityLabel="Cancelar"
@@ -562,7 +553,7 @@ export function ServerListScreen({ navigation }: Props) {
                 <Text style={styles.cancelText}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.saveBtn}
+                style={[styles.saveBtn, styles.modalButtonHalf]}
                 onPress={handleSave}
                 accessible={true}
                 accessibilityLabel="Guardar"
@@ -625,6 +616,55 @@ export function ServerListScreen({ navigation }: Props) {
               onPress={() => setMapPickerVisible(false)}
               accessibilityRole="button"
               accessibilityLabel="Cerrar selector de mapa"
+            >
+              <Text style={styles.cancelText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={gridSizePickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setGridSizePickerVisible(false)}
+      >
+        <View style={[styles.modalOverlay, overlayInsetStyle]} accessibilityViewIsModal>
+          <View style={styles.mapPickerModal}>
+            <Text style={styles.modalTitle} accessibilityRole="header">Tamaño del grid</Text>
+            <ScrollView style={styles.mapPickerList}>
+              <TouchableOpacity
+                style={[styles.mapPickerRow, formGridSize === 'normal' && styles.mapPickerRowActive]}
+                onPress={() => {
+                  setFormGridSize('normal');
+                  setGridSizePickerVisible(false);
+                }}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: formGridSize === 'normal' }}
+                accessibilityLabel="Tamaño normal"
+              >
+                <Text style={styles.mapPickerRowName}>Normal</Text>
+                <Text style={styles.mapPickerRowMeta}>Celdas grandes</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.mapPickerRow, formGridSize === 'reducido' && styles.mapPickerRowActive]}
+                onPress={() => {
+                  setFormGridSize('reducido');
+                  setGridSizePickerVisible(false);
+                }}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: formGridSize === 'reducido' }}
+                accessibilityLabel="Tamaño reducido"
+              >
+                <Text style={styles.mapPickerRowName}>Reducido</Text>
+                <Text style={styles.mapPickerRowMeta}>Celdas al 65%</Text>
+              </TouchableOpacity>
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => setGridSizePickerVisible(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar selector de tamaño"
             >
               <Text style={styles.cancelText}>Cerrar</Text>
             </TouchableOpacity>
@@ -988,7 +1028,6 @@ const styles = StyleSheet.create({
   },
   modalButtons: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
     marginTop: 24,
     gap: 12,
   },
@@ -1007,6 +1046,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 6,
     backgroundColor: '#00cc00',
+  },
+  modalButtonHalf: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
   },
   saveText: {
     color: '#000',
@@ -1175,39 +1219,6 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     marginBottom: 8,
     lineHeight: 14,
-  },
-  layoutKindRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 4,
-  },
-  layoutKindBtn: {
-    flex: 1,
-    backgroundColor: '#0a2a3a',
-    borderWidth: 1,
-    borderColor: '#225588',
-    borderRadius: 6,
-    padding: 10,
-    alignItems: 'center',
-  },
-  layoutKindBtnActive: {
-    backgroundColor: '#0099ff',
-    borderColor: '#55bbff',
-  },
-  layoutKindBtnText: {
-    color: '#88ccff',
-    fontSize: 13,
-    fontWeight: 'bold',
-    fontFamily: 'monospace',
-  },
-  layoutKindBtnHint: {
-    color: '#669',
-    fontSize: 10,
-    fontFamily: 'monospace',
-    marginTop: 2,
-  },
-  layoutKindBtnTextActive: {
-    color: '#fff',
   },
   gridDimRow: {
     flexDirection: 'row',
