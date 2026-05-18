@@ -3062,8 +3062,21 @@ export function TerminalScreen({ route, navigation }: Props) {
           </View>
         )}
 
-        {/* Input Row */}
-        <View style={[styles.inputSection, { height: inputHeight }, uiMode === 'completo' && { marginTop: 2 }]}>
+        {/* Input Row.
+            En vertical, si el teclado sube y es más alto que `buttonGridHeight`
+            taparía también el input. Con target SDK 35+ Android no encoge la
+            ventana (mismo motivo que en horizontal — ver comentario allá).
+            marginBottom = teclado por encima del alto de la grid: añade hueco
+            entre input y grid; el terminal (flex:1) se encoge para absorberlo,
+            la grid sigue anclada al fondo (la tapa el teclado, aceptable) y
+            el input queda justo encima del teclado. Si el teclado cabe dentro
+            de la grid el margin es 0 y no afecta. En blind+self-voicing el
+            teclado del sistema no se muestra y keyboardHeight=0. */}
+        <View style={[
+          styles.inputSection,
+          { height: inputHeight, marginBottom: Math.max(0, keyboardHeight - buttonGridHeight) },
+          uiMode === 'completo' && { marginTop: 2 },
+        ]}>
           {connected ? (
             <>
               {uiMode === 'blind' && globalSoundsEnabled && (
