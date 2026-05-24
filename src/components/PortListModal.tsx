@@ -1,6 +1,7 @@
-// Modal lista de puertos para `navegarsala` sin argumentos. Patrón
-// análogo a RoomSearchResults pero sobre el set fijo de puertos
-// marítimos de NAVEGACION.md.
+// Modal lista de puertos para `navegarsala` sin argumentos. Comparte
+// estilos y patrón de selección con RoomSearchResults: primer tap
+// marca el puerto, segundo tap (en el mismo) confirma y lanza la
+// ruta. Tap en otro puerto reemplaza la marca.
 
 import React from 'react';
 import { View, Text, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
@@ -9,40 +10,79 @@ import { MaritimePort } from '../services/maritimeMapService';
 interface Props {
   ports: MaritimePort[];
   visible: boolean;
+  highlightedPortId?: string | null;
   onSelect: (port: MaritimePort) => void;
   onClose: () => void;
+  uiMode?: 'completo' | 'blind';
 }
 
-export function PortListModal({ ports, visible, onSelect, onClose }: Props) {
-  if (!visible) return null;
+export function PortListModal({ ports, visible, highlightedPortId, onSelect, onClose, uiMode }: Props) {
+  if (!visible || ports.length === 0) return null;
+  const sorted = [...ports].sort((a, b) => a.name.localeCompare(b.name, 'es'));
 
   return (
-    <View style={styles.container} accessible accessibilityLabel="Lista de puertos">
+    <View
+      style={styles.container}
+      accessible={true}
+      accessibilityLabel="Lista de puertos"
+      accessibilityRole="none"
+    >
       <View style={styles.header}>
-        <Text style={styles.title} accessibilityRole="header">Puertos ({ports.length})</Text>
+        <Text
+          style={styles.title}
+          accessible={true}
+          accessibilityLabel={`${sorted.length} puertos disponibles`}
+          accessibilityRole="header"
+        >
+          Puertos ({sorted.length})
+        </Text>
         <TouchableOpacity
           onPress={onClose}
           style={styles.closeBtn}
+          accessible={true}
           accessibilityLabel="Cerrar lista"
           accessibilityRole="button"
         >
-          <Text style={styles.closeBtnText}>✕</Text>
+          <Text style={styles.closeText}>X</Text>
         </TouchableOpacity>
       </View>
       <FlatList
-        data={ports}
-        keyExtractor={p => p.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.row}
-            onPress={() => onSelect(item)}
-            accessibilityLabel={`Navegar a ${item.name}`}
-            accessibilityRole="button"
-          >
-            <Text style={styles.name}>{item.name}</Text>
-            <Text style={styles.coords}>{item.col}º O, {item.row}º S</Text>
-          </TouchableOpacity>
-        )}
+        data={sorted}
+        keyExtractor={item => item.id}
+        style={styles.list}
+        accessible={true}
+        accessibilityLabel="Lista de puertos"
+        accessibilityRole="list"
+        renderItem={({ item }) => {
+          const coords = `${item.col}º O, ${item.row}º S`;
+          const isHighlighted = highlightedPortId === item.id;
+          const isBlind = uiMode === 'blind';
+          const accessibilityLabel = isBlind
+            ? `${item.name}- ${coords}`
+            : item.name;
+          const accessibilityHint = isBlind
+            ? undefined
+            : `Navegar a ${item.name}. Coordenadas: ${coords}`;
+          return (
+            <TouchableOpacity
+              style={[styles.roomItem, isHighlighted && styles.roomItemHighlighted]}
+              onPress={() => onSelect(item)}
+              accessible={true}
+              accessibilityLabel={accessibilityLabel}
+              accessibilityRole="button"
+              accessibilityHint={accessibilityHint}
+            >
+              <View style={[styles.colorDot, { backgroundColor: '#794120' }]} />
+              <View style={styles.roomInfo}>
+                <Text style={styles.roomName}>{item.name}</Text>
+                <Text style={styles.roomExits}>{coords}</Text>
+              </View>
+              <Text style={[styles.goText, isHighlighted && styles.goTextHighlighted]}>
+                {isHighlighted ? 'Ir →' : 'Ir'}
+              </Text>
+            </TouchableOpacity>
+          );
+        }}
       />
     </View>
   );
@@ -51,56 +91,83 @@ export function PortListModal({ ports, visible, onSelect, onClose }: Props) {
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: 60,
-    left: 12,
-    right: 12,
-    maxHeight: 360,
-    backgroundColor: 'rgba(0, 20, 40, 0.96)',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 120, 200, 0.6)',
-    zIndex: 50,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    maxHeight: '50%',
+    backgroundColor: 'rgba(10, 10, 10, 0.95)',
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+    zIndex: 30,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 120, 200, 0.4)',
+    borderBottomColor: '#222',
   },
   title: {
-    color: '#9cf',
-    fontSize: 14,
-    fontWeight: '700',
+    color: '#0c0',
+    fontSize: 13,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
   },
   closeBtn: {
-    width: 28,
-    height: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
-  closeBtnText: {
-    color: '#9cf',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 80, 140, 0.3)',
-  },
-  name: {
-    color: '#fff',
+  closeText: {
+    color: '#c00',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
-  coords: {
-    color: '#7bc',
-    fontSize: 12,
+  list: {
+    maxHeight: 250,
+  },
+  roomItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1a1a',
+  },
+  roomItemHighlighted: {
+    backgroundColor: 'rgba(0, 150, 0, 0.18)',
+    borderLeftWidth: 3,
+    borderLeftColor: '#0f0',
+  },
+  goTextHighlighted: {
+    color: '#ff0',
+  },
+  colorDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 10,
+  },
+  roomInfo: {
+    flex: 1,
+  },
+  roomName: {
+    color: '#ccc',
+    fontSize: 13,
+    fontFamily: 'monospace',
+  },
+  roomExits: {
+    color: '#666',
+    fontSize: 10,
+    fontFamily: 'monospace',
+    marginTop: 2,
+  },
+  goText: {
+    color: '#0c0',
+    fontSize: 13,
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+    paddingHorizontal: 12,
   },
 });

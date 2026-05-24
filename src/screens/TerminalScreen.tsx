@@ -1038,6 +1038,7 @@ export function TerminalScreen({ route, navigation }: Props) {
   const [maritimeNavState, setMaritimeNavState] = useState<NavState>({ kind: 'idle' });
   const [maritimeMapVisible, setMaritimeMapVisible] = useState(true);
   const [portListVisible, setPortListVisible] = useState(false);
+  const [highlightedPortId, setHighlightedPortId] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -4028,14 +4029,26 @@ export function TerminalScreen({ route, navigation }: Props) {
         />
       )}
 
-      {/* Port list modal — abierto al teclear `navegarsala` sin args. */}
+      {/* Port list modal — abierto al teclear `navegarsala` sin args.
+          Patrón doble-tap: primer tap marca, segundo (mismo puerto)
+          confirma y lanza la ruta. */}
       <PortListModal
         ports={maritimeMapService.listPorts()}
         visible={portListVisible}
-        onClose={() => setPortListVisible(false)}
-        onSelect={(port) => {
+        highlightedPortId={highlightedPortId}
+        uiMode={uiMode}
+        onClose={() => {
           setPortListVisible(false);
-          maritimeNavigator.start(port.id).catch(err => addLine(`--- navegarsala: ${err?.message || err} ---`));
+          setHighlightedPortId(null);
+        }}
+        onSelect={(port) => {
+          if (highlightedPortId === port.id) {
+            setHighlightedPortId(null);
+            setPortListVisible(false);
+            maritimeNavigator.start(port.id).catch(err => addLine(`--- navegarsala: ${err?.message || err} ---`));
+          } else {
+            setHighlightedPortId(port.id);
+          }
         }}
       />
 

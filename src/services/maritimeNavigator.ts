@@ -62,7 +62,8 @@ export type NavStateKind =
   | 'stopping_initial'    // safety stop antes de orientar el primer run
   | 'orienting'
   | 'navigating'
-  | 'stopping_between'    // stop al final de un run antes del siguiente orientar
+  | 'chaining_orient'     // Phase C: orientar al siguiente run sin parar
+  | 'stopping_between'    // fallback: stop al final de un run (length 1 / corner cases)
   | 'arrived'
   | 'error';
 
@@ -131,6 +132,46 @@ function key(p: MaritimePosition): string {
   return `${p.col},${p.row}`;
 }
 
+// Min-heap binario. A* lo necesita porque el open set puede tener miles
+// de nodos al haber 8 vecinos × pos × dir, y popar con bucle lineal es
+// O(n²) — visto en log: 6 segundos por plan en rutas de 60 celdas.
+class MinHeap<T> {
+  private heap: T[] = [];
+  constructor(private cmp: (a: T, b: T) => number) {}
+  size(): number { return this.heap.length; }
+  push(item: T): void {
+    this.heap.push(item);
+    let i = this.heap.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (this.cmp(this.heap[i], this.heap[p]) >= 0) break;
+      const t = this.heap[i]; this.heap[i] = this.heap[p]; this.heap[p] = t;
+      i = p;
+    }
+  }
+  pop(): T | undefined {
+    if (this.heap.length === 0) return undefined;
+    const top = this.heap[0];
+    const last = this.heap.pop()!;
+    if (this.heap.length > 0) {
+      this.heap[0] = last;
+      let i = 0;
+      const n = this.heap.length;
+      while (true) {
+        const l = 2 * i + 1;
+        const r = 2 * i + 2;
+        let best = i;
+        if (l < n && this.cmp(this.heap[l], this.heap[best]) < 0) best = l;
+        if (r < n && this.cmp(this.heap[r], this.heap[best]) < 0) best = r;
+        if (best === i) break;
+        const t = this.heap[i]; this.heap[i] = this.heap[best]; this.heap[best] = t;
+        i = best;
+      }
+    }
+    return top;
+  }
+}
+
 // Penalty por cambio de dirección en A*. Cada "turn" cuesta como 3
 // celdas: A* desviará hasta 3 celdas extra para ahorrar un giro.
 const TURN_PENALTY = 3.0;
@@ -154,7 +195,7 @@ function planRoute(
     f: number;
     dir: Dir | null;  // null = origen
   }
-  const open: Node[] = [];
+  const open = new MinHeap<Node>((a, b) => a.f - b.f);
   const cameFrom = new Map<string, { pos: MaritimePosition; dir: Dir | null }>();
   const gScore = new Map<string, number>();
 
@@ -168,11 +209,8 @@ function planRoute(
   const isStart = (p: MaritimePosition) => p.col === from.col && p.row === from.row;
   const isDest = (p: MaritimePosition) => p.col === to.col && p.row === to.row;
 
-  while (open.length > 0) {
-    // pop min-f (lineal — grid pequeño 92x36, suficiente)
-    let bestI = 0;
-    for (let i = 1; i < open.length; i++) if (open[i].f < open[bestI].f) bestI = i;
-    const cur = open.splice(bestI, 1)[0];
+  while (open.size() > 0) {
+    const cur = open.pop()!;
     const curK = nodeKey(cur.pos, cur.dir);
     if (cur.g > (gScore.get(curK) ?? Infinity)) continue;
 
@@ -259,6 +297,12 @@ export class MaritimeNavigator {
   private sendQueue: QueuedCmd[] = [];
   private lastSendTime = 0;
   private sendTimer: ReturnType<typeof setTimeout> | null = null;
+  // Epoch para invalidar defensive timeouts de orients anteriores. Cada
+  // orient emitido bumpea este contador. Los `setTimeout(60s)` de
+  // orients anteriores comparan su epoch capturado vs el actual y se
+  // saltan si no coinciden — esto evita que un timeout del trip 1 dispare
+  // onTurnAck durante el trip 2 cuando casualmente coinciden state y dir.
+  private orientEpoch = 0;
   // Velocidad actual seteada en el barco — 0 = desconocida, fuerza
   // enviar `velocidad N` la primera vez. Persistente cross-start.
   private currentSpeed: 0 | 1 | 2 = 0;
@@ -266,6 +310,12 @@ export class MaritimeNavigator {
   // null = no sabemos (asumimos que aguanta 2). Aprendido del mensaje
   // de rechazo. Persistente cross-start porque el barco no cambia.
   private shipMaxSpeed: number | null = null;
+  // Cuenta replans por ruta. Cuando A* propone planes cortos y la
+  // inercia del orient a vel 2 (~5 celdas) excede la longitud del run,
+  // el barco overshoot SIEMPRE y replanea sin progreso. Cap previene
+  // bucles infinitos abortando tras N replans seguidos.
+  private replanCount = 0;
+  private static readonly MAX_REPLANS = 5;
 
   configure(opts: NavigatorOpts): void {
     this.sender = opts.sender;
@@ -289,6 +339,16 @@ export class MaritimeNavigator {
 
   async start(target: string | { col: number; row: number }): Promise<void> {
     if (!this.sender) throw new Error('navegarsala: motor no configurado');
+
+    // Si ya hay una ruta en marcha, cancela primero. Sin esto, taps
+    // sucesivos en el mapa (intencionales o accidentales) acumulan
+    // `navegar detener` en la cola del throttle de 3s, generando una
+    // sensación de "enganchado" en la UI y lanzando varios comandos en
+    // ráfaga segundos después.
+    if (this.state.kind !== 'idle' && this.state.kind !== 'arrived' && this.state.kind !== 'error') {
+      log(`start() called while state=${this.state.kind}, cancelling previous first`);
+      this.cancel('ruta nueva');
+    }
 
     // Resolver destino: string → buscar puerto; objeto → coords libres.
     let dest: MaritimePort;
@@ -317,6 +377,7 @@ export class MaritimeNavigator {
     // run. shipMaxSpeed se mantiene porque el barco no cambia entre
     // navegarsalas consecutivos en la misma sesión.
     this.currentSpeed = 0;
+    this.replanCount = 0;
 
     log(`start dest=${dest.id} (${dest.col},${dest.row}) from (${pos.col},${pos.row})`);
     this.setState({ kind: 'planning', destination: dest });
@@ -434,93 +495,164 @@ export class MaritimeNavigator {
     const isLastRun = runIdx === runs.length - 1;
     log(`pos (${pos.col},${pos.row}) navigating run ${runIdx} dir=${run.dir} target=(${lastCellOfRun.col},${lastCellOfRun.row})`);
 
+    const cellIdx = run.cells.findIndex(c => c.col === pos.col && c.row === pos.row);
+
+    // ¿Posición fuera del run? Divergencia → replan.
+    if (cellIdx < 0) {
+      this.replanCount++;
+      if (this.replanCount > MaritimeNavigator.MAX_REPLANS) {
+        log(`too many replans (${this.replanCount}), aborting route`);
+        this.announce('Demasiados desvíos. Ruta abandonada — toma el control manual.');
+        this.cancel('demasiados replans');
+        return;
+      }
+      const dest = this.state.destination!;
+      log(`DIVERGENCE at (${pos.col},${pos.row}) [replan ${this.replanCount}/${MaritimeNavigator.MAX_REPLANS}]. Run cells: ${run.cells.map(c=>`(${c.col},${c.row})`).join(' ')}. Replanning to (${dest.col},${dest.row})`);
+      this.announce('Desvío detectado. Recalculando ruta.');
+      // PRIMERO paramos el barco para que no siga moviéndose mientras
+      // recalculamos. Bypass del throttle para que sea inmediato — si
+      // el A* tarda, al menos la nave no avanza más durante el cálculo.
+      this.clearQueue();
+      if (this.sender) this.sender('navegar detener');
+      this.lastSendTime = Date.now();
+      // Ahora replan.
+      const newPath = planRoute(pos, { col: dest.col, row: dest.row });
+      if (!newPath || newPath.length < 2) {
+        this.setState({ kind: 'error', errorMessage: 'no hay ruta tras desvío', destination: dest });
+        return;
+      }
+      const newRuns = segmentRuns(newPath);
+      this.setState({
+        kind: 'stopping_between',
+        destination: dest,
+        path: newPath,
+        runs: newRuns,
+        runIdx: -1,
+      });
+      // El stopAck llegará por la respuesta al detener de arriba.
+      setTimeout(() => this.onStopAck(), 1500);
+      return;
+    }
+
     // ¿Llegamos al final del run?
-    if (pos.col === lastCellOfRun.col && pos.row === lastCellOfRun.row) {
+    if (cellIdx === run.cells.length - 1) {
       log(`reached end of run ${runIdx} at (${pos.col},${pos.row}), isLastRun=${isLastRun}`);
       if (isLastRun) {
-        // Llegamos al destino — el MUD ya nos para en el muelle, no hace
-        // falta enviar navegar detener (el muelle no es navegable).
+        // Llegamos al destino — el MUD para automáticamente en el muelle
+        // (mensaje "La embarcación se detiene al haber llegado a un
+        // muelle"). No hace falta enviar detener — incluso a velocidad
+        // 2/3 el MUD nos para en seco al entrar en la celda muelle.
         this.setState({ ...this.state, kind: 'arrived' });
         this.announce(`Ruta completada en ${this.state.destination!.name}.`);
-        // Vuelta a idle tras un beat — UI puede leer 'arrived' antes.
         setTimeout(() => {
           if (this.state.kind === 'arrived') this.setState({ kind: 'idle' });
         }, 1500);
         return;
       }
+      // Fallback (chain orient no disparó: typically length 1 o
+      // length 2 a vel 2). Stop + orient tradicional para el siguiente.
+      log(`chain didn't fire for run ${runIdx} — falling back to stop+orient`);
       this.setState({ ...this.state, kind: 'stopping_between' });
-      // Phase A revertido: el pre-send velocidad ANTES del detener
-      // hace que el barco acelere/desacelere durante los 3s que tarda
-      // el detener en salir de la cola, generando overshoot grave
-      // (visto en log: 4 celdas de exceso). Mandamos sólo detener; la
-      // velocidad la ajusta `startNextRun` después del stop ack.
       this.send('navegar detener', () => {
         setTimeout(() => this.onStopAck(), 1500);
       });
       return;
     }
 
-    // ¿La posición está dentro del run actual? (avance normal)
-    const cellIdx = run.cells.findIndex(c => c.col === pos.col && c.row === pos.row);
-    const onPath = cellIdx >= 0;
-    if (onPath) {
-      // Slowdown anticipado (Opción C): cuando navegamos a vel 2 y
-      // sólo queda 1 celda para el final del run, mandamos `velocidad 1`
-      // para que el siguiente tick mueva sólo 1 celda y aterrice
-      // exacto. Aplica únicamente cuando estamos en un tick boundary
-      // (cellIdx impar) porque a vel 2 cada tick avanza 2 celdas y los
-      // boundaries caen en 1, 3, 5, ... — disparar fuera de boundary
-      // sería desperdicio (la celda actual no es donde el barco "para"
-      // su tick).
-      const remaining = run.cells.length - 1 - cellIdx;
-      if (this.currentSpeed === 2 && remaining === 1 && cellIdx % 2 === 1) {
-        log(`slowdown: remaining=1 at cellIdx=${cellIdx}, dropping to vel 1`);
-        this.send('velocidad 1');
-        this.currentSpeed = 1;
-      }
+    // Phase C: chain orient. Si quedan EXACTAMENTE currentSpeed celdas
+    // para el final del run y hay siguiente run, mandamos `orientar`
+    // ya. El barco sigue moviéndose en dirección actual durante 1 tick
+    // (inercia = currentSpeed celdas) y termina justo en la última
+    // celda del run actual. El turnAck llegará después; entonces
+    // avanzamos runIdx y mandamos `navegar` en la nueva dirección.
+    const remaining = run.cells.length - 1 - cellIdx;
+    const hasNextRun = runIdx + 1 < runs.length;
+    if (hasNextRun && run.cells.length >= 2 && remaining === this.currentSpeed) {
+      const nextRun = runs[runIdx + 1];
+      log(`chain orient: cellIdx=${cellIdx} remaining=${remaining} speed=${this.currentSpeed}, sending orientar ${DIR_COMMAND[nextRun.dir]} for run ${runIdx + 1}`);
+      this.setState({ ...this.state, kind: 'chaining_orient', expectedDir: nextRun.dir });
+      const expected = nextRun.dir;
+      const epoch = ++this.orientEpoch;
+      this.send(`orientar ${DIR_COMMAND[nextRun.dir]}`, () => {
+        setTimeout(() => {
+          if (epoch === this.orientEpoch && this.state.kind === 'chaining_orient' && this.state.expectedDir === expected) {
+            this.onTurnAck(expected);
+          }
+        }, 60000);
+      });
       return;
     }
 
-    // Divergencia: corriente nos empujó fuera. Re-planeamos desde aquí.
-    const dest = this.state.destination!;
-    log(`DIVERGENCE at (${pos.col},${pos.row}). Run cells: ${run.cells.map(c=>`(${c.col},${c.row})`).join(' ')}. Replanning to (${dest.col},${dest.row})`);
-    this.announce('Desvío detectado. Recalculando ruta.');
-    const newPath = planRoute(pos, { col: dest.col, row: dest.row });
-    if (!newPath || newPath.length < 2) {
-      this.setState({ kind: 'error', errorMessage: 'no hay ruta tras desvío', destination: dest });
-      this.send('navegar detener');
-      return;
-    }
-    const newRuns = segmentRuns(newPath);
-    // runIdx = -1 a propósito: en `startNextRun`, cuando ve estado
-    // `stopping_between`, hace `runIdx += 1`. Con -1 esto pone runIdx
-    // = 0 y ejecuta el primer run del nuevo plan. Sin este truco la
-    // re-planificación saltaba siempre el run 0.
-    this.setState({
-      kind: 'stopping_between',
-      destination: dest,
-      path: newPath,
-      runs: newRuns,
-      runIdx: -1,
-    });
-    this.send('navegar detener', () => {
-      setTimeout(() => this.onStopAck(), 1500);
-    });
+    // On-path, ni final del run ni momento de chain — seguir.
+    return;
   }
 
   private onTurnAck(dir: Dir): void {
-    if (this.state.kind !== 'orienting') {
-      log(`turnAck ${dir} ignored — state=${this.state.kind}`);
+    // Cualquier turnAck válido implica que estamos avanzando, así que
+    // reseteo el contador de replans (los replans cuentan como
+    // consecutivos sin progreso, no totales).
+    if (this.state.kind === 'orienting' || this.state.kind === 'chaining_orient') {
+      this.replanCount = 0;
+    }
+    if (this.state.kind === 'orienting') {
+      // Flow tradicional (stop → orient → navegar).
+      if (this.state.expectedDir && this.state.expectedDir !== dir) {
+        log(`turnAck UNEXPECTED dir=${dir}, expected=${this.state.expectedDir} — cancelling`);
+        this.cancel('giro inesperado');
+        return;
+      }
+      log(`turnAck ${dir} ok, sending navegar`);
+      this.setState({ ...this.state, kind: 'navigating' });
+      this.send('navegar');
       return;
     }
-    if (this.state.expectedDir && this.state.expectedDir !== dir) {
-      log(`turnAck UNEXPECTED dir=${dir}, expected=${this.state.expectedDir} — cancelling`);
-      this.cancel('giro inesperado');
+
+    if (this.state.kind === 'chaining_orient') {
+      // Phase C: el barco terminó de orientarse al siguiente run sin
+      // haberse detenido. Avanzamos runIdx, ajustamos velocidad si la
+      // del nuevo run difiere, y mandamos navegar en la nueva dir.
+      if (this.state.expectedDir && this.state.expectedDir !== dir) {
+        log(`chain turnAck UNEXPECTED dir=${dir}, expected=${this.state.expectedDir} — cancelling`);
+        this.cancel('giro inesperado en chain');
+        return;
+      }
+      const newRunIdx = (this.state.runIdx ?? 0) + 1;
+      const runs = this.state.runs!;
+      if (newRunIdx >= runs.length) {
+        log(`chain turnAck but no next run (newRunIdx=${newRunIdx}) — bug, going idle`);
+        this.setState({ kind: 'idle' });
+        return;
+      }
+      const nextRun = runs[newRunIdx];
+      // Ajusta velocidad para el nuevo run si es necesario.
+      const desiredSpeed: 1 | 2 = (
+        nextRun.cells.length >= 2 &&
+        (this.shipMaxSpeed === null || this.shipMaxSpeed >= 2)
+      ) ? 2 : 1;
+      if (desiredSpeed !== this.currentSpeed) {
+        log(`chain speed adjust ${this.currentSpeed} -> ${desiredSpeed}`);
+        this.send(`velocidad ${desiredSpeed}`);
+        this.currentSpeed = desiredSpeed;
+      }
+      log(`chain complete: runIdx ${this.state.runIdx} -> ${newRunIdx} dir=${nextRun.dir} cells=${nextRun.cells.length}`);
+      this.setState({
+        ...this.state,
+        kind: 'navigating',
+        runIdx: newRunIdx,
+        expectedDir: undefined,
+      });
+      this.announce(`Maniobra ${newRunIdx + 1}/${runs.length}: ${DIR_COMMAND[nextRun.dir]}.`);
+      // OJO: NO mandamos `navegar` aquí. El barco siguió en marcha
+      // durante el orient (inercia) y el MUD lo continúa navegando en
+      // la nueva dirección automáticamente. Si mandáramos `navegar`
+      // Reinos responde con el help text ("La embarcación está
+      // navegando en dirección X... Para detener..."). El velocidad
+      // anterior basta para cambiar la velocidad sobre la navegación
+      // ya en curso.
       return;
     }
-    log(`turnAck ${dir} ok, sending navegar`);
-    this.setState({ ...this.state, kind: 'navigating' });
-    this.send('navegar');
+
+    log(`turnAck ${dir} ignored — state=${this.state.kind}`);
   }
 
   private onStopAck(): void {
@@ -561,7 +693,14 @@ export class MaritimeNavigator {
       expectedPos = prevRun.cells[prevRun.cells.length - 1];
     }
     if (actualPos && (actualPos.col !== expectedPos.col || actualPos.row !== expectedPos.row)) {
-      log(`DRIFT at startNextRun runIdx=${runIdx}: actual=(${actualPos.col},${actualPos.row}) expected=(${expectedPos.col},${expectedPos.row}). Replanning.`);
+      this.replanCount++;
+      if (this.replanCount > MaritimeNavigator.MAX_REPLANS) {
+        log(`too many replans (${this.replanCount}), aborting route`);
+        this.announce('Demasiados desvíos. Ruta abandonada — toma el control manual.');
+        this.cancel('demasiados replans');
+        return;
+      }
+      log(`DRIFT at startNextRun runIdx=${runIdx} [replan ${this.replanCount}/${MaritimeNavigator.MAX_REPLANS}]: actual=(${actualPos.col},${actualPos.row}) expected=(${expectedPos.col},${expectedPos.row}). Replanning.`);
       const dest = this.state.destination!;
       const newPath = planRoute(actualPos, { col: dest.col, row: dest.row });
       if (!newPath || newPath.length < 2) {
@@ -609,14 +748,13 @@ export class MaritimeNavigator {
 
     this.announce(`Maniobra ${runIdx + 1}/${runs.length}: orientar al ${DIR_COMMAND[run.dir]}.`);
     const expected = run.dir;
+    const epoch = ++this.orientEpoch;
     this.send(`orientar ${DIR_COMMAND[run.dir]}`, () => {
-      // El giro tarda varios segundos. El motor DEBE esperar al ack
-      // real `La embarcación termina de orientarse hacia el X` antes de
-      // mandar `navegar` — si lo lanza durante el "Estás maniobrando..."
-      // se ignora y el barco se queda parado. Timeout de 60s solo como
-      // red de seguridad para conexión muerta, no para acelerar.
+      // 60s solo como red de seguridad para conexión muerta. El epoch
+      // protege de que el timeout de un orient antiguo dispare onTurnAck
+      // si por casualidad coincide state y direction en el momento.
       setTimeout(() => {
-        if (this.state.kind === 'orienting' && this.state.expectedDir === expected) {
+        if (epoch === this.orientEpoch && this.state.kind === 'orienting' && this.state.expectedDir === expected) {
           this.onTurnAck(expected);
         }
       }, 60000);

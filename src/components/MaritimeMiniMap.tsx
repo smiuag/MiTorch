@@ -37,6 +37,12 @@ export function MaritimeMiniMap({
 }: Props) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ col: 0, row: 0 });
+  // Preview cell: igual que el MiniMap terrestre, el primer tap marca
+  // la celda destino, el segundo (en la misma celda) confirma y lanza
+  // navegarsala. Tap en otra celda reemplaza la marca.
+  const [previewCell, setPreviewCell] = useState<MaritimePosition | null>(null);
+  const previewCellRef = useRef<MaritimePosition | null>(null);
+  previewCellRef.current = previewCell;
 
   const zoomRef = useRef(zoom);
   const panRef = useRef(pan);
@@ -153,12 +159,19 @@ export function MaritimeMiniMap({
         const p = panRef.current;
         const visibleRadius = BASE_VIEW_RADIUS / z;
         const cellPx = (MAP_SIZE / 2) / visibleRadius;
-        // Inverso del transform: tap (tx, ty) en píxeles → celda mundial.
         const dx = gesture.current.tapStartX - MAP_SIZE / 2;
         const dy = gesture.current.tapStartY - MAP_SIZE / 2;
         const col = Math.round(cur.col + p.col + dx / cellPx);
         const row = Math.round(cur.row + p.row + dy / cellPx);
-        onTapCellRef.current?.(col, row);
+        // Si ya hay una celda marcada y el tap es en la misma, confirma
+        // y lanza navegarsala. Si no, solo marca (preview).
+        const prev = previewCellRef.current;
+        if (prev && prev.col === col && prev.row === row) {
+          setPreviewCell(null);
+          onTapCellRef.current?.(col, row);
+        } else {
+          setPreviewCell({ col, row });
+        }
       },
       onPanResponderTerminate: () => {
         cancelPending();
@@ -259,8 +272,15 @@ export function MaritimeMiniMap({
         .join(' ');
     }
 
-    return { cells, shipX: ship.sx, shipY: ship.sy, routePts, cellPx };
-  }, [service, currentCell, zoom, pan, navState.path]);
+    // Coords de pantalla del preview (si hay).
+    let previewScreen: { sx: number; sy: number } | null = null;
+    if (previewCell) {
+      const p = toScreen(previewCell.col, previewCell.row);
+      previewScreen = { sx: p.sx, sy: p.sy };
+    }
+
+    return { cells, shipX: ship.sx, shipY: ship.sy, routePts, cellPx, previewScreen };
+  }, [service, currentCell, zoom, pan, navState.path, previewCell]);
 
   const resetView = () => {
     setZoom(1);
@@ -296,40 +316,57 @@ export function MaritimeMiniMap({
       <View style={styles.container}>
         <Text style={styles.header} numberOfLines={1}>{headerText}</Text>
 
-        <View style={styles.mapArea} {...panResponder.panHandlers}>
-          <Svg width={MAP_SIZE} height={MAP_SIZE} pointerEvents="none">
-            <G>
-              {content.cells.map((c, i) => (
-                <Rect
-                  key={i}
-                  x={c.x}
-                  y={c.y}
-                  width={c.w}
-                  height={c.w}
-                  fill={c.color}
+        <View style={styles.mapAreaWrapper}>
+          <View style={styles.mapArea} {...panResponder.panHandlers}>
+            <Svg width={MAP_SIZE} height={MAP_SIZE} pointerEvents="none">
+              <G>
+                {content.cells.map((c, i) => (
+                  <Rect
+                    key={i}
+                    x={c.x}
+                    y={c.y}
+                    width={c.w}
+                    height={c.w}
+                    fill={c.color}
+                  />
+                ))}
+
+                {content.routePts && (
+                  <Polyline
+                    points={content.routePts}
+                    fill="none"
+                    stroke="rgba(255,200,0,0.85)"
+                    strokeWidth={1.8}
+                  />
+                )}
+
+                {content.previewScreen && (
+                  <Circle
+                    cx={content.previewScreen.sx}
+                    cy={content.previewScreen.sy}
+                    r={Math.max(5, content.cellPx * 0.6)}
+                    fill="none"
+                    stroke="rgba(255,180,0,0.9)"
+                    strokeWidth={2.5}
+                  />
+                )}
+
+                <Circle
+                  cx={content.shipX}
+                  cy={content.shipY}
+                  r={Math.max(3, content.cellPx * 0.4)}
+                  fill="rgba(255,255,255,0.95)"
+                  stroke="rgba(0,0,0,0.6)"
+                  strokeWidth={1}
                 />
-              ))}
+              </G>
+            </Svg>
+          </View>
 
-              {content.routePts && (
-                <Polyline
-                  points={content.routePts}
-                  fill="none"
-                  stroke="rgba(255,200,0,0.85)"
-                  strokeWidth={1.8}
-                />
-              )}
-
-              <Circle
-                cx={content.shipX}
-                cy={content.shipY}
-                r={Math.max(3, content.cellPx * 0.4)}
-                fill="rgba(255,255,255,0.95)"
-                stroke="rgba(0,0,0,0.6)"
-                strokeWidth={1}
-              />
-            </G>
-          </Svg>
-
+          {/* OJO: el botón centrar debe estar FUERA del View del
+              PanResponder. Si está dentro, el PanResponder se queda con
+              el touch (claimed via onStartShouldSetPanResponder=true) y
+              el onPress nunca dispara. */}
           {isPanned && (
             <TouchableOpacity
               style={styles.recenterBtn}
@@ -414,10 +451,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 4,
   },
-  mapArea: {
+  mapAreaWrapper: {
     width: MAP_SIZE,
     height: MAP_SIZE,
     position: 'relative',
+  },
+  mapArea: {
+    width: MAP_SIZE,
+    height: MAP_SIZE,
     overflow: 'hidden',
   },
   recenterBtn: {
