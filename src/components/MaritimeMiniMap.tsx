@@ -206,7 +206,52 @@ export function MaritimeMiniMap({
     const ship = toScreen(currentCell.col, currentCell.row);
     let routePts: string | null = null;
     if (navState.path && navState.path.length >= 2) {
-      routePts = navState.path
+      // "Desenrollar" el path: cada punto consecutivo debe tener delta
+      // pequeño (≤ medio mapa). Si la diferencia bruta excede medio
+      // mapa, asumimos wrap y desplazamos el siguiente punto al lado
+      // contrario, así la polyline va en la dirección real del barco
+      // en vez de cruzar el mapa entero en línea recta diagonal.
+      const W = grid.width;
+      const H = grid.height;
+      const unwrapped: { col: number; row: number }[] = [
+        { col: navState.path[0].col, row: navState.path[0].row },
+      ];
+      for (let i = 1; i < navState.path.length; i++) {
+        const prev = unwrapped[i - 1];
+        let col = navState.path[i].col;
+        let row = navState.path[i].row;
+        if (Math.abs(col - prev.col) > W / 2) {
+          col += col > prev.col ? -W : W;
+        }
+        if (Math.abs(row - prev.row) > H / 2) {
+          row += row > prev.row ? -H : H;
+        }
+        unwrapped.push({ col, row });
+      }
+      // Reanclaje: busca el índice del path donde está el barco ahora y
+      // desplaza TODO el path para que ese punto coincida con currentCell
+      // en coordenadas absolutas. Sin esto, si el barco cruzó un wrap el
+      // path desenrollado queda en un espacio shifteado y la polyline
+      // sale fuera de la pantalla.
+      let anchorIdx = -1;
+      for (let i = 0; i < navState.path.length; i++) {
+        if (navState.path[i].col === currentCell.col &&
+            navState.path[i].row === currentCell.row) {
+          anchorIdx = i;
+          break;
+        }
+      }
+      if (anchorIdx >= 0) {
+        const offCol = unwrapped[anchorIdx].col - currentCell.col;
+        const offRow = unwrapped[anchorIdx].row - currentCell.row;
+        if (offCol !== 0 || offRow !== 0) {
+          for (const p of unwrapped) {
+            p.col -= offCol;
+            p.row -= offRow;
+          }
+        }
+      }
+      routePts = unwrapped
         .map(p => {
           const { sx, sy } = toScreen(p.col, p.row);
           return `${sx},${sy}`;

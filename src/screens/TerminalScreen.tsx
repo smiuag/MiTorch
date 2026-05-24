@@ -1254,6 +1254,24 @@ export function TerminalScreen({ route, navigation }: Props) {
                 maritimeMapService.setCurrentCell(parseInt(mar[1], 10), parseInt(mar[3], 10));
               }
 
+              // Respuesta de `posicionar sextante` — locate marítimo
+              // independiente del header de sala. Formato:
+              //   "Posicionas tu sextante y resuelves las siguientes
+              //   coordenadas: 36º Oeste 22º Sur."
+              const sextM = clean.match(/Posicionas tu sextante y resuelves las siguientes coordenadas:\s*(\d+)º\s+Oeste\s+(\d+)º\s+Sur/i);
+              if (sextM) {
+                const sCol = parseInt(sextM[1], 10);
+                const sRow = parseInt(sextM[2], 10);
+                maritimeMapService.setCurrentCell(sCol, sRow);
+                if (intentionalLocateRef.current) {
+                  pushFloating('✓ Localizado', 'success', 2000);
+                  if (uiMode === 'blind') {
+                    speechQueue.enqueue(`En el mar, ${sCol}º Oeste ${sRow}º Sur.`);
+                  }
+                  intentionalLocateRef.current = false;
+                }
+              }
+
               // Pasamos cada línea al motor de navegarsala para que detecte
               // los acks de orientar/detener. Idempotente si motor en idle.
               maritimeNavigator.ingestLine(clean);
@@ -1301,6 +1319,18 @@ export function TerminalScreen({ route, navigation }: Props) {
                     intentionalLocateRef.current = false;
                     continue;
                   }
+
+                  // Caso "ojear sobre un barco amarrado": la sala es la
+                  // cubierta interior y termina con `[En tierra]`. Lo
+                  // que queremos es la posición marítima, no localizar
+                  // el interior del barco — relanzamos `posicionar
+                  // sextante` y mantenemos `intentionalLocateRef` para
+                  // que su respuesta sea quien marque éxito.
+                  if (/\[En tierra\]\s*$/i.test(clean)) {
+                    telnetRef.current?.send('posicionar sextante');
+                    continue;
+                  }
+
                   let roomName = clean.replace(/^[>\]]\s*/, '');
                   const mapSvc = mapServiceRef.current;
                   if (mapSvc.isLoaded && roomName) {
@@ -1599,8 +1629,11 @@ export function TerminalScreen({ route, navigation }: Props) {
   const handleLocate = useCallback(() => {
     recentLinesRef.current = [];
     intentionalLocateRef.current = true;
-    telnetRef.current?.send('ojear');
-  }, []);
+    // En mar: `posicionar sextante` devuelve coords NNº Oeste MMº Sur.
+    // En tierra: `ojear` muestra el header `[exits]` de la sala.
+    const cmd = maritimeCurrentCell ? 'posicionar sextante' : 'ojear';
+    telnetRef.current?.send(cmd);
+  }, [maritimeCurrentCell]);
 
   // When locate completes and we're waiting for irsala setup, do it now
   useEffect(() => {
