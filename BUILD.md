@@ -49,3 +49,14 @@ Doctrina (la skill `/build store` la enforza):
 Última publicada en Play: **1.0.4 (versionCode 6)** — internal testing (2026-05-13). Actualizar a mano cuando subas la siguiente al portal de Play.
 
 Nota sobre versionCode 5 (saltado): Play Console "quema" el versionCode al subir un AAB aunque luego descartes la release, así que el primer AAB de 1.0.4 con código 5 obligó a rebuildar con código 6.
+
+### Regenerar el grid marítimo
+
+`src/assets/maritime-grid.json` se genera offline desde el PNG `Mapa_oceano_barcos_npcs.png` del wiki. One-shot, sólo si cambia la fuente o se ajusta la paleta/calibración. Doctrina en `NAVEGACION.md`.
+
+```bash
+pip install Pillow
+python scripts/build-maritime-grid.py <ruta-al-png> src/assets/maritime-grid.json
+```
+
+El script imprime una validación con los 14 puertos confirmados — todos deben salir como `muelle` (los fuerza si el sampling píxel no coincide). Si cambia la lista de puertos, editar `PORTS` en el script.

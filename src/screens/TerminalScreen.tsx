@@ -76,6 +76,10 @@ import { NickAutocomplete } from '../components/NickAutocomplete';
 import { GesturePickerModal } from '../components/GesturePickerModal';
 import { resolvePickOptions, pickActionTitle, parseTellSender, pushRecentTell } from '../utils/gesturePickSources';
 import { loadRecentTells, saveRecentTells } from '../storage/recentTellsStorage';
+import { maritimeMapService, MaritimePosition } from '../services/maritimeMapService';
+import { maritimeNavigator, NavState } from '../services/maritimeNavigator';
+import { MaritimeMiniMap } from '../components/MaritimeMiniMap';
+import { PortListModal } from '../components/PortListModal';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Terminal'>;
 
@@ -1028,6 +1032,34 @@ export function TerminalScreen({ route, navigation }: Props) {
   const mapServiceRef = useRef(new MapService());
   const miniMapRef = useRef<MiniMapHandle | null>(null);
 
+  // Estado marítimo. Auto-swap del MiniMap cuando hay celda marina activa.
+  // Doctrina: NAVEGACION.md.
+  const [maritimeCurrentCell, setMaritimeCurrentCell] = useState<MaritimePosition | null>(null);
+  const [maritimeNavState, setMaritimeNavState] = useState<NavState>({ kind: 'idle' });
+  const [maritimeMapVisible, setMaritimeMapVisible] = useState(true);
+  const [portListVisible, setPortListVisible] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      await maritimeMapService.load();
+      if (!alive) return;
+      maritimeNavigator.configure({
+        sender: (cmd: string) => telnetRef.current?.send(cmd),
+        announcer: (text: string) => {
+          if (uiMode === 'blind') speechQueue.enqueue(text);
+        },
+      });
+    })();
+    const unsubPos = maritimeMapService.subscribe(pos => setMaritimeCurrentCell(pos));
+    const unsubNav = maritimeNavigator.subscribe(s => setMaritimeNavState(s));
+    return () => {
+      alive = false;
+      unsubPos();
+      unsubNav();
+    };
+  }, [uiMode]);
+
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
     (async () => {
@@ -1208,6 +1240,24 @@ export function TerminalScreen({ route, navigation }: Props) {
                 recentLinesRef.current.shift();
               }
 
+              // Detección de header marítimo: `<Nombre> [NNº Oeste, MMº Sur]`.
+              // Convención de Reinos: todo Oeste/Sur — si llega Este/Norte
+              // se ignora (defensivo). Ver NAVEGACION.md.
+              //
+              // ⚠️ NO desactivamos el modo marítimo por heurística de
+              // brackets — falsa señal con telepatías, canales, etc. La
+              // salida del mar la dispara: GMCP Room.Movimiento exitoso,
+              // GMCP Room.Actual con match, o el intercept de
+              // `abandonar barco`.
+              const mar = clean.match(/\[(\d+)º\s+(Oeste|Este),\s*(\d+)º\s+(Sur|Norte)\]\s*$/);
+              if (mar && mar[2] === 'Oeste' && mar[4] === 'Sur') {
+                maritimeMapService.setCurrentCell(parseInt(mar[1], 10), parseInt(mar[3], 10));
+              }
+
+              // Pasamos cada línea al motor de navegarsala para que detecte
+              // los acks de orientar/detener. Idempotente si motor en idle.
+              maritimeNavigator.ingestLine(clean);
+
               // Nick detection — two sources:
               //  1) WHO block: lines between "] Mortales [" and "[ Hay N mortales en …]"
               //  2) Direct communications: "Nick te dice/pregunta/exclama/susurra/grita/responde"
@@ -1239,6 +1289,18 @@ export function TerminalScreen({ route, navigation }: Props) {
               // Check if we're locating and found the room
               if (intentionalLocateRef.current) {
                 if (clean.match(/\[.*\]\s*$/)) {
+                  // Si la línea es un header marítimo, el parser de arriba
+                  // ya fijó la celda — tratamos como locate exitoso y NO
+                  // caemos en findRoom terrestre (devolvería null y
+                  // mostraría "No localizado" pisando el éxito real).
+                  if (mar && mar[2] === 'Oeste' && mar[4] === 'Sur') {
+                    pushFloating('✓ Localizado', 'success', 2000);
+                    if (uiMode === 'blind') {
+                      speechQueue.enqueue(`En el mar, ${mar[1]}º Oeste ${mar[3]}º Sur.`);
+                    }
+                    intentionalLocateRef.current = false;
+                    continue;
+                  }
                   let roomName = clean.replace(/^[>\]]\s*/, '');
                   const mapSvc = mapServiceRef.current;
                   if (mapSvc.isLoaded && roomName) {
@@ -1321,6 +1383,8 @@ export function TerminalScreen({ route, navigation }: Props) {
             if (room) {
               mapServiceRef.current.setCurrentRoom(room.id);
               setCurrentRoom(room);
+              // GMCP terrestre exitoso → ya no estamos en mar.
+              maritimeMapService.clearCurrent();
             }
           }
           // If not localized yet: ignore Room.Actual, wait for manual ojear
@@ -1329,6 +1393,8 @@ export function TerminalScreen({ route, navigation }: Props) {
           const room = mapServiceRef.current.moveByDirection(dir);
           if (room) {
             setCurrentRoom(room);
+            // Movimiento terrestre confirmado → salimos del modo mar.
+            maritimeMapService.clearCurrent();
 
             // Blind mode: announce room change
             if (uiMode === 'blind') {
@@ -1595,9 +1661,94 @@ export function TerminalScreen({ route, navigation }: Props) {
       }
     }
 
-    // Intercept "parar" or "stop" to stop walking
-    if ((command.toLowerCase() === 'parar' || command.toLowerCase() === 'stop') && walking) {
-      stopWalk();
+    // Intercept "parar" or "stop" to stop walking AND maritime navigation.
+    if (command.toLowerCase() === 'parar' || command.toLowerCase() === 'stop') {
+      let did = false;
+      if (walking) { stopWalk(); did = true; }
+      if (maritimeNavState.kind !== 'idle' && maritimeNavState.kind !== 'arrived') {
+        maritimeNavigator.cancel('parar');
+        did = true;
+      }
+      if (did) return;
+    }
+
+    // Intercept `navegarsala [arg]` — A* + motor reactivo. Ver NAVEGACION.md.
+    //   navegarsala            → muestra modal con todos los puertos
+    //   navegarsala <col> <row> → ruta a coords arbitrarias
+    //   navegarsala <port>     → ruta al puerto por id o nombre parcial
+    const navTrim = command.trim();
+    if (/^navegarsala$/i.test(navTrim)) {
+      setPortListVisible(true);
+      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
+      return;
+    }
+    const navCoords = navTrim.match(/^navegarsala\s+(\d+)\s+(\d+)$/i);
+    if (navCoords) {
+      const col = parseInt(navCoords[1], 10);
+      const row = parseInt(navCoords[2], 10);
+      maritimeNavigator.start({ col, row }).catch(err => {
+        addLine(`--- navegarsala: ${err?.message || err} ---`);
+      });
+      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
+      return;
+    }
+    const navMatch = navTrim.match(/^navegarsala\s+(.+)$/i);
+    if (navMatch) {
+      const portQuery = navMatch[1].trim();
+      maritimeNavigator.start(portQuery).catch(err => {
+        addLine(`--- navegarsala: ${err?.message || err} ---`);
+      });
+      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
+      return;
+    }
+
+    // Intercept `abandonar barco` — salimos al muelle (terrestre).
+    if (/^abandonar\s+barco$/i.test(navTrim)) {
+      maritimeMapService.clearCurrent();
+      // No return — el comando sigue al MUD.
+    }
+
+    // Intercept `embarcarse` — auto-swap al mapa marítimo predictivamente:
+    // si la sala actual contiene el nombre de un puerto, fijamos la celda
+    // marítima ya en vez de esperar al primer header `[Nº Oeste, Mº Sur]`.
+    if (/^embarcarse(\s|$)/i.test(navTrim)) {
+      const room = mapServiceRef.current.getCurrentRoom();
+      const port = room ? maritimeMapService.portFromRoomName(room.n) : null;
+      if (port) {
+        maritimeMapService.setCurrentCell(port.col, port.row);
+      }
+      // No return — el comando sigue al MUD.
+    }
+
+    // Si estamos en mar (con celda marítima activa) el botón / comando
+    // `irsala` se redirige a navegarsala. Esto permite que el mismo
+    // botón físico de la grid sirva en ambos contextos: en tierra es
+    // irsala, en barco es navegarsala. `sigilarsala` no se redirige
+    // (no hay equivalente marítimo).
+    if (maritimeCurrentCell && /^irsala(\s+|$)/i.test(command)) {
+      // Cancelar si ya estamos navegando — paridad con el "stop walk"
+      // que hace irsala en tierra cuando hay walk activo.
+      if (maritimeNavState.kind !== 'idle' && maritimeNavState.kind !== 'arrived') {
+        maritimeNavigator.cancel('cancelado por usuario');
+        if (!skipHistory) setCommandHistory([command, ...commandHistory]);
+        return;
+      }
+      const rest = command.replace(/^irsala\s*/i, '').trim();
+      if (!rest) {
+        // Sin args: abrir modal de puertos.
+        setPortListVisible(true);
+      } else {
+        // Con args: coords (`67 29`) o nombre/id de puerto.
+        const coords = rest.match(/^(\d+)\s+(\d+)$/);
+        if (coords) {
+          const col = parseInt(coords[1], 10);
+          const row = parseInt(coords[2], 10);
+          maritimeNavigator.start({ col, row }).catch(err => addLine(`--- navegarsala: ${err?.message || err} ---`));
+        } else {
+          maritimeNavigator.start(rest).catch(err => addLine(`--- navegarsala: ${err?.message || err} ---`));
+        }
+      }
+      if (!skipHistory) setCommandHistory([command, ...commandHistory]);
       return;
     }
 
@@ -1697,6 +1848,10 @@ export function TerminalScreen({ route, navigation }: Props) {
     }
 
     if (connected) {
+      // Antes de mandar al MUD, avisamos al navegador marítimo para que
+      // cancele auto-nav si el usuario teclea algo que no sean los propios
+      // orientar/navegar/detener (filtrado dentro del notify).
+      maritimeNavigator.notifyManualCommand(command);
       telnetRef.current?.send(command);
       // Registrar el comando para suprimir su eco TTS en blind (ver
       // processingAndAddLine). Cap a 20 para evitar growth con ráfagas
@@ -3005,24 +3160,42 @@ export function TerminalScreen({ route, navigation }: Props) {
           {/* MiniMap overlay - Hidden in minimalist mode */}
           {uiMode === 'completo' && (
             <View style={styles.miniMapContainer} pointerEvents="box-none">
-              <MiniMap
-                ref={miniMapRef}
-                mapService={mapServiceRef.current}
-                currentRoom={currentRoom}
-                visible={mapVisible}
-                onToggle={() => setMapVisible(!mapVisible)}
-                walking={walking}
-                onStop={stopWalk}
-                selectedRoomId={previewRoomId}
-                onSelectRoom={(room) => {
-                  if (previewRoomId === room.id) {
-                    setPreviewRoomId(null);
-                    walkTo(room);
-                  } else {
-                    setPreviewRoomId(room.id);
-                  }
-                }}
-              />
+              {maritimeCurrentCell ? (
+                <MaritimeMiniMap
+                  service={maritimeMapService}
+                  currentCell={maritimeCurrentCell}
+                  navState={maritimeNavState}
+                  visible={maritimeMapVisible}
+                  onToggle={() => setMaritimeMapVisible(v => !v)}
+                  onTapCell={(col, row) => {
+                    if (!maritimeMapService.isNavigable(col, row)) {
+                      addLine(`--- navegarsala: (${col},${row}) no es navegable ---`);
+                      return;
+                    }
+                    maritimeNavigator.start({ col, row }).catch(err => addLine(`--- navegarsala: ${err?.message || err} ---`));
+                  }}
+                  onCancelNavigation={() => maritimeNavigator.cancel('cancelado por usuario')}
+                />
+              ) : (
+                <MiniMap
+                  ref={miniMapRef}
+                  mapService={mapServiceRef.current}
+                  currentRoom={currentRoom}
+                  visible={mapVisible}
+                  onToggle={() => setMapVisible(!mapVisible)}
+                  walking={walking}
+                  onStop={stopWalk}
+                  selectedRoomId={previewRoomId}
+                  onSelectRoom={(room) => {
+                    if (previewRoomId === room.id) {
+                      setPreviewRoomId(null);
+                      walkTo(room);
+                    } else {
+                      setPreviewRoomId(room.id);
+                    }
+                  }}
+                />
+              )}
             </View>
           )}
         </View>
@@ -3450,24 +3623,42 @@ export function TerminalScreen({ route, navigation }: Props) {
 
             {uiMode === 'completo' && (
               <View style={styles.miniMapContainer} pointerEvents="box-none">
-                <MiniMap
-                  ref={miniMapRef}
-                  mapService={mapServiceRef.current}
-                  currentRoom={currentRoom}
-                  visible={mapVisible}
-                  onToggle={() => setMapVisible(!mapVisible)}
-                  walking={walking}
-                  onStop={stopWalk}
-                  selectedRoomId={previewRoomId}
-                  onSelectRoom={(room) => {
-                    if (previewRoomId === room.id) {
-                      setPreviewRoomId(null);
-                      walkTo(room);
-                    } else {
-                      setPreviewRoomId(room.id);
+                {maritimeCurrentCell ? (
+                  <MaritimeMiniMap
+                    service={maritimeMapService}
+                    currentCell={maritimeCurrentCell}
+                    navState={maritimeNavState}
+                    visible={maritimeMapVisible}
+                    onToggle={() => setMaritimeMapVisible(v => !v)}
+                    onTapCell={(col, row) => {
+                    if (!maritimeMapService.isNavigable(col, row)) {
+                      addLine(`--- navegarsala: (${col},${row}) no es navegable ---`);
+                      return;
                     }
+                    maritimeNavigator.start({ col, row }).catch(err => addLine(`--- navegarsala: ${err?.message || err} ---`));
                   }}
-                />
+                    onCancelNavigation={() => maritimeNavigator.cancel('cancelado por usuario')}
+                  />
+                ) : (
+                  <MiniMap
+                    ref={miniMapRef}
+                    mapService={mapServiceRef.current}
+                    currentRoom={currentRoom}
+                    visible={mapVisible}
+                    onToggle={() => setMapVisible(!mapVisible)}
+                    walking={walking}
+                    onStop={stopWalk}
+                    selectedRoomId={previewRoomId}
+                    onSelectRoom={(room) => {
+                      if (previewRoomId === room.id) {
+                        setPreviewRoomId(null);
+                        walkTo(room);
+                      } else {
+                        setPreviewRoomId(room.id);
+                      }
+                    }}
+                  />
+                )}
               </View>
             )}
           </View>
@@ -3803,6 +3994,17 @@ export function TerminalScreen({ route, navigation }: Props) {
           selfVoicingActive={selfVoicingActive}
         />
       )}
+
+      {/* Port list modal — abierto al teclear `navegarsala` sin args. */}
+      <PortListModal
+        ports={maritimeMapService.listPorts()}
+        visible={portListVisible}
+        onClose={() => setPortListVisible(false)}
+        onSelect={(port) => {
+          setPortListVisible(false);
+          maritimeNavigator.start(port.id).catch(err => addLine(`--- navegarsala: ${err?.message || err} ---`));
+        }}
+      />
 
       {/* Room Search Results */}
       <RoomSearchResults

@@ -161,6 +161,12 @@ Doctrina del reproductor de fondo en **`AMBIENT.md`** (no se carga automáticame
 
 Idea general: loop de música que cambia con el **tipo de sala** (17 categorías, clasificadas por keywords sobre el nombre). Sin wavs bundleados — el usuario los aporta. Crossfade 1.5s entre categorías.
 
+## Sistema de Navegación Marítima
+
+Doctrina del mapa de océano + comandos de navegación + motor de `navegarsala` en **`NAVEGACION.md`** (no se carga automáticamente — léela cuando toques `maritimeMapService`, `maritimeNavigator`, `MaritimeMiniMap`, el parser de header `[NNº Oeste, MMº Sur]`, o el generador `scripts/build-maritime-grid.py`).
+
+Idea general: las salas marinas usan coords (col, row) sobre una cuadrícula 2D propia (~92×36) bundleada en `src/assets/maritime-grid.json`. El parser de TerminalScreen detecta el header marítimo y dispara auto-swap MiniMap↔MaritimeMiniMap. `navegarsala <puerto>` planifica con A* esquivando tierra/playa, segmenta la ruta en runs de misma dirección, y conduce el barco con `orientar` + `navegar` + `navegar detener` reaccionando a los acks del MUD (no batch).
+
 ## Sistema de Mapas (biblioteca por servidor)
 
 **Modelo (post-2026-05-02):** los mapas son recursos independientes que viven en una "biblioteca" de la app. Cada `ServerProfile` puede tener un `mapId?` que apunta a una entrada de la biblioteca. Esto desacopla mapa↔personaje: un mismo mapa puede compartirse entre varios characters del mismo MUD, y el cliente sirve a múltiples MUDs distintos.
